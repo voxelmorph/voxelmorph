@@ -13,12 +13,12 @@ to data preprocessing and format. You will likely need to rewrite some of the da
 ## Papers
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
 Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
-[eprint arXiv:](?)
+MICCAI 2018. [eprint arXiv:](?)
 
 
 **An Unsupervised Learning Model for Deformable Medical Image Registration**  
-Guha Balakrishnan, Amy Zhao, Mert R. Sabuncu, John Guttag, Adrian V. Dalca  
-[eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
+Guha Balakrishnan, Amy Zhao, Mert R. Sabuncu, John Guttag, Adrian V. Dalca 
+CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 ## Instructions
 
