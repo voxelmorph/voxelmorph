@@ -1,7 +1,5 @@
 # voxelmorph
 
-The voxelmorph code is being finalized (i.e. cleaned up :) ). Should be up momentarirly.  
-Stay tuned :)
 
 ## Notes
 - Code was initially written in python 2.7, and now transfered to 3.5. 
@@ -32,3 +30,6 @@ Guha Balakrishnan, Amy Zhao, Mert R. Sabuncu, John Guttag, Adrian V. Dalca
 ### Testing (Dice scores):
 Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
 1. Run test.py [model_name] [gpu-id] [iter-num]
+
+### Contact:
+voxelmorph@mit.edu
