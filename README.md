@@ -13,7 +13,7 @@ to data preprocessing and format. You will likely need to rewrite some of the da
 ## Papers
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
 Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu  
-MICCAI 2018. [eprint arXiv:](?)
+MICCAI 2018. [eprint arXiv:1805.04605](https://arxiv.org/abs/1805.04605)
 
 
 **An Unsupervised Learning Model for Deformable Medical Image Registration**  
