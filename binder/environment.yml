@@ -1,0 +1,32 @@
+name: voxelmorph
+channels:
+  - damianavila82
+  - satra
+  - menpo
+  - pluraldatum
+  - glemaitre
+  - soumith
+  - conda-forge
+  - defaults
+  - simpleitk
+dependencies:
+  - python=3.6
+  - numpy
+  - matplotlib
+  - pandas
+  - notebook>=5.2.2
+  - ipywidgets>=6.0.1
+  - ipython>=6.2.1
+  - pydot
+  - h5py
+  - scikit-image<=0.20
+  - scikit-learn<=0.20
+  - tensorflow
+  - itk
+  - SimpleITK
+  - ipyvolume
+  - pip:
+    - keras==2.1.3
+    - seaborn==0.7.1
+    - appmode
+    - itkwidgets
