@@ -1,5 +1,6 @@
 # voxelmorph
 
+[![Binder](https://mybinder.org/badge.svg)](https://mybinder.org/v2/gh/kmader/voxelmorph/master)
 
 ## Notes
 - Code was initially written in python 2.7, and now transfered to 3.5. 
