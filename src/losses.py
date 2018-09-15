@@ -1,9 +1,14 @@
 
 # Third party inports
 import tensorflow as tf
+import keras.backend as K
 import numpy as np
 
 # batch_sizexheightxwidthxdepthxchan
+
+
+
+
 
 
 def diceLoss(y_true, y_pred):
@@ -100,4 +105,67 @@ def cc2D(win=[9, 9]):
 
         cc = cross*cross / (I_var*J_var + np.finfo(float).eps)
         return -1.0*tf.reduce_mean(cc)
+    return loss
+
+
+
+
+## Losses for the MICCAI2018 Paper
+def kl_loss(alpha):
+    def loss(_, y_pred):
+        """
+        KL loss
+        y_pred is assumed to be 6 channels: first 3 for mean, next 3 for logsigma
+        """
+        mean = y_pred[..., 0:3]
+        log_sigma = y_pred[..., 3:]
+
+        # compute the degree matrix.
+        # TODO: should only compute this once!
+        # z = K.ones((1, ) + vol_size + (3, ))
+        sz = log_sigma.get_shape().as_list()[1:]
+        z = K.ones([1] + sz)
+
+        filt = np.zeros((3, 3, 3, 3, 3))
+        for i in range(3):
+            filt[1, 1, [0, 2], i, i] = 1
+            filt[[0, 2], 1, 1, i, i] = 1
+            filt[1, [0, 2], 1, i, i] = 1
+        filt_tf = tf.convert_to_tensor(filt, dtype=tf.float32)
+        D = tf.nn.conv3d(z, filt_tf, [1, 1, 1, 1, 1], "SAME")
+        D = K.expand_dims(D, 0)
+
+        sigma_terms = (alpha * D * tf.exp(log_sigma) - log_sigma)
+
+        # note needs 0.5 twice, one here, one below
+        prec_terms = 0.5 * alpha * kl_prec_term_manual(_, mean)
+        kl = 0.5 * tf.reduce_mean(sigma_terms, [1, 2, 3]) + 0.5 * prec_terms
+        return kl
+
+    return loss
+
+def kl_prec_term_manual(y_true, y_pred):
+    """
+    a more manual implementation of the precision matrix term
+            P = D - A
+            mu * P * mu
+    where D is the degree matrix and A is the adjacency matrix
+            mu * P * mu = sum_i mu_i sum_j (mu_i - mu_j)
+    where j are neighbors of i
+    """
+    dy = y_pred[:,1:,:,:,:] * (y_pred[:,1:,:,:,:] - y_pred[:,:-1,:,:,:])
+    dx = y_pred[:,:,1:,:,:] * (y_pred[:,:,1:,:,:] - y_pred[:,:,:-1,:,:])
+    dz = y_pred[:,:,:,1:,:] * (y_pred[:,:,:,1:,:] - y_pred[:,:,:,:-1,:])
+    dy2 = y_pred[:,:-1,:,:,:] * (y_pred[:,:-1,:,:,:] - y_pred[:,1:,:,:,:])
+    dx2 = y_pred[:,:,:-1,:,:] * (y_pred[:,:,:-1,:,:] - y_pred[:,:,1:,:,:])
+    dz2 = y_pred[:,:,:,:-1,:] * (y_pred[:,:,:,:-1,:] - y_pred[:,:,:,1:,:])
+
+    d = tf.reduce_mean(dx) + tf.reduce_mean(dy) + tf.reduce_mean(dz) + \
+        tf.reduce_mean(dy2) + tf.reduce_mean(dx2) + tf.reduce_mean(dz2)
+    return d
+
+
+def kl_l2loss(image_sigma):
+    def loss(y_true, y_pred):
+        return 1. / (image_sigma**2) * K.mean(K.square(y_true - y_pred))
     return loss
