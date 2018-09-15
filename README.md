@@ -6,9 +6,9 @@ We incorporate several variants, presented at CVPR2018 and MICCAI2018
 
 - We provide A T1 atlas used in our papers at data/atlas_norm.npz.
 
-- The spatial transform code, found at `neuron.layers.SpatialTransform`, accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
+- The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
 
-- For the MICCAI2018 version, we integrate the velocity field using `neuron.layers.VecInt`. By default we integrate using scaling and squaring, which we found efficient.
+- For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
 
 - You will likely need to rewrite some of the data loading code in 
 'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
