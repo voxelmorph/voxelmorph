@@ -1,20 +1,15 @@
 # voxelmorph
-Unsupervised Learning for Image Registration  
-We incorporate several variants, presented at CVPR2018 and MICCAI2018  
-
-## Notes
-
-- We provide A T1 atlas used in our papers at data/atlas_norm.npz.
-
-- The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
-
-- For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
-
-- You will likely need to rewrite some of the data loading code in 
-'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
-
+Unsupervised Learning with CNNs for Image Registration  
+We incorporate several variants, presented at CVPR2018 (initial unsupervised learning) and MICCAI2018   (probabilistic & diffeomorphic)
 
 ## Instructions
+
+It might be useful to have each folder inside the `ext` folder on your python path. 
+assuming voxelmorph is setup at `/path/to/voxelmorph/`:
+
+```
+export PYTHONPATH=$PYTHONPATH:/path/to/voxelmorph/ext/neuron/:/path/to/voxelmorph/ext/pynd-lib/:/path/to/voxelmorph/ext/pytools-lib/
+```
 
 ### Training:
 These instructions are for the MICCAI2018 paper. If you'd like the CVPR version (no diffeomorphism or uncertainty measures and using CC) use train.py
@@ -28,6 +23,20 @@ train_miccai2018.py --gpu 0 --model_dir /my/path/to/models
 ### Testing (measuring Dice scores):
 1. Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
 2. Run `test_miccai2018.py` [gpu-id] [model_dir] [iter-num]
+
+
+## Notes
+
+- We provide A T1 atlas used in our papers at data/atlas_norm.npz.
+
+- The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
+
+- For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
+
+- You will likely need to write some of the data loading code in 
+'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
+
+
 
 ## Papers
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
