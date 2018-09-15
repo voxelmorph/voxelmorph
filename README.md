@@ -2,14 +2,15 @@
 Unsupervised Learning for Image Registration  
 We incorporate several variants, presented at CVPR2018 and MICCAI2018  
 
-
 ## Notes
-- We are currently cleaning up our code for general use. There are several hard-coded elements related to data preprocessing and format. You will likely need to rewrite some of the data loading code in 
-'datagenerator.py' for your own datasets.
 
 - We provide A T1 atlas used in our papers at data/atlas_norm.npz.
 
 - The spatial transform code, found at `neuron.layers.SpatialTransform`, accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
+
+- You will likely need to rewrite some of the data loading code in 
+'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
+
 
 ## Instructions
 
