@@ -3,13 +3,11 @@
 Unsupervised Learning for Image Registration
 
 ## Notes
-- Code was initially written in python 2.7, and now transfered to 3.5. 
-
 - We are currently cleaning up our code for general use. There are several hard-coded elements related
 to data preprocessing and format. You will likely need to rewrite some of the data loading code in 
 'datagenerator.py' for your own datasets.
 
-- We provide the atlas used in our papers at data/atlas_norm.npz.
+- We provide A T1 atlas used in our papers at data/atlas_norm.npz.
 
 ## Instructions
 
@@ -19,8 +17,8 @@ to data preprocessing and format. You will likely need to rewrite some of the da
 2. Run train.py [model_name] [gpu-id] 
 
 ### Testing (Dice scores):
-Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
-1. Run test.py [model_name] [gpu-id] [iter-num]
+1. Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
+2. Run test.py [model_name] [gpu-id] [iter-num]
 
 ## Papers
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
@@ -35,4 +33,4 @@ CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 
 ## Contact:
-voxelmorph@mit.edu
+For and problems or questions please open an issue in github or email us at voxelmorph@mit.edu
