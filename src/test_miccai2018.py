@@ -1,4 +1,7 @@
-  
+"""
+Test models for MICCAI 2018 submission of VoxelMorph.
+"""
+
 # py imports
 import os
 import sys
@@ -95,4 +98,8 @@ def test(gpu_id, model_dir, iter_num,
             sio.savemat(save_file, {'dice_vals': dice_vals, 'labels': good_labels})
 
 if __name__ == "__main__":
+    """
+    assuming the model is model_dir/iter_num.h5
+    python test_miccai2018.py gpu_id model_dir iter_num
+    """
     test(sys.argv[1], sys.argv[2], sys.argv[3])
