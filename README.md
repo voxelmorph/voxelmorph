@@ -17,17 +17,17 @@ We incorporate several variants, presented at CVPR2018 and MICCAI2018
 ## Instructions
 
 ### Training:
-These instructions are for the MICCAI2018 paper. If you'd like the CVPR version (no diffeomorphism or uncertainty measures and using CC instead of L2) use train.py
+These instructions are for the MICCAI2018 paper. If you'd like the CVPR version (no diffeomorphism or uncertainty measures and using CC) use train.py
 
-1. Change the top parameters in train_miccai2018.py to the location of your image files.
-2. Run train_miccai2018.py with options described in the main function. Example:  
+1. Change the top parameters in `train_miccai2018.py` to the location of your image files.
+2. Run `train_miccai2018.py` with options described in the main function. Example:  
 ```
 train_miccai2018.py --gpu 0 --model_dir /my/path/to/models 
 ```
 
 ### Testing (measuring Dice scores):
 1. Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
-2. Run test_miccai2018.py [gpu-id] [model_dir] [iter-num]
+2. Run `test_miccai2018.py` [gpu-id] [model_dir] [iter-num]
 
 ## Papers
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
