@@ -126,9 +126,9 @@ class SpatialTransformer(Layer):
             if trf_shape[-1] != self.ndims:
                 raise Exception('Offset flow field size expected: %d, found: %d' 
                                 % (self.ndims, trf_shape[-1]))
-            if not trf_shape[:-1] == vol_shape:
-                raise Exception('flow field size expected' + str(vol_shape) + \
-                                'Found:' + str(trf_shape[:-1]))
+            # if not trf_shape[:-1] == vol_shape:
+                # raise Exception('flow field size expected' + str(vol_shape) + \
+                                # 'Found:' + str(trf_shape[:-1]))
 
         # confirm built
         self.built = True
@@ -145,10 +145,10 @@ class SpatialTransformer(Layer):
         vol = inputs[0]
         trf = inputs[1]
 
-        if not self.is_affine:
-            if not all([trf.shape[1:-1][f] == vol.shape[1:-1][f] for f in range(self.ndims)]):
-                raise Exception('Shift shape should match vol shape. '
-                                'Got: ' + str(trf.shape[1:-1]) + ' and ' + str(vol.shape[1:-1]))
+        # if not self.is_affine:
+        #     if not all([trf.shape[1:-1][f] == vol.shape[1:-1][f] for f in range(self.ndims)]):
+        #         raise Exception('Shift shape should match vol shape. '
+        #                         'Got: ' + str(trf.shape[1:-1]) + ' and ' + str(vol.shape[1:-1]))
 
         # go from affine
         if self.is_affine:
