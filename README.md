@@ -27,9 +27,9 @@ train_miccai2018.py --gpu 0 --model_dir /my/path/to/models
 
 ## Notes
 
-- We provide A T1 atlas used in our papers at data/atlas_norm.npz.
+- We provide a T1 atlas used in our papers at data/atlas_norm.npz.
 
-- The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are not emphasizing `ij` indexing.
+- The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are now emphasizing `ij` indexing.
 
 - For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
 
