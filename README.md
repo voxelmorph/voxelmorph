@@ -39,6 +39,9 @@ train_miccai2018.py --gpu 0 --model_dir /my/path/to/models
 
 
 ## Papers
+
+If you use voxelmorph or some part of the code, please cite:
+
 **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
 [Adrian V. Dalca](http://adalca.mit.edu), [Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
 MICCAI 2018. [eprint arXiv:1805.04605](https://arxiv.org/abs/1805.04605)
