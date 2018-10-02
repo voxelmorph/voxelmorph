@@ -60,7 +60,7 @@ def train(model_dir, gpu_id, lr, n_iterations, alpha, image_sigma, model_save_it
 
     # gpu handling
     gpu = '/gpu:' + str(gpu_id)
-    os.environ["CUDA_VISIBLE_DEVICES"]=str(gpu_id)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True

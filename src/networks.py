@@ -146,7 +146,8 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, use_miccai_int=True, int_steps=7, i
 
     # integrate if diffeomorphic (i.e. treating 'flow' above as stationary velocity field)
     if use_miccai_int:
-        # for the miccai2018 submission, the scaling and squaring layer
+        # for the miccai2018 submission, the squaring layer
+        # scaling was essentially built in by the network
         # was manually composed of a Transform and and Add Layer.
         flow = Lambda(lambda x: x, name='flow-fix')(flow)  # remanant of old code
         v = flow
