@@ -111,7 +111,7 @@ def cc2D(win=[9, 9]):
 
 
 ## Losses for the MICCAI2018 Paper
-def kl_loss(alpha):
+def kl_loss(prior_lambda):
     def loss(_, y_pred):
         """
         KL loss
@@ -135,10 +135,10 @@ def kl_loss(alpha):
         D = tf.nn.conv3d(z, filt_tf, [1, 1, 1, 1, 1], "SAME")
         D = K.expand_dims(D, 0)
 
-        sigma_terms = (alpha * D * tf.exp(log_sigma) - log_sigma)
+        sigma_terms = (prior_lambda * D * tf.exp(log_sigma) - log_sigma)
 
         # note needs 0.5 twice, one here, one below
-        prec_terms = 0.5 * alpha * kl_prec_term_manual(_, mean)
+        prec_terms = 0.5 * prior_lambda * kl_prec_term_manual(_, mean)
         kl = 0.5 * tf.reduce_mean(sigma_terms, [1, 2, 3]) + 0.5 * prec_terms
         return kl
 

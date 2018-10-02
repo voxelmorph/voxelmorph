@@ -40,14 +40,14 @@ atlas = np.load('../data/atlas_norm.npz')
 atlas_vol = atlas['vol'][np.newaxis,...,np.newaxis]
 
 
-def train(model_dir, gpu_id, lr, n_iterations, alpha, image_sigma, model_save_iter, batch_size=1):
+def train(model_dir, gpu_id, lr, n_iterations, prior_lambda, image_sigma, model_save_iter, batch_size=1):
     """
     model training function
     :param model_dir: model folder to save to
     :param gpu_id: integer specifying the gpu to use
     :param lr: learning rate
     :param n_iterations: number of training iterations
-    :param alpha: the alpha, the scalar in front of the smoothing laplacian, in MICCAI paper
+    :param prior_lambda: the prior_lambda, the scalar in front of the smoothing laplacian, in MICCAI paper
     :param image_sigma: the image sigma in MICCAI paper
     :param model_save_iter: frequency with which to save models
     :param batch_size: Optional, default of 1. can be larger, depends on GPU memory and volume size
@@ -75,10 +75,10 @@ def train(model_dir, gpu_id, lr, n_iterations, alpha, image_sigma, model_save_it
     # in the experiments, we use image_2 as atlas
     with tf.device(gpu):
         # miccai 2018 used xy indexing. 
-        model = networks.miccai2018_net(vol_size,nf_enc,nf_dec, use_miccai_int=True, indexing='xy')
+        model = networks.miccai2018_net(vol_size, nf_enc, nf_dec, use_miccai_int=True, indexing='xy')
 
         # compile
-        model_losses = [losses.kl_l2loss(image_sigma), losses.kl_loss(alpha)]
+        model_losses = [losses.kl_l2loss(image_sigma), losses.kl_loss(prior_lambda)]
         model.compile(optimizer=Adam(lr=lr), loss=model_losses)
 
         # save first iteration
@@ -141,9 +141,9 @@ if __name__ == "__main__":
     parser.add_argument("--iters", type=int,
                         dest="n_iterations", default=150000,
                         help="number of iterations")
-    parser.add_argument("--alpha", type=float,
-                        dest="alpha", default=70000/128,
-                        help="alpha regularization parameter")
+    parser.add_argument("--prior_lambda", type=float,
+                        dest="prior_lambda", default=70000/128,
+                        help="prior_lambda regularization parameter")
     parser.add_argument("--image_sigma", type=float,
                         dest="image_sigma", default=0.05,
                         help="image noise parameter")

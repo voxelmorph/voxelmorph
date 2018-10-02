@@ -129,7 +129,7 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, use_miccai_int=True, int_steps=7, i
     
     # get unet
     unet_model = unet_core(vol_size, enc_nf, dec_nf, full_size=False)
-    [src,tgt] = unet_model.inputs
+    [src, tgt] = unet_model.inputs
     x_out = unet_model.outputs[-1]
 
     # velocity mean and logsigma layers
