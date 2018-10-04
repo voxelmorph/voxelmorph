@@ -37,7 +37,7 @@ random.shuffle(train_vol_names)  # shuffle volume list
 
 # load atlas from provided files. This atlas is 160x192x224.
 atlas = np.load('../data/atlas_norm.npz')
-atlas_vol = atlas['vol'][np.newaxis,...,np.newaxis]
+atlas_vol = atlas['vol'][np.newaxis, ..., np.newaxis]
 
 
 def train(model_dir, gpu_id, lr, n_iterations, prior_lambda, image_sigma, model_save_iter, batch_size=1):
@@ -56,7 +56,6 @@ def train(model_dir, gpu_id, lr, n_iterations, prior_lambda, image_sigma, model_
     # prepare model folder
     if not os.path.isdir(model_dir):
         os.mkdir(model_dir)
-    print(model_dir)
 
     # gpu handling
     gpu = '/gpu:' + str(gpu_id)
@@ -75,17 +74,19 @@ def train(model_dir, gpu_id, lr, n_iterations, prior_lambda, image_sigma, model_
     # in the experiments, we use image_2 as atlas
     with tf.device(gpu):
         # miccai 2018 used xy indexing. 
-        model = networks.miccai2018_net(vol_size, nf_enc, nf_dec, use_miccai_int=True, indexing='xy')
+        model = networks.miccai2018_net(vol_size, nf_enc, nf_dec)
 
         # compile
-        model_losses = [losses.kl_l2loss(image_sigma), losses.kl_loss(prior_lambda)]
+        loss_class = losses.Miccai2018(image_sigma, prior_lambda)
+        model_losses = [loss_class.recon_loss, loss_class.kl_loss]
         model.compile(optimizer=Adam(lr=lr), loss=model_losses)
 
         # save first iteration
         model.save(os.path.join(model_dir,  str(0) + '.h5'))
     
-    train_example_gen = datagenerators.example_gen(train_vol_names)
-    zeros = np.zeros((1, *vol_size, 3))
+    train_example_gen = datagenerators.example_gen(train_vol_names, batch_size=batch_size)
+    zeros = np.zeros((batch_size, *vol_size, len(vol_size)))
+    atlas_vol_bs = np.repeat(atlas_vol, batch_size, axis=0)
 
     # train. Note: we use train_on_batch and design out own print function as this has enabled 
     # faster development and debugging, but one could also use fit_generator and Keras callbacks.
@@ -95,8 +96,8 @@ def train(model_dir, gpu_id, lr, n_iterations, prior_lambda, image_sigma, model_
         X = next(train_example_gen)[0]        
 
         # train
-        with tf.device(gpu):
-            train_loss = model.train_on_batch([X,atlas_vol], [atlas_vol, zeros])
+        with tf.device(gpu):         
+            train_loss = model.train_on_batch([X, atlas_vol_bs], [atlas_vol_bs, zeros])
 
         if not isinstance(train_loss,list):
             train_loss = [train_loss]
@@ -150,6 +151,9 @@ if __name__ == "__main__":
     parser.add_argument("--checkpoint_iter", type=int,
                         dest="model_save_iter", default=100,
                         help="frequency of model saves")
+    parser.add_argument("--batch_size", type=int,
+                        dest="batch_size", default=1,
+                        help="batch_size")
 
     args = parser.parse_args()
     train(**vars(args))

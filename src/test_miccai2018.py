@@ -55,14 +55,14 @@ def test(gpu_id, model_dir, iter_num,
     # load weights of model
     with tf.device(gpu):
         # if testing miccai run, should be xy indexing.
-        net = networks.miccai2018_net(vol_size, nf_enc,nf_dec, use_miccai_int=True, indexing='xy')  
+        net = networks.miccai2018_net(vol_size, nf_enc, nf_dec, use_miccai_int=False, indexing='ij')  
         net.load_weights(os.path.join(model_dir, str(iter_num) + '.h5'))
 
         # compose diffeomorphic flow output model
         diff_net = keras.models.Model(net.inputs, net.get_layer('diffflow').output)
 
         # NN transfer model
-        nn_trf_model = networks.nn_trf(vol_size)
+        nn_trf_model = networks.nn_trf(vol_size, indexing='ij')
 
     # if CPU, prepare grid
     if compute_type == 'CPU':
