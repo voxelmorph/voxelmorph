@@ -18,7 +18,7 @@ from medipy.metrics import dice
 import datagenerators
 
 
-def test(model_name, iter_num, gpu_id, vol_size=(160,192,224), nf_enc=[16,32,32,32], nf_dec=[32,32,32,32,32,16,16,3]):
+def test(model_name, gpu_id, vol_size=(160,192,224), nf_enc=[16,32,32,32], nf_dec=[32,32,32,32,32,16,16,3]):
 	"""
 	test
 
@@ -29,6 +29,7 @@ def test(model_name, iter_num, gpu_id, vol_size=(160,192,224), nf_enc=[16,32,32,
     """  
 
 	gpu = '/gpu:' + str(gpu_id)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
 
 	# Anatomical labels we want to evaluate
 	labels = sio.loadmat('../data/labels.mat')['labels'][0]
@@ -46,8 +47,8 @@ def test(model_name, iter_num, gpu_id, vol_size=(160,192,224), nf_enc=[16,32,32,
 	# load weights of model
 	with tf.device(gpu):
 		net = networks.unet(vol_size, nf_enc, nf_dec)
-		net.load_weights('../models/' + model_name +
-                         '/' + str(iter_num) + '.h5')
+		# net.load_weights('../models/' + model_name + '/' + str(iter_num) + '.h5')
+		net.load_weights(model_name)
 
 	xx = np.arange(vol_size[1])
 	yy = np.arange(vol_size[0])
@@ -70,4 +71,5 @@ def test(model_name, iter_num, gpu_id, vol_size=(160,192,224), nf_enc=[16,32,32,
 
 
 if __name__ == "__main__":
-	test(sys.argv[1], sys.argv[2], sys.argv[3])
+	# test(sys.argv[1], sys.argv[2], sys.argv[3])
+	test(sys.argv[1], sys.argv[2])
