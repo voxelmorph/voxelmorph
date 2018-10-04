@@ -39,6 +39,7 @@ atlas = np.load('../data/atlas_norm.npz')
 atlas_vol = atlas['vol'][np.newaxis,...,np.newaxis]
 
 
+
 def train(model, model_dir, gpu_id, lr, n_iterations, reg_param, model_save_iter, batch_size=1):
     """
     model training function
@@ -76,7 +77,7 @@ def train(model, model_dir, gpu_id, lr, n_iterations, reg_param, model_save_iter
     # in the experiments, we use image_2 as atlas
     model = networks.unet(vol_size, nf_enc, nf_dec)
     model.compile(optimizer=Adam(lr=lr), 
-                  loss=[losses.cc3D(), losses.gradientLoss('l2')],
+                  loss=[losses.NCC().loss, losses.Grad('l2').loss],
                   loss_weights=[1.0, reg_param])
 
     # if you'd like to initialize the data, you can do it here:
