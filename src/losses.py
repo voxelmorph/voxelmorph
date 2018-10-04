@@ -1,68 +1,69 @@
+"""
+losses for VoxelMorph
+"""
+
 
 # Third party inports
 import tensorflow as tf
 import keras.backend as K
 import numpy as np
 
-# batch_sizexheightxwidthxdepthxchan
 
+def binary_dice(y_true, y_pred):
+    """
+    N-D dice for binary segmentation
+    """
+    ndims = len(y_pred.get_shape().as_list()) - 2
+    vol_axes = 1 + np.range(ndims)
 
-
-
-
-
-def diceLoss(y_true, y_pred):
-    top = 2*tf.reduce_sum(y_true * y_pred, [1, 2, 3])
-    bottom = tf.maximum(tf.reduce_sum(y_true+y_pred, [1, 2, 3]), 1e-5)
+    top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
+    bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
     dice = tf.reduce_mean(top/bottom)
     return -dice
 
 
-def gradientLoss(penalty='l1'):
-    def loss(y_true, y_pred):
-        dy = tf.abs(y_pred[:, 1:, :, :, :] - y_pred[:, :-1, :, :, :])
-        dx = tf.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :])
-        dz = tf.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :])
+class NCC():
+    """
+    local (over window) normalized cross correlation
+    """
 
-        if (penalty == 'l2'):
-            dy = dy * dy
-            dx = dx * dx
-            dz = dz * dz
-        d = tf.reduce_mean(dx)+tf.reduce_mean(dy)+tf.reduce_mean(dz)
-        return d/3.0
-
-    return loss
+    def __init__(self, win=None, eps=1e-5):
+        self.win = win
+        self.eps = eps
 
 
-def gradientLoss2D():
-    def loss(y_true, y_pred):
-        dy = tf.abs(y_pred[:, 1:, :, :] - y_pred[:, :-1, :, :])
-        dx = tf.abs(y_pred[:, :, 1:, :] - y_pred[:, :, :-1, :])
+    def ncc(self, I, J):
+        # get dimension of volume
+        # assumes I, J are sized [batch_size, *vol_shape, nb_feats]
+        ndims = len(I.get_shape().as_list()) - 2
+        assert ndims in [1, 2, 3], "volumes should be 1 to 3 dimensions. found: %d" % ndims
 
-        dy = dy * dy
-        dx = dx * dx
+        # set window size
+        if self.win is None:
+            self.win = [9] * ndims
 
-        d = tf.reduce_mean(dx)+tf.reduce_mean(dy)
-        return d/2.0
+        # get convolution function
+        conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
 
-    return loss
-
-
-def cc3D(win=[9, 9, 9], voxel_weights=None):
-    def loss(I, J):
+        # compute CC squares
         I2 = I*I
         J2 = J*J
         IJ = I*J
 
-        filt = tf.ones([win[0], win[1], win[2], 1, 1])
+        # compute filters
+        sum_filt = tf.ones([*self.win, 1, 1])
+        strides = [1] * (ndims + 2)
+        padding = 'SAME'
 
-        I_sum = tf.nn.conv3d(I, filt, [1, 1, 1, 1, 1], "SAME")
-        J_sum = tf.nn.conv3d(J, filt, [1, 1, 1, 1, 1], "SAME")
-        I2_sum = tf.nn.conv3d(I2, filt, [1, 1, 1, 1, 1], "SAME")
-        J2_sum = tf.nn.conv3d(J2, filt, [1, 1, 1, 1, 1], "SAME")
-        IJ_sum = tf.nn.conv3d(IJ, filt, [1, 1, 1, 1, 1], "SAME")
+        # compute local sums via convolution
+        I_sum = conv_fn(I, sum_filt, strides, padding)
+        J_sum = conv_fn(J, sum_filt, strides, padding)
+        I2_sum = conv_fn(I2, sum_filt, strides, padding)
+        J2_sum = conv_fn(J2, sum_filt, strides, padding)
+        IJ_sum = conv_fn(IJ, sum_filt, strides, padding)
 
-        win_size = win[0]*win[1]*win[2]
+        # compute cross correlation
+        win_size = np.prod(self.win)
         u_I = I_sum/win_size
         u_J = J_sum/win_size
 
@@ -70,102 +71,160 @@ def cc3D(win=[9, 9, 9], voxel_weights=None):
         I_var = I2_sum - 2 * u_I * I_sum + u_I*u_I*win_size
         J_var = J2_sum - 2 * u_J * J_sum + u_J*u_J*win_size
 
-        cc = cross*cross / (I_var*J_var+1e-5)
+        cc = cross*cross / (I_var*J_var + self.eps)
 
-        # if(voxel_weights is not None):
-        #	cc = cc * voxel_weights
+        # return negative cc.
+        return tf.reduce_mean(cc)
 
-        return -1.0*tf.reduce_mean(cc)
-
-    return loss
-
-
-def cc2D(win=[9, 9]):
-    def loss(I, J):
-        I2 = tf.multiply(I, I)
-        J2 = tf.multiply(J, J)
-        IJ = tf.multiply(I, J)
-
-        sum_filter = tf.ones([win[0], win[1], 1, 1])
-
-        I_sum = tf.nn.conv2d(I, sum_filter, [1, 1, 1, 1], "SAME")
-        J_sum = tf.nn.conv2d(J, sum_filter, [1, 1, 1, 1], "SAME")
-        I2_sum = tf.nn.conv2d(I2, sum_filter, [1, 1, 1, 1], "SAME")
-        J2_sum = tf.nn.conv2d(J2, sum_filter, [1, 1, 1, 1], "SAME")
-        IJ_sum = tf.nn.conv2d(IJ, sum_filter, [1, 1, 1, 1], "SAME")
-
-        win_size = win[0]*win[1]
-
-        u_I = I_sum/win_size
-        u_J = J_sum/win_size
-
-        cross = IJ_sum - u_J*I_sum - u_I*J_sum + u_I*u_J*win_size
-        I_var = I2_sum - 2 * u_I * I_sum + u_I*u_I*win_size
-        J_var = J2_sum - 2 * u_J * J_sum + u_J*u_J*win_size
-
-        cc = cross*cross / (I_var*J_var + np.finfo(float).eps)
-        return -1.0*tf.reduce_mean(cc)
-    return loss
+    def loss(self, I, J):
+        return - self.ncc(I, J)
 
 
+class Grad():
+    """
+    N-D gradient loss
+    """
+
+    def __init__(self, penalty='l1'):
+        self.penalty = penalty
+
+    def _diffs(self, y):
+        vol_shape = y.get_shape().as_list()[1:-1]
+        ndims = len(vol_shape)
+
+        df = [None] * ndims
+        for i in range(ndims):
+            d = i + 1
+            # permute dimensions to put the ith dimension first
+            r = [d, *range(d), *range(d + 1, ndims + 2)]
+            y = K.permute_dimensions(y, r)
+            dfi = y[1:, ...] - y[:-1, ...]
+            
+            # permute back
+            # note: this might not be necessary for this loss specifically,
+            # since the results are just summed over anyway.
+            r = [*range(1, d + 1), 0, *range(d + 1, ndims + 2)]
+            df[i] = K.permute_dimensions(dfi, r)
+        
+        return df
+
+    def loss(self, _, y_pred):
+        if self.penalty == 'l1':
+            df = [tf.reduce_mean(tf.abs(f)) for f in self._diffs(y_pred)]
+        else:
+            assert self.penalty == 'l2', 'penalty can only be l1 or l2. Got: %s' % self.penalty
+            df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
+        return tf.add_n(df) / len(df)
 
 
-## Losses for the MICCAI2018 Paper
-def kl_loss(prior_lambda):
-    def loss(_, y_pred):
+class Miccai2018():
+    """
+    N-D main loss for VoxelMorph MICCAI Paper
+    prior matching (KL) term + image matching term
+    """
+
+    def __init__(self, image_sigma, prior_lambda):
+        self.image_sigma = image_sigma
+        self.prior_lambda = prior_lambda
+        self.D = None
+
+
+    def _adj_filt(self, ndims):
+        """
+        compute an adjacency filter that, for each feature independently, 
+        has a '1' in the immediate neighbor, and 0 elsewehre.
+        so for each filter, the filter has 2^ndims 1s.
+        the filter is then setup such that feature i outputs only to feature i
+        """
+
+        # inner filter, that is 3x3x...
+        filt_inner = np.zeros([3] * ndims)
+        for j in range(ndims):
+            o = [[1]] * ndims
+            o[j] = [0, 2]
+            filt_inner[np.ix_(*o)] = 1
+
+        # full filter, that makes sure the inner filter is applied 
+        # ith feature to ith feature
+        filt = np.zeros([3] * ndims + [ndims, ndims])
+        for i in range(ndims):
+            filt[..., i, i] = filt_inner
+                    
+        return filt
+
+
+    def _degree_matrix(self, vol_shape):
+        # get shape stats
+        ndims = len(vol_shape)
+        sz = [*vol_shape, ndims]
+
+        # prepare conv kernel
+        conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
+
+        # prepare tf filter
+        z = K.ones([1] + sz)
+        filt_tf = tf.convert_to_tensor(self._adj_filt(ndims), dtype=tf.float32)
+        strides = [1] * (ndims + 2)
+        return conv_fn(z, filt_tf, strides, "SAME")
+
+
+    def prec_loss(self, y_pred):
+        """
+        a more manual implementation of the precision matrix term
+                mu * P * mu    where    P = D - A
+        where D is the degree matrix and A is the adjacency matrix
+                mu * P * mu = 0.5 * sum_i mu_i sum_j (mu_i - mu_j) = 0.5 * sum_i,j (mu_i - mu_j) ^ 2
+        where j are neighbors of i
+
+        Note: could probably do with a difference filter, 
+        but the edges would be complicated unless tensorflow allowed for edge copying
+        """
+        vol_shape = y_pred.get_shape().as_list()[1:-1]
+        ndims = len(vol_shape)
+        
+        sm = 0
+        for i in range(ndims):
+            d = i + 1
+            # permute dimensions to put the ith dimension first
+            r = [d, *range(d), *range(d + 1, ndims + 2)]
+            y = K.permute_dimensions(y_pred, r)
+            df = y[1:, ...] - y[:-1, ...]
+            sm += K.mean(df * df)
+
+        return 0.5 * sm
+
+
+    def kl_loss(self, _, y_pred):
         """
         KL loss
-        y_pred is assumed to be 6 channels: first 3 for mean, next 3 for logsigma
+        y_pred is assumed to be D*2 channels: first D for mean, next D for logsigma
+        D (number of dimensions) should be 1, 2 or 3
         """
-        mean = y_pred[..., 0:3]
-        log_sigma = y_pred[..., 3:]
 
-        # compute the degree matrix.
-        # TODO: should only compute this once!
-        # z = K.ones((1, ) + vol_size + (3, ))
-        sz = log_sigma.get_shape().as_list()[1:]
-        z = K.ones([1] + sz)
+        # prepare inputs
+        ndims = len(y_pred.get_shape()) - 2
+        mean = y_pred[..., 0:ndims]
+        log_sigma = y_pred[..., ndims:]
+        vol_shape = log_sigma.get_shape().as_list()[1:-1]
 
-        filt = np.zeros((3, 3, 3, 3, 3))
-        for i in range(3):
-            filt[1, 1, [0, 2], i, i] = 1
-            filt[[0, 2], 1, 1, i, i] = 1
-            filt[1, [0, 2], 1, i, i] = 1
-        filt_tf = tf.convert_to_tensor(filt, dtype=tf.float32)
-        D = tf.nn.conv3d(z, filt_tf, [1, 1, 1, 1, 1], "SAME")
-        D = K.expand_dims(D, 0)
+        # compute the degree matrix (only needs to be done once)
+        # we usually can't compute this until we know the ndims, 
+        # which is a function of the data
+        if self.D is None:
+            self.D = self._degree_matrix(vol_shape)
 
-        sigma_terms = (prior_lambda * D * tf.exp(log_sigma) - log_sigma)
+        # sigma terms
+        sigma_term = self.prior_lambda * self.D * tf.exp(log_sigma) - log_sigma
+        sigma_term = K.mean(sigma_term)
 
+        # precision terms
         # note needs 0.5 twice, one here, one below
-        prec_terms = 0.5 * prior_lambda * kl_prec_term_manual(_, mean)
-        kl = 0.5 * tf.reduce_mean(sigma_terms, [1, 2, 3]) + 0.5 * prec_terms
-        return kl
+        prec_term = self.prior_lambda * self.prec_loss(mean)
 
-    return loss
-
-def kl_prec_term_manual(y_true, y_pred):
-    """
-    a more manual implementation of the precision matrix term
-            P = D - A
-            mu * P * mu
-    where D is the degree matrix and A is the adjacency matrix
-            mu * P * mu = sum_i mu_i sum_j (mu_i - mu_j)
-    where j are neighbors of i
-    """
-    dy = y_pred[:,1:,:,:,:] * (y_pred[:,1:,:,:,:] - y_pred[:,:-1,:,:,:])
-    dx = y_pred[:,:,1:,:,:] * (y_pred[:,:,1:,:,:] - y_pred[:,:,:-1,:,:])
-    dz = y_pred[:,:,:,1:,:] * (y_pred[:,:,:,1:,:] - y_pred[:,:,:,:-1,:])
-    dy2 = y_pred[:,:-1,:,:,:] * (y_pred[:,:-1,:,:,:] - y_pred[:,1:,:,:,:])
-    dx2 = y_pred[:,:,:-1,:,:] * (y_pred[:,:,:-1,:,:] - y_pred[:,:,1:,:,:])
-    dz2 = y_pred[:,:,:,:-1,:] * (y_pred[:,:,:,:-1,:] - y_pred[:,:,:,1:,:])
-
-    d = tf.reduce_mean(dx) + tf.reduce_mean(dy) + tf.reduce_mean(dz) + \
-        tf.reduce_mean(dy2) + tf.reduce_mean(dx2) + tf.reduce_mean(dz2)
-    return d
+        # combine terms
+        return 0.5 * ndims * (sigma_term + prec_term) # ndims because we averaged over dimensions as well
 
 
-def kl_l2loss(image_sigma):
-    def loss(y_true, y_pred):
-        return 1. / (image_sigma**2) * K.mean(K.square(y_true - y_pred))
-    return loss
+    def recon_loss(self, y_true, y_pred):
+        """ reconstruction loss """
+        return 1. / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
