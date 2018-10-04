@@ -21,7 +21,6 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
     while True:
         idxes = np.random.randint(len(vol_names), size=batch_size)
 
-
         X_data = []
         for idx in idxes:
             X = np.load(vol_names[idx])['vol_data']
