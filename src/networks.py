@@ -164,7 +164,6 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
         # for the miccai2018 submission, the squaring layer
         # scaling was essentially built in by the network
         # was manually composed of a Transform and and Add Layer.
-        flow = Lambda(lambda x: x, name='flow-fix')(flow)  # remanant of old code
         v = flow
         for _ in range(int_steps):
             v1 = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([v, v])
@@ -173,9 +172,6 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
 
     else:
         # new implementation in neuron is cleaner.
-        # the 2**int_steps is a correcting factor left over from the miccai implementation.
-        # * (2**int_steps)
-        flow = Lambda(lambda x: x, name='flow-fix')(flow)
         flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)       
 
     # get up to final resolution
@@ -234,6 +230,7 @@ def sample(args):
     noise = tf.random_normal(tf.shape(mu), 0, 1, dtype=tf.float32)
     z = mu + tf.exp(log_sigma/2.0) * noise
     return z
+
 
 def interp_upsampling(V):
     """ 
