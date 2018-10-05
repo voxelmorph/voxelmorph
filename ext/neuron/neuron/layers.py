@@ -1,3 +1,21 @@
+"""
+tensorflow/keras utilities for the neuron project
+
+If you use this code, please cite 
+Dalca AV, Guttag J, Sabuncu MR
+Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation, 
+CVPR 2018
+
+or for the transformation/integration functions:
+
+Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
+Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
+MICCAI 2018.
+
+Contact: adalca [at] csail [dot] mit [dot] edu
+License: GPLv3
+"""
+
 # third party
 import numpy as np
 from keras import backend as K
@@ -10,47 +28,6 @@ import tensorflow as tf
 from .utils import transform, integrate_vec, affine_to_shift
 
 
-class VecInt(Layer):
-
-    def __init__(self, indexing='ij', method='ode', int_steps=7, **kwargs):
-        """
-        Vector Integration Layer
-        
-        Parameters:
-            method can be any of the methods in neuron.utils.integrate_vec
-        """
-
-        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
-        self.indexing = indexing
-        self.method = method
-        self.int_steps = int_steps
-        super(self.__class__, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        # confirm built
-        self.built = True
-
-    def call(self, inputs):
-        
-        # prepare location shift
-        loc_shift = inputs
-        if self.indexing == 'xy':  # shift the first two dimensions
-            loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
-            loc_shift_lst = [loc_shift_split[1], loc_shift_split[0], *loc_shift_split[2:]]
-            loc_shift = tf.concat(loc_shift_lst, -1)
-
-        # map transform across batch
-        return tf.map_fn(self._single_int, loc_shift, dtype=tf.float32)
-
-    def _single_int(self, inputs):
-
-        vel = inputs
-        return integrate_vec(vel, method=self.method,
-                      nb_steps=self.int_steps,
-                      ode_args={'rtol':1e-6, 'atol':1e-12},
-                      time_pt=1)
-
-
 class SpatialTransformer(Layer):
     """
     N-D Spatial Transformer Tensorflow / Keras Layer
@@ -61,6 +38,10 @@ class SpatialTransformer(Layer):
     and an affine transform gives the *difference* of the affine matrix from 
     the identity matrix.
 
+    If you find this function useful, please cite:
+      Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
+      Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
+      MICCAI 2018.
 
     Originally, this code was based on voxelmorph code, which 
     was in turn transformed to be dense with the help of (affine) STN code 
@@ -126,9 +107,6 @@ class SpatialTransformer(Layer):
             if trf_shape[-1] != self.ndims:
                 raise Exception('Offset flow field size expected: %d, found: %d' 
                                 % (self.ndims, trf_shape[-1]))
-            # if not trf_shape[:-1] == vol_shape:
-                # raise Exception('flow field size expected' + str(vol_shape) + \
-                                # 'Found:' + str(trf_shape[:-1]))
 
         # confirm built
         self.built = True
@@ -144,11 +122,6 @@ class SpatialTransformer(Layer):
         assert len(inputs) == 2, "inputs has to be len 2, found: %d" % len(inputs)
         vol = inputs[0]
         trf = inputs[1]
-
-        # if not self.is_affine:
-        #     if not all([trf.shape[1:-1][f] == vol.shape[1:-1][f] for f in range(self.ndims)]):
-        #         raise Exception('Shift shape should match vol shape. '
-        #                         'Got: ' + str(trf.shape[1:-1]) + ' and ' + str(vol.shape[1:-1]))
 
         # go from affine
         if self.is_affine:
@@ -167,10 +140,7 @@ class SpatialTransformer(Layer):
         if len(trf.shape) == 1:  # go from vector to matrix
             trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
 
-            # the code below is unnecessary.
-            # zero_one = tf.concat([tf.zeros((1, self.ndims)), tf.ones((1,1))], axis=1)
-            # trf = tf.concat([trf, zero_one], axis=0)
-        # note this is unnecessarily extra graph since at every batch_entry location we have a tf.eye graph
+        # note this is unnecessarily extra graph since at every batch entry we have a tf.eye graph
         trf += tf.eye(self.ndims+1)[:self.ndims,:]  # add identity, hence affine is a shift from identitiy
         return affine_to_shift(trf, volshape, shift_center=True)
 
@@ -178,11 +148,61 @@ class SpatialTransformer(Layer):
         return transform(inputs[0], inputs[1], interp_method=self.interp_method)
 
 
+class VecInt(Layer):
+    """
+    Vector Integration Layer
+
+    Enables vector integration via several methods 
+    (ode or quadrature for time-dependent vector fields, 
+    scaling and squaring for stationary fields)
+
+    If you find this function useful, please cite:
+      Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
+      Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
+      MICCAI 2018.
+    """
+
+    def __init__(self, indexing='ij', method='ode', int_steps=7, **kwargs):
+        """        
+        Parameters:
+            method can be any of the methods in neuron.utils.integrate_vec
+        """
+
+        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
+        self.indexing = indexing
+        self.method = method
+        self.int_steps = int_steps
+        super(self.__class__, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # confirm built
+        self.built = True
+
+    def call(self, inputs):
+        
+        # prepare location shift
+        loc_shift = inputs
+        if self.indexing == 'xy':  # shift the first two dimensions
+            loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
+            loc_shift_lst = [loc_shift_split[1], loc_shift_split[0], *loc_shift_split[2:]]
+            loc_shift = tf.concat(loc_shift_lst, -1)
+
+        # map transform across batch
+        return tf.map_fn(self._single_int, loc_shift, dtype=tf.float32)
+
+    def _single_int(self, inputs):
+
+        vel = inputs
+        return integrate_vec(vel, method=self.method,
+                      nb_steps=self.int_steps,
+                      ode_args={'rtol':1e-6, 'atol':1e-12},
+                      time_pt=1)
+
+
 class LocalBiasLayer(Layer):
     """ 
-    local bias layer
-    
-    A layer with an additive bias at each volume element
+    Local bias layer: each pixel/voxel has its own bias operation (one parameter)
+    out[v] = in[v] + b
     """
 
     def __init__(self, my_initializer='RandomNormal', **kwargs):
@@ -206,7 +226,8 @@ class LocalBiasLayer(Layer):
 
 class LocalLinearLayer(Layer):
     """ 
-    local linear layer
+    Local linear layer: each pixel/voxel has its own linear operation (two parameters)
+    out[v] = a * in[v] + b
     """
 
     def __init__(self, my_initializer='RandomNormal', **kwargs):

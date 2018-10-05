@@ -1,8 +1,15 @@
 """
-Keras CNN models
+tensorflow/keras utilities for the neuron project
 
-Tested on keras 2.0
+If you use this code, please cite 
+Dalca AV, Guttag J, Sabuncu MR
+Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation, 
+CVPR 2018
+
+Contact: adalca [at] csail [dot] mit [dot] edu
+License: GPLv3
 """
+
 import sys
 
 from . import layers
@@ -202,7 +209,7 @@ def ae(nb_features,
     model_name = name
 
     # volume size data
-    ndims = len(input_shape)
+    ndims = len(input_shape) - 1
     if isinstance(pool_size, int):
         pool_size = (pool_size,) * ndims
 

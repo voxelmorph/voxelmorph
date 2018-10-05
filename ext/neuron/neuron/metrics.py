@@ -1,8 +1,13 @@
 """
-custom metrics for the neuron project
-This module is currently very experimental...
+tensorflow/keras utilities for the neuron project
 
-contact: adalca@csail.mit.edu
+If you use this code, please cite 
+Dalca AV, Guttag J, Sabuncu MR
+Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation, 
+CVPR 2018
+
+Contact: adalca [at] csail [dot] mit [dot] edu
+License: GPLv3
 """
 
 import sys

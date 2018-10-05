@@ -1,10 +1,20 @@
-''' plot tools for the neuron project '''
+"""
+tensorflow/keras plot utilities for the neuron project
+
+If you use this code, please cite 
+Dalca AV, Guttag J, Sabuncu MR
+Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation, 
+CVPR 2018
+
+Contact: adalca [at] csail [dot] mit [dot] edu
+License: GPLv3
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable # plotting
 
-def slices(slices_in,              # the 2D slices
+def slices(slices_in,           # the 2D slices
            titles=None,         # list of titles
            cmaps=None,          # list of colormaps
            norms=None,          # list of normalizations
@@ -67,6 +77,8 @@ def slices(slices_in,              # the 2D slices
         # some cleanup
         if titles is not None:
             ax.title.set_text(titles[i])
+        else:
+            ax.title.set_text('')
 
         # show figure
         im_ax = ax.imshow(slices_in[i], cmap=cmaps[i], interpolation="nearest", norm=norms[i], **imshow_args[i])
@@ -77,6 +89,17 @@ def slices(slices_in,              # the 2D slices
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
             fig.colorbar(im_ax, cax=cax)
+    
+    # clear axes that are unnecessary
+    for i in range(nb_plots, col*row):
+        col = np.remainder(i, cols)
+        row = np.floor(i/cols).astype(int)
+
+        # get row and column axes
+        row_axs = axs if rows == 1 else axs[row]
+        ax = row_axs[col]
+
+        ax.axis('off')
 
     # show the plots
     fig.set_size_inches(width, rows/cols*width)
