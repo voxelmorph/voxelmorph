@@ -1,9 +1,10 @@
 # voxelmorph
 Unsupervised Learning with CNNs for Image Registration  
-We incorporate several variants, presented at CVPR2018 (initial unsupervised learning) and MICCAI2018   (probabilistic & diffeomorphic)
+This repository incorporates several variants, first presented at CVPR2018 (initial unsupervised learning) and then MICCAI2018  (probabilistic & diffeomorphic formulation)
 
 ## Instructions
 
+### Setup
 It might be useful to have each folder inside the `ext` folder on your python path. 
 assuming voxelmorph is setup at `/path/to/voxelmorph/`:
 
@@ -11,31 +12,44 @@ assuming voxelmorph is setup at `/path/to/voxelmorph/`:
 export PYTHONPATH=$PYTHONPATH:/path/to/voxelmorph/ext/neuron/:/path/to/voxelmorph/ext/pynd-lib/:/path/to/voxelmorph/ext/pytools-lib/
 ```
 
-### Training:
-These instructions are for the MICCAI2018 paper. If you'd like the CVPR version (no diffeomorphism or uncertainty measures and using CC) use train.py
+You will likely need to write some of the data loading code in 
+'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
+
+
+### Training
+These instructions are for the MICCAI2018 variant using `train_miccai2018.py`.  
+If you'd like to run the CVPR version (no diffeomorphism or uncertainty measures, and using CC as a loss function) use `train.py`
 
 1. Change the top parameters in `train_miccai2018.py` to the location of your image files.
-2. Run `train_miccai2018.py` with options described in the main function. Example:  
+2. Run `train_miccai2018.py` with options described in the main function at the bottom of the file. Example:  
 ```
-train_miccai2018.py --gpu 0 --model_dir /my/path/to/models 
+train_miccai2018.py --gpu 0 --model_dir /my/path/to/save/models 
 ```
 
-### Testing (measuring Dice scores):
+We provide a T1 brain atlas used in our papers at `data/atlas_norm.npz`.
+
+### Testing (measuring Dice scores)
 1. Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
-2. Run `test_miccai2018.py` [gpu-id] [model_dir] [iter-num]
+2. Run `python test_miccai2018.py [gpu-id] [model_dir] [iter-num]`
 
 
-## Notes
+### Parameter choices
 
-- We provide a T1 atlas used in our papers at data/atlas_norm.npz.
+#### CVPR version
+For the CC loss function, we found a reg parameter of 1 to work best. For the MSE loss function, we found 0.01 to work best.
+
+#### MICCAI version
+
+For our data, we found `image_sigma=0.01` and `prior_lambda=25` to work best.
+
+In the original MICCAI code, the parameters were applied after the scaling of the velocity field. With the newest code, this has been "fixed", with different default parameters reflecting the change. We recommend running the updated code. However, if you'd like to run the very original MICCAI2018 mode, please use `xy` indexing and `use_miccai_int` network option, with MICCAI2018 parameters.
+
+
+### Spatial Transforms and Integration
 
 - The spatial transform code, found at [`neuron.layers.SpatialTransform`](https://github.com/adalca/neuron/blob/master/neuron/layers.py), accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are now emphasizing `ij` indexing.
 
 - For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
-
-- You will likely need to write some of the data loading code in 
-'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
-
 
 
 ## Papers
