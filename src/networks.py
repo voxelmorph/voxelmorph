@@ -85,7 +85,7 @@ def unet_core(vol_size, enc_nf, dec_nf, full_size=True):
     return Model(inputs=[src, tgt], outputs=[x])
 
 
-def unet(vol_size, enc_nf, dec_nf, full_size=True):
+def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
     """
     unet architecture for voxelmorph models presented in the CVPR 2018 paper. 
     You may need to modify this code (e.g., number of layers) to suit your project needs.
@@ -110,7 +110,7 @@ def unet(vol_size, enc_nf, dec_nf, full_size=True):
                   kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5))(x)
 
     # warp the source with the flow
-    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing='xy')([src, flow])
+    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
     # prepare model
     model = Model(inputs=[src, tgt], outputs=[y, flow])
     return model
