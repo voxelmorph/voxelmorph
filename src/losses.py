@@ -218,7 +218,7 @@ class Miccai2018():
         sigma_term = K.mean(sigma_term)
 
         # precision terms
-        # note needs 0.5 twice, one here, one below
+        # note needs 0.5 twice, one here (inside self.prec_loss), one below
         prec_term = self.prior_lambda * self.prec_loss(mean)
 
         # combine terms
