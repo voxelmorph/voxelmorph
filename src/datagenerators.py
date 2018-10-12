@@ -1,3 +1,11 @@
+"""
+data generators for VoxelMorph
+
+for the CVPR and MICCAI papers, we have data arranged in train/validate/test folders
+inside each folder is a /vols/ and a /asegs/ folder with the volumes
+and segmentations. All of our papers use npz formated data.
+"""
+
 import os
 import numpy as np
 
@@ -48,3 +56,20 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
         # print vol_names[idx] + "," + seg_dir + name[0:-8]+'aseg.npz'
 
         yield tuple(return_vals)
+
+
+def cvpr2018_gen(gen, atlas_vol_bs, batch_size=1):
+    """ generator used for cvpr 2018 """
+    volshape = atlas_vol_bs.shape[1:-1]
+    zeros = np.zeros((batch_size, *volshape, len(volshape)))
+    while True:
+        X = next(gen)[0]
+        yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
+
+def miccai2018_gen(gen, atlas_vol_bs, batch_size=1):
+    """ generator used for miccai 2018 """
+    volshape = atlas_vol_bs.shape[1:-1]
+    zeros = np.zeros((batch_size, *volshape, len(volshape)))
+    while True:
+        X = next(gen)[0]
+        yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
