@@ -38,8 +38,10 @@ def dice(vol1, vol2, labels=None, nargout=1):
 
     dicem = np.zeros(len(labels))
     for idx, lab in enumerate(labels):
-        top = 2 * np.sum(np.logical_and(vol1 == lab, vol2 == lab))
-        bottom = np.sum(vol1 == lab) + np.sum(vol2 == lab)
+        vol1l = vol1 == lab
+        vol2l = vol2 == lab
+        top = 2 * np.sum(np.logical_and(vol1l, vol2l))
+        bottom = np.sum(vol1l) + np.sum(vol2l)
         bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon.
         dicem[idx] = top / bottom
 
