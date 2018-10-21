@@ -66,10 +66,14 @@ def cvpr2018_gen(gen, atlas_vol_bs, batch_size=1):
         X = next(gen)[0]
         yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
 
-def miccai2018_gen(gen, atlas_vol_bs, batch_size=1):
+
+def miccai2018_gen(gen, atlas_vol_bs, batch_size=1, bidir=False):
     """ generator used for miccai 2018 """
     volshape = atlas_vol_bs.shape[1:-1]
     zeros = np.zeros((batch_size, *volshape, len(volshape)))
     while True:
         X = next(gen)[0]
-        yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
+        if bidir:
+            yield ([X, atlas_vol_bs], [atlas_vol_bs, X, zeros])
+        else:
+            yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
