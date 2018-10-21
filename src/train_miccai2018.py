@@ -34,6 +34,7 @@ def train(data_dir,
           steps_per_epoch,
           batch_size,
           load_model_file,
+          bidir,
           initial_epoch=0):
     """
     model training function
@@ -48,6 +49,7 @@ def train(data_dir,
     :param steps_per_epoch: frequency with which to save models
     :param batch_size: Optional, default of 1. can be larger, depends on GPU memory and volume size
     :param load_model_file: optional h5 model file to initialize with
+    :param bidir: logical whether to use bidirectional cost function
     """
     
     # load atlas from provided files. The atlas we used is 160x192x224.
@@ -81,7 +83,7 @@ def train(data_dir,
     with tf.device(gpu):
         # the MICCAI201 model takes in [image_1, image_2] and outputs [warped_image_1, velocity_stats]
         # in these experiments, we use image_2 as atlas
-        model = networks.miccai2018_net(vol_size, nf_enc, nf_dec)
+        model = networks.miccai2018_net(vol_size, nf_enc, nf_dec, bidir=bidir)
 
         # load initial weights
         if load_model_file is not None:
@@ -92,13 +94,19 @@ def train(data_dir,
 
         # compile
         loss_class = losses.Miccai2018(image_sigma, prior_lambda)
-        model_losses = [loss_class.recon_loss, loss_class.kl_loss]
-        model.compile(optimizer=Adam(lr=lr), loss=model_losses)
+        if bidir:
+            model_losses = [loss_class.recon_loss, loss_class.recon_loss, loss_class.kl_loss]
+            loss_weights = [0.5, 0.5, 1]
+        else:
+            model_losses = [loss_class.recon_loss, loss_class.kl_loss]
+            loss_weights = [1, 1]
+        model.compile(optimizer=Adam(lr=lr), loss=model_losses, loss_weights=loss_weights)
     
     # data generator
     train_example_gen = datagenerators.example_gen(train_vol_names, batch_size=batch_size)
     atlas_vol_bs = np.repeat(atlas_vol, batch_size, axis=0)
-    miccai2018_gen = datagenerators.miccai2018_gen(train_example_gen, atlas_vol_bs, batch_size=batch_size)
+    miccai2018_gen = datagenerators.miccai2018_gen(train_example_gen, atlas_vol_bs,
+                                                   batch_size=batch_size, bidir=bidir)
 
     # prepare callbacks
     save_file_name = os.path.join(model_dir, '{epoch:02d}.h5')
@@ -148,6 +156,12 @@ if __name__ == "__main__":
     parser.add_argument("--load_model_file", type=str,
                         dest="load_model_file", default='../models/miccai2018_10_02_init1.h5',
                         help="optional h5 model file to initialize with")
+    parser.add_argument("--bidir", type=int,
+                        dest="bidir", default=0,
+                        help="whether to use bidirectional cost function")
+    parser.add_argument("--initial_epoch", type=int,
+                        dest="initial_epoch", default=0,
+                        help="first epoch")
 
     args = parser.parse_args()
     train(**vars(args))
