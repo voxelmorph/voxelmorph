@@ -116,7 +116,7 @@ def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
     return model
 
 
-def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, indexing='ij'):
+def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, indexing='ij', bidir=False):
     """
     architecture for probabilistic diffeomoprhic VoxelMorph presented in the MICCAI 2018 paper. 
     You may need to modify this code (e.g., number of layers) to suit your project needs.
@@ -172,17 +172,29 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
 
     else:
         # new implementation in neuron is cleaner.
-        flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)       
+        z_sample = flow
+        flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(z_sample)
+        if bidir:
+            rev_z_sample = Lambda(lambda x: -x)(z_sample)
+            neg_flow = nrn_layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(rev_z_sample)
 
     # get up to final resolution
     flow = Lambda(interp_upsampling, output_shape=vol_size + (ndims,), name='pre_diffflow')(flow)
     flow = Lambda(lambda arg: arg*2, name='diffflow')(flow)
 
+    if bidir:
+        neg_flow = Lambda(interp_upsampling, output_shape=vol_size + (ndims,), name='neg_pre_diffflow')(neg_flow)
+        neg_flow = Lambda(lambda arg: arg*2, name='neg_diffflow')(neg_flow)
+
     # transform
     y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
+    if bidir:
+        y_tgt = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([tgt, neg_flow])
 
     # prepare outputs and losses
     outputs = [y, flow_params]
+    if bidir:
+        outputs = [y, y_tgt, flow_params]
 
     # build the model
     return Model(inputs=[src, tgt], outputs=outputs)
