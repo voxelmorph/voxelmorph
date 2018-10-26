@@ -68,8 +68,12 @@ def train(data_dir,
     nf_enc = [16, 32, 32, 32]
     if model == 'vm1':
         nf_dec = [32, 32, 32, 32, 8, 8]
-    else:
+    elif model == 'vm2':
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
+    else:
+        nf_enc = [f*2 for f in nf_enc]
+        nf_dec = [f*2 for f in [32, 32, 32, 32, 32, 16, 16]]
+
 
     assert data_loss in ['mse', 'cc'], 'Loss should be one of mse or cc, found %s' % data_loss
     if data_loss == 'ncc':
@@ -98,7 +102,7 @@ def train(data_dir,
                       loss_weights=[1.0, reg_param])
 
         # load initial weights
-        if load_model_file is not None:
+        if load_model_file is not None and len(load_model_file) > 0:
             print('loading', load_model_file)
             model.load_weights(load_model_file)
 
@@ -146,7 +150,7 @@ if __name__ == "__main__":
                         dest="nb_epochs", default=1500,
                         help="number of iterations")
     parser.add_argument("--lambda", type=float,
-                        dest="reg_param", default=1.0,  # recommend 1.0 for ncc, 0.01 for mse
+                        dest="reg_param", default=0.01,  # recommend 1.0 for ncc, 0.01 for mse
                         help="regularization parameter")
     parser.add_argument("--steps_per_epoch", type=int,
                         dest="steps_per_epoch", default=100,
