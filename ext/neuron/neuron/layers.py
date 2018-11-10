@@ -61,6 +61,7 @@ class SpatialTransformer(Layer):
         """
         self.interp_method = interp_method
         self.ndims = None
+        self.inshape = None
 
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
@@ -83,9 +84,11 @@ class SpatialTransformer(Layer):
         if len(input_shape) > 2:
             raise Exception('Spatial Transformer must be called on a list of length 2.'
                             'First argument is the image, second is the transform.')
+        
 
         # set up number of dimensions
         self.ndims = len(input_shape[0]) - 2
+        self.inshape = input_shape
         vol_shape = input_shape[0][1:-1]
         trf_shape = input_shape[1][1:]
 
@@ -123,6 +126,10 @@ class SpatialTransformer(Layer):
         vol = inputs[0]
         trf = inputs[1]
 
+        # necessary for multi_gpu models...
+        vol = K.reshape(vol, [-1, *self.inshape[0][1:]])
+        trf = K.reshape(trf, [-1, *self.inshape[1][1:]])
+
         # go from affine
         if self.is_affine:
             trf = tf.map_fn(lambda x: self._single_aff_to_shift(x, vol.shape[1:-1]), trf, dtype=tf.float32)
@@ -134,7 +141,7 @@ class SpatialTransformer(Layer):
             trf = tf.concat(trf_lst, -1)
 
         # map transform across batch
-        return tf.map_fn(self._single_transform, [inputs[0], trf], dtype=tf.float32)
+        return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
 
     def _single_aff_to_shift(self, trf, volshape):
         if len(trf.shape) == 1:  # go from vector to matrix
@@ -172,16 +179,21 @@ class VecInt(Layer):
         self.indexing = indexing
         self.method = method
         self.int_steps = int_steps
+        self.inshape = None
         super(self.__class__, self).__init__(**kwargs)
 
     def build(self, input_shape):
         # confirm built
         self.built = True
+        self.inshape = input_shape
 
     def call(self, inputs):
+        loc_shift = inputs
+
+        # necessary for multi_gpu models...
+        loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
         
         # prepare location shift
-        loc_shift = inputs
         if self.indexing == 'xy':  # shift the first two dimensions
             loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
             loc_shift_lst = [loc_shift_split[1], loc_shift_split[0], *loc_shift_split[2:]]
@@ -205,8 +217,9 @@ class LocalBiasLayer(Layer):
     out[v] = in[v] + b
     """
 
-    def __init__(self, my_initializer='RandomNormal', **kwargs):
+    def __init__(self, my_initializer='RandomNormal', biasmult=1.0, **kwargs):
         self.initializer = my_initializer
+        self.biasmult = biasmult
         super(LocalBiasLayer, self).__init__(**kwargs)
 
     def build(self, input_shape):
@@ -218,7 +231,7 @@ class LocalBiasLayer(Layer):
         super(LocalBiasLayer, self).build(input_shape)  # Be sure to call this somewhere!
 
     def call(self, x):
-        return x + self.kernel  # weights are difference from input
+        return x + self.kernel * self.biasmult  # weights are difference from input
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -257,8 +270,6 @@ class LocallyConnected3D(Layer):
     """
     code based on LocallyConnected3D from keras layers:
     https://github.com/keras-team/keras/blob/master/keras/layers/local.py
-
-    # TODO: Comment better. Right now we have the comments from the 3D version from keras.
 
     Locally-connected layer for 3D inputs.
     The `LocallyConnected3D` layer works similarly
