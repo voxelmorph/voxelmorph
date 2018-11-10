@@ -191,7 +191,7 @@ class Miccai2018():
             df = y[1:, ...] - y[:-1, ...]
             sm += K.mean(df * df)
 
-        return 0.5 * sm
+        return 0.5 * sm / ndims
 
 
     def kl_loss(self, _, y_pred):
