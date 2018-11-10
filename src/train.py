@@ -75,6 +75,7 @@ def train(data_dir,
         nf_dec = [f*2 for f in [32, 32, 32, 32, 32, 16, 16]]
 
 
+
     assert data_loss in ['mse', 'cc'], 'Loss should be one of mse or cc, found %s' % data_loss
     if data_loss == 'ncc':
         data_loss = losses.NCC().loss        
@@ -102,7 +103,7 @@ def train(data_dir,
                       loss_weights=[1.0, reg_param])
 
         # load initial weights
-        if load_model_file is not None and len(load_model_file) > 0:
+        if load_model_file is not None:
             print('loading', load_model_file)
             model.load_weights(load_model_file)
 
