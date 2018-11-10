@@ -540,7 +540,7 @@ def meshgrid(*args, **kwargs):
     
 
 
-def gaussian_kernel(sigma, windowsize=None):
+def gaussian_kernel(sigma, windowsize=None, indexing='ij'):
     """
     sigma will be a number of a list of numbers.
 
@@ -576,8 +576,8 @@ def gaussian_kernel(sigma, windowsize=None):
 
     # list of volume ndgrid
     # N-long list, each entry of shape volshape
-    mesh = volshape_to_meshgrid(windowsize)  
-    mesh = tf.cast(mesh, 'float32')
+    mesh = volshape_to_meshgrid(windowsize, indexing=indexing)  
+    mesh = [tf.cast(f, 'float32') for f in mesh]
 
     # compute independent gaussians
     diff = [mesh[f] - mid[f] for f in range(len(windowsize))]
@@ -591,7 +591,6 @@ def gaussian_kernel(sigma, windowsize=None):
     g /= tf.reduce_sum(g)
 
     return g
-
 
 
 
