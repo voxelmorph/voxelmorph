@@ -123,10 +123,11 @@ class Miccai2018():
     prior matching (KL) term + image matching term
     """
 
-    def __init__(self, image_sigma, prior_lambda):
+    def __init__(self, image_sigma, prior_lambda, flow_vol_shape=None):
         self.image_sigma = image_sigma
         self.prior_lambda = prior_lambda
         self.D = None
+        self.flow_vol_shape = flow_vol_shape
 
 
     def _adj_filt(self, ndims):
@@ -194,24 +195,28 @@ class Miccai2018():
         return 0.5 * sm / ndims
 
 
-    def kl_loss(self, _, y_pred):
+    def kl_loss(self, y_true, y_pred):
         """
         KL loss
         y_pred is assumed to be D*2 channels: first D for mean, next D for logsigma
         D (number of dimensions) should be 1, 2 or 3
+
+        y_true is only used to get the shape
         """
 
         # prepare inputs
         ndims = len(y_pred.get_shape()) - 2
         mean = y_pred[..., 0:ndims]
         log_sigma = y_pred[..., ndims:]
-        vol_shape = log_sigma.get_shape().as_list()[1:-1]
+        if self.flow_vol_shape is None:
+            # Note: this might not work in multi_gpu mode if vol_shape is not apriori passed in
+            self.flow_vol_shape = y_true.get_shape().as_list()[1:-1]
 
         # compute the degree matrix (only needs to be done once)
         # we usually can't compute this until we know the ndims, 
         # which is a function of the data
         if self.D is None:
-            self.D = self._degree_matrix(vol_shape)
+            self.D = self._degree_matrix(self.flow_vol_shape)
 
         # sigma terms
         sigma_term = self.prior_lambda * self.D * tf.exp(log_sigma) - log_sigma

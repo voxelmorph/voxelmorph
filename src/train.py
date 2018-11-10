@@ -15,11 +15,15 @@ import numpy as np
 from keras.backend.tensorflow_backend import set_session
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
+from keras.utils import multi_gpu_model 
 
 # project imports
 import datagenerators
 import networks
 import losses
+
+sys.path.append('../ext/neuron')
+import neuron.callbacks as nrn_gen
 
 
 def train(data_dir,
@@ -59,7 +63,6 @@ def train(data_dir,
     # inside each folder is a /vols/ and a /asegs/ folder with the volumes
     # and segmentations. All of our papers use npz formated data.
     train_vol_names = glob.glob(os.path.join(data_dir, '*.npz'))
-    print(data_dir)
     random.shuffle(train_vol_names)  # shuffle volume list
     assert len(train_vol_names) > 0, "Could not find any training data"
 
@@ -70,14 +73,12 @@ def train(data_dir,
         nf_dec = [32, 32, 32, 32, 8, 8]
     elif model == 'vm2':
         nf_dec = [32, 32, 32, 32, 32, 16, 16]
-    else:
+    else: # 'vm2double': 
         nf_enc = [f*2 for f in nf_enc]
         nf_dec = [f*2 for f in [32, 32, 32, 32, 32, 16, 16]]
 
-
-
-    assert data_loss in ['mse', 'cc'], 'Loss should be one of mse or cc, found %s' % data_loss
-    if data_loss == 'ncc':
+    assert data_loss in ['mse', 'cc', 'ncc'], 'Loss should be one of mse or cc, found %s' % data_loss
+    if data_loss in ['ncc', 'cc']:
         data_loss = losses.NCC().loss        
 
     # prepare model folder
@@ -85,8 +86,8 @@ def train(data_dir,
         os.mkdir(model_dir)
 
     # GPU handling
-    gpu = '/gpu:' + str(gpu_id)
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    gpu = '/gpu:%d' % 0 # gpu_id
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
@@ -98,9 +99,6 @@ def train(data_dir,
         # in the CVPR layout, the model takes in [image_1, image_2] and outputs [warped_image_1, flow]
         # in the experiments, we use image_2 as atlas
         model = networks.cvpr2018_net(vol_size, nf_enc, nf_dec)
-        model.compile(optimizer=Adam(lr=lr), 
-                      loss=[data_loss, losses.Grad('l2').loss],
-                      loss_weights=[1.0, reg_param])
 
         # load initial weights
         if load_model_file is not None:
@@ -111,22 +109,43 @@ def train(data_dir,
         model.save(os.path.join(model_dir, '%02d.h5' % initial_epoch))
 
     # data generator
+    nb_gpus = len(gpu_id.split(','))
+    assert np.mod(batch_size, nb_gpus) == 0, \
+        'batch_size should be a multiple of the nr. of gpus. ' + \
+        'Got batch_size %d, %d gpus' % (batch_size, nb_gpus)
+
     train_example_gen = datagenerators.example_gen(train_vol_names, batch_size=batch_size)
     atlas_vol_bs = np.repeat(atlas_vol, batch_size, axis=0)
     cvpr2018_gen = datagenerators.cvpr2018_gen(train_example_gen, atlas_vol_bs, batch_size=batch_size)
 
     # prepare callbacks
     save_file_name = os.path.join(model_dir, '{epoch:02d}.h5')
-    save_callback = ModelCheckpoint(save_file_name)
 
     # fit generator
     with tf.device(gpu):
-        model.fit_generator(cvpr2018_gen, 
-                            initial_epoch=initial_epoch,
-                            epochs=nb_epochs,
-                            callbacks=[save_callback],
-                            steps_per_epoch=steps_per_epoch,
-                            verbose=1)
+
+        # multi-gpu support
+        if nb_gpus > 1:
+            save_callback = nrn_gen.ModelCheckpointParallel(save_file_name)
+            mg_model = multi_gpu_model(model, gpus=nb_gpus)
+        
+        # single-gpu
+        else:
+            save_callback = ModelCheckpoint(save_file_name)
+            mg_model = model
+
+        # compile
+        mg_model.compile(optimizer=Adam(lr=lr), 
+                         loss=[data_loss, losses.Grad('l2').loss],
+                         loss_weights=[1.0, reg_param])
+            
+        # fit
+        mg_model.fit_generator(cvpr2018_gen, 
+                               initial_epoch=initial_epoch,
+                               epochs=nb_epochs,
+                               callbacks=[save_callback],
+                               steps_per_epoch=steps_per_epoch,
+                               verbose=1)
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -138,13 +157,13 @@ if __name__ == "__main__":
                         dest="atlas_file", default='../data/atlas_norm.npz',
                         help="gpu id number")
     parser.add_argument("--model", type=str, dest="model",
-                        choices=['vm1', 'vm2'], default='vm2',
+                        choices=['vm1', 'vm2', 'vm2double'], default='vm2',
                         help="Voxelmorph-1 or 2")
     parser.add_argument("--model_dir", type=str,
                         dest="model_dir", default='../models/',
                         help="models folder")
-    parser.add_argument("--gpu", type=int, default=0,
-                        dest="gpu_id", help="gpu id number")
+    parser.add_argument("--gpu", type=str, default=0,
+                        dest="gpu_id", help="gpu id number (or numbers separated by comma)")
     parser.add_argument("--lr", type=float,
                         dest="lr", default=1e-4, help="learning rate")
     parser.add_argument("--epochs", type=int,

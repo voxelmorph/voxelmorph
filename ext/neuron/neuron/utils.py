@@ -165,7 +165,7 @@ def sub2ind(siz, subs, **kwargs):
     assumes column-order major
     """
     # subs is a list
-    assert len(siz) == len(subs)
+    assert len(siz) == len(subs), 'found inconsistent siz and subs: %d %d' % (len(siz), len(subs))
 
     k = np.cumprod(siz[::-1])
 
