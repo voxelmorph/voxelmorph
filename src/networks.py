@@ -258,4 +258,3 @@ def interp_upsampling(V):
     # V = nrn_utils.transform(V, offset)
     V = nrn_layers.SpatialTransformer(interp_method='linear')([V, offset])
     return V
-
