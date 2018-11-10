@@ -16,11 +16,15 @@ import numpy as np
 from keras.backend.tensorflow_backend import set_session
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
+from keras.utils import multi_gpu_model 
 
 # project imports
 import datagenerators
 import networks
 import losses
+
+sys.path.append('../ext/neuron')
+import neuron.callbacks as nrn_gen
 
 
 def train(data_dir,
@@ -72,8 +76,8 @@ def train(data_dir,
         os.mkdir(model_dir)
 
     # gpu handling
-    gpu = '/gpu:' + str(gpu_id)
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    gpu = '/gpu:%d' % 0 # gpu_id
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
     config.allow_soft_placement = True
@@ -93,33 +97,53 @@ def train(data_dir,
         model.save(os.path.join(model_dir, '%02d.h5' % initial_epoch))
 
         # compile
-        loss_class = losses.Miccai2018(image_sigma, prior_lambda)
+        # note: best to supply vol_shape here than to let tf figure it out.
+        flow_vol_shape = model.outputs[-1].shape[1:-1]
+        loss_class = losses.Miccai2018(image_sigma, prior_lambda, flow_vol_shape=flow_vol_shape)
         if bidir:
             model_losses = [loss_class.recon_loss, loss_class.recon_loss, loss_class.kl_loss]
             loss_weights = [0.5, 0.5, 1]
         else:
             model_losses = [loss_class.recon_loss, loss_class.kl_loss]
             loss_weights = [1, 1]
-        model.compile(optimizer=Adam(lr=lr), loss=model_losses, loss_weights=loss_weights)
+        
     
     # data generator
+    nb_gpus = len(gpu_id.split(','))
+    assert np.mod(batch_size, nb_gpus) == 0, \
+        'batch_size should be a multiple of the nr. of gpus. ' + \
+        'Got batch_size %d, %d gpus' % (batch_size, nb_gpus)
+
     train_example_gen = datagenerators.example_gen(train_vol_names, batch_size=batch_size)
     atlas_vol_bs = np.repeat(atlas_vol, batch_size, axis=0)
-    miccai2018_gen = datagenerators.miccai2018_gen(train_example_gen, atlas_vol_bs,
-                                                   batch_size=batch_size, bidir=bidir)
+    miccai2018_gen = datagenerators.miccai2018_gen(train_example_gen,
+                                                   atlas_vol_bs,
+                                                   batch_size=batch_size,
+                                                   bidir=bidir)
 
     # prepare callbacks
     save_file_name = os.path.join(model_dir, '{epoch:02d}.h5')
-    save_callback = ModelCheckpoint(save_file_name)
 
     # fit generator
     with tf.device(gpu):
-        model.fit_generator(miccai2018_gen, 
-                            initial_epoch=initial_epoch,
-                            epochs=nb_epochs,
-                            callbacks=[save_callback],
-                            steps_per_epoch=steps_per_epoch,
-                            verbose=1)
+
+        # multi-gpu support
+        if nb_gpus > 1:
+            save_callback = nrn_gen.ModelCheckpointParallel(save_file_name)
+            mg_model = multi_gpu_model(model, gpus=nb_gpus)
+        
+        # single gpu
+        else:
+            save_callback = ModelCheckpoint(save_file_name)
+            mg_model = model
+
+        mg_model.compile(optimizer=Adam(lr=lr), loss=model_losses, loss_weights=loss_weights)
+        mg_model.fit_generator(miccai2018_gen, 
+                               initial_epoch=initial_epoch,
+                               epochs=nb_epochs,
+                               callbacks=[save_callback],
+                               steps_per_epoch=steps_per_epoch,
+                               verbose=1)
 
 
 if __name__ == "__main__":
@@ -134,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_dir", type=str,
                         dest="model_dir", default='../models/',
                         help="models folder")
-    parser.add_argument("--gpu", type=int, default=0,
+    parser.add_argument("--gpu", type=str, default=0,
                         dest="gpu_id", help="gpu id number")
     parser.add_argument("--lr", type=float,
                         dest="lr", default=1e-4, help="learning rate")
