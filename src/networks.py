@@ -14,6 +14,7 @@ import numpy as np
 import keras.backend as K
 from keras.models import Model
 import keras.layers as KL
+from keras.layers import Layer
 from keras.layers import Conv3D, Activation, Input, UpSampling3D, concatenate
 from keras.layers import LeakyReLU, Reshape, Lambda
 from keras.initializers import RandomNormal
@@ -116,7 +117,7 @@ def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
     return model
 
 
-def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, indexing='ij', bidir=False):
+def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, indexing='ij', bidir=False, vel_resize=1/2):
     """
     architecture for probabilistic diffeomoprhic VoxelMorph presented in the MICCAI 2018 paper. 
     You may need to modify this code (e.g., number of layers) to suit your project needs.
@@ -157,7 +158,7 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
     flow_params = concatenate([flow_mean, flow_log_sigma])
 
     # velocity sample
-    flow = Lambda(sample, name="z_sample")([flow_mean, flow_log_sigma])
+    flow = Sample(name="z_sample")([flow_mean, flow_log_sigma])
 
     # integrate if diffeomorphic (i.e. treating 'flow' above as stationary velocity field)
     if use_miccai_int:
@@ -175,16 +176,14 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
         z_sample = flow
         flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(z_sample)
         if bidir:
-            rev_z_sample = Lambda(lambda x: -x)(z_sample)
+            rev_z_sample = Negate()(z_sample)
             neg_flow = nrn_layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(rev_z_sample)
 
     # get up to final resolution
-    flow = Lambda(interp_upsampling, output_shape=vol_size + (ndims,), name='pre_diffflow')(flow)
-    flow = Lambda(lambda arg: arg*2, name='diffflow')(flow)
+    flow = trf_resize(flow, vel_resize, name='diffflow')
 
     if bidir:
-        neg_flow = Lambda(interp_upsampling, output_shape=vol_size + (ndims,), name='neg_pre_diffflow')(neg_flow)
-        neg_flow = Lambda(lambda arg: arg*2, name='neg_diffflow')(neg_flow)
+        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
 
     # transform
     y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
@@ -233,6 +232,7 @@ def conv_block(x_in, nf, strides=1):
     return x_out
 
 
+
 def sample(args):
     """
     sample from a normal distribution
@@ -243,18 +243,75 @@ def sample(args):
     z = mu + tf.exp(log_sigma/2.0) * noise
     return z
 
+def trf_resize(trf, vel_resize, name='flow'):
+    if vel_resize > 1:
+        trf = nrn_layers.Resize(1/vel_resize, name=name+'_tmp')(trf)
+        return Rescale(1 / vel_resize, name=name)(trf)
 
-def interp_upsampling(V):
+    else: # multiply first to save memory (multiply in smaller space)
+        trf = Rescale(1 / vel_resize, name=name+'_tmp')(trf)
+        return  nrn_layers.Resize(1/vel_resize, name=name)(trf)
+
+
+class Sample(Layer):
     """ 
-    upsample a field by a factor of 2
-    TODO: should switch this to use neuron.utils.interpn()
+    Keras Layer: Gaussian sample from [mu, sigma]
     """
 
-    grid = nrn_utils.volshape_to_ndgrid([f*2 for f in V.get_shape().as_list()[1:-1]])
-    grid = [tf.cast(f, 'float32') for f in grid]
-    grid = [tf.expand_dims(f/2 - f, 0) for f in grid]
-    offset = tf.stack(grid, len(grid) + 1)
+    def __init__(self, **kwargs):
+        super(Sample, self).__init__(**kwargs)
 
-    # V = nrn_utils.transform(V, offset)
-    V = nrn_layers.SpatialTransformer(interp_method='linear')([V, offset])
-    return V
+    def build(self, input_shape):
+        super(Sample, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return sample(x)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+
+class Negate(Layer):
+    """ 
+    Keras Layer: negative of the input
+    """
+
+    def __init__(self, **kwargs):
+        super(Negate, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(Negate, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return -x
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+class Rescale(Layer):
+    """ 
+    Keras layer: rescale data by fixed factor
+    """
+
+    def __init__(self, resize, **kwargs):
+        self.resize = resize
+        super(Rescale, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(Rescale, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return x * self.resize 
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+class RescaleDouble(Rescale):
+    def __init__(self, **kwargs):
+        self.resize = 2
+        super(RescaleDouble, self).__init__(self.resize, **kwargs)
+
+class ResizeDouble(nrn_layers.Resize):
+    def __init__(self, **kwargs):
+        self.zoom_factor = 2
+        super(ResizeDouble, self).__init__(self.zoom_factor, **kwargs)
