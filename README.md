@@ -66,12 +66,20 @@ In the original MICCAI code, the parameters were applied after the scaling of th
 
 If you use voxelmorph or some part of the code, please cite:
 
-**Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
+  * For the diffeomorphic or probabilistic model:
+
+    **Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration**  
 [Adrian V. Dalca](http://adalca.mit.edu), [Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
 MICCAI 2018. [eprint arXiv:1805.04605](https://arxiv.org/abs/1805.04605)
 
+* For the original CNN model, MSE, CC, or segmentation-based losses:
 
-**An Unsupervised Learning Model for Deformable Medical Image Registration**  
+    **VoxelMorph: A Learning Framework for Deformable Medical Image Registration**  
+[Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [Amy Zhao](http://people.csail.mit.edu/xamyzhao/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+IEEE TMI: Transactions on Medical Imaging. 2019. 
+[eprint arXiv:1809.05231](https://arxiv.org/abs/1809.05231)
+
+    **An Unsupervised Learning Model for Deformable Medical Image Registration**  
 [Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [Amy Zhao](http://people.csail.mit.edu/xamyzhao/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
