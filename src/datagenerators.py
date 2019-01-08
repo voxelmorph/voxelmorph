@@ -45,6 +45,21 @@ def miccai2018_gen(gen, atlas_vol_bs, batch_size=1, bidir=False):
             yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
 
 
+def miccai2018_gen_s2s(gen, batch_size=1, bidir=False):
+    """ generator used for miccai 2018 model """
+    zeros = None
+    while True:
+        X = next(gen)[0]
+        Y = next(gen)[0]
+        if zeros is None:
+            volshape = X.shape[1:-1]
+            zeros = np.zeros((batch_size, *volshape, len(volshape)))
+        if bidir:
+            yield ([X, Y], [Y, X, zeros])
+        else:
+            yield ([X, Y], [Y, zeros])
+
+
 def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
     """
     generate examples
