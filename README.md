@@ -36,6 +36,13 @@ We provide a T1 brain atlas used in our papers at `data/atlas_norm.npz`.
 2. Run `python test_miccai2018.py [gpu-id] [model_dir] [iter-num]`
 
 
+## Registration
+If you simply want to register two images:
+1. Choose the appropriate model, or train your own.
+2. Use `register.py`. For example, Let's say we have a model trained to register subject (moving) to atlas (fixed). One could run:
+```
+python register.py --gpu 0 /path/to/test_vol.nii.gz /path/to/atlas_norm.nii.gz --out_img /path/to/out.nii.gz --model_file ../models/cvpr2018_vm2_cc.h5 
+```
 ## Parameter choices
 
 ### CVPR version
