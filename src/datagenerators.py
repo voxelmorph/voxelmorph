@@ -142,4 +142,3 @@ def load_volfile(datafile):
         X = np.load(datafile)['vol_data']
 
     return X
-
