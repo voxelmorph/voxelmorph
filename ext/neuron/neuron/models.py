@@ -692,7 +692,7 @@ def single_ae(enc_size,
     if include_mu_shift_layer:
         # shift
         name = '%s_ae_mu_shift' % (prefix)
-        last_tensor = layers.LocalBiasLayer(name=name)(last_tensor)
+        last_tensor = layers.LocalBias(name=name)(last_tensor)
 
     # encoding clean-up layers
     for layer_fcn in enc_lambda_layers:
@@ -766,7 +766,7 @@ def single_ae(enc_size,
     if include_mu_shift_layer:
         # shift
         name = '%s_ae_sample_shift' % (prefix)
-        last_tensor = layers.LocalBiasLayer(name=name)(last_tensor)
+        last_tensor = layers.LocalBias(name=name)(last_tensor)
 
     # decoding layer
     if ae_type == 'dense':

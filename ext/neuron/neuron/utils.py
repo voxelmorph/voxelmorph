@@ -48,7 +48,7 @@ def interpn(vol, loc, interp_method='linear'):
         vol: volume with size vol_shape or [*vol_shape, nb_features]
         loc: a N-long list of N-D Tensors (the interpolation locations) for the new grid
             each tensor has to have the same size (but not nec. same size as vol)
-            or a tensor of size [*new_vol_shape, N]
+            or a tensor of size [*new_vol_shape, D]
         interp_method: interpolation type 'linear' (default) or 'nearest'
 
     Returns:
@@ -58,17 +58,16 @@ def interpn(vol, loc, interp_method='linear'):
         enable optional orig_grid - the original grid points.
         check out tf.contrib.resampler, only seems to work for 2D data
     """
-
+    
     if isinstance(loc, (list, tuple)):
         loc = tf.stack(loc, -1)
 
-    # extract and check sizes and dimensions
-    new_volshape = loc.shape[:-1]
-    nb_dims = len(new_volshape)
+    # since loc can be a list, nb_dims has to be based on vol.
+    nb_dims = loc.shape[-1]
 
-    if nb_dims != loc.shape[-1]:
+    if nb_dims != len(vol.shape[:-1]):
         raise Exception("Number of loc Tensors %d does not match volume dimension %d"
-                        % (loc.shape[-1], nb_dims))
+                        % (nb_dims, len(vol.shape[:-1])))
 
     if nb_dims > len(vol.shape):
         raise Exception("Loc dimension %d does not match volume dimension %d"
@@ -80,19 +79,17 @@ def interpn(vol, loc, interp_method='linear'):
     # flatten and float location Tensors
     loc = tf.cast(loc, 'float32')
 
-
-
     # interpolate
     if interp_method == 'linear':
         loc0 = tf.floor(loc)
 
         # clip values
         max_loc = [d - 1 for d in vol.get_shape().as_list()]
-        loc0 = [tf.clip_by_value(loc0[...,d], 0, max_loc[d]) for d in range(nb_dims)]
+        loc0lst = [tf.clip_by_value(loc0[...,d], 0, max_loc[d]) for d in range(nb_dims)]
 
         # get other end of point cube
-        loc1 = [tf.clip_by_value(loc0[d] + 1, 0, max_loc[d]) for d in range(nb_dims)]
-        locs = [[tf.cast(f, 'int32') for f in loc0], [tf.cast(f, 'int32') for f in loc1]]
+        loc1 = [tf.clip_by_value(loc0lst[d] + 1, 0, max_loc[d]) for d in range(nb_dims)]
+        locs = [[tf.cast(f, 'int32') for f in loc0lst], [tf.cast(f, 'int32') for f in loc1]]
 
         # compute the difference between the upper value and the original value
         # differences are basically 1 - (pt - floor(pt))
@@ -153,27 +150,43 @@ def interpn(vol, loc, interp_method='linear'):
     return interp_vol
 
 
-def prod_n(lst):
-    prod = lst[0]
-    for p in lst[1:]:
-        prod *= p
-    return prod
-
-
-def sub2ind(siz, subs, **kwargs):
+def resize(vol, zoom_factor, interp_method='linear'):
     """
-    assumes column-order major
+    if zoom_factor is a list, it will determine the ndims, in which case vol has to be of length ndims of ndims + 1
+
+    if zoom_factor is an integer, then vol must be of length ndims + 1
+
     """
-    # subs is a list
-    assert len(siz) == len(subs), 'found inconsistent siz and subs: %d %d' % (len(siz), len(subs))
 
-    k = np.cumprod(siz[::-1])
+    if isinstance(zoom_factor, (list, tuple)):
+        ndims = len(zoom_factor)
+        vol_shape = vol.shape[:ndims]
+        
+        assert len(vol_shape) in (ndims, ndims+1), \
+            "zoom_factor length %d does not match ndims %d" % (len(vol_shape), ndims)
 
-    ndx = subs[-1]
-    for i, v in enumerate(subs[:-1][::-1]):
-        ndx = ndx + v * k[i]
+    else:
+        vol_shape = vol.shape[:-1]
+        ndims = len(vol_shape)
+        zoom_factor = [zoom_factor] * ndims
+    if not isinstance(vol_shape[0], int):
+        vol_shape = vol_shape.as_list()
 
-    return ndx
+    new_shape = [vol_shape[f] * zoom_factor[f] for f in range(ndims)]
+    new_shape = [int(f) for f in new_shape]
+
+    # get grid for new shape
+    grid = volshape_to_ndgrid(new_shape)
+    grid = [tf.cast(f, 'float32') for f in grid]
+    offset = [grid[f] / zoom_factor[f] - grid[f] for f in range(ndims)]
+    offset = tf.stack(offset, ndims)
+
+    # transform
+    return transform(vol, offset, interp_method)
+
+
+def zoom(*args, **kwargs):
+    return resize(*args, **kwargs)
 
 
 def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
@@ -539,6 +552,30 @@ def meshgrid(*args, **kwargs):
     return output
     
 
+    
+def prod_n(lst):
+    prod = lst[0]
+    for p in lst[1:]:
+        prod *= p
+    return prod
+
+
+def sub2ind(siz, subs, **kwargs):
+    """
+    assumes column-order major
+    """
+    # subs is a list
+    assert len(siz) == len(subs), 'found inconsistent siz and subs: %d %d' % (len(siz), len(subs))
+
+    k = np.cumprod(siz[::-1])
+
+    ndx = subs[-1]
+    for i, v in enumerate(subs[:-1][::-1]):
+        ndx = ndx + v * k[i]
+
+    return ndx
+
+
 
 def gaussian_kernel(sigma, windowsize=None, indexing='ij'):
     """
@@ -596,6 +633,9 @@ def gaussian_kernel(sigma, windowsize=None, indexing='ij'):
 
 
 
+
+
+
 def stack_models(models, connecting_node_ids=None):
     """
     stacks keras models sequentially without nesting the models into layers
@@ -635,7 +675,12 @@ def stack_models(models, connecting_node_ids=None):
         output_tensors = mod_submodel(models[mi], new_input_nodes=new_input_nodes)
         stacked_inputs = stacked_inputs + stacked_inputs_contrib
 
-    stacked_inputs = [i for i in stacked_inputs if i is not None]
+    stacked_inputs_ = [i for i in stacked_inputs if i is not None]
+    # check for unique, but keep order:
+    stacked_inputs = []
+    for inp in stacked_inputs_:
+        if inp not in stacked_inputs:
+            stacked_inputs.append(inp)
     new_model = keras.models.Model(stacked_inputs, output_tensors)
     return new_model
 
@@ -694,7 +739,6 @@ def mod_submodel(orig_model,
             if add:
                 dct[node.outbound_layer].append(node.inbound_layers)
                 dct_node_idx.setdefault(node.outbound_layer, []).append(node.node_indices)
-                #print(node, node.outbound_layer)
             # append is in place
 
             # add new node
