@@ -69,6 +69,7 @@ MICCAI 2018. [eprint arXiv:1805.04605](https://arxiv.org/abs/1805.04605)
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 # Significant Updates
+2019-01-07: Added example register.py file
 2018-11-10: Added support for multi-gpu training  
 2018-10-12: Significant overhaul of code, especially training scripts and new model files.  
 2018-09-15: Added MICCAI2018 support and py3 transition  
