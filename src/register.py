@@ -1,5 +1,11 @@
 """
-register two volumes with VoxelMorph.
+Example script to register two volumes with VoxelMorph models
+
+Please make sure to use trained models appropriately. 
+Let's say we have a model trained to register subject (moving) to atlas (fixed)
+One could run:
+
+python register.py --gpu 0 /path/to/test_vol.nii.gz /path/to/atlas_norm.nii.gz --out_img /path/to/out.nii.gz --model_file ../models/cvpr2018_vm2_cc.h5 
 """
 
 # py imports
