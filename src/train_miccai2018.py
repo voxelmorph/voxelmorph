@@ -69,7 +69,7 @@ def train(data_dir,
 
     # Diffeomorphic network architecture used in MICCAI 2018 paper
     nf_enc = [16,32,32,32]
-    nf_dec = [32,32,32,32,16,3] 
+    nf_dec = [32,32,32,32,16,3]
 
     # prepare model folder
     if not os.path.isdir(model_dir):
@@ -90,7 +90,7 @@ def train(data_dir,
         model = networks.miccai2018_net(vol_size, nf_enc, nf_dec, bidir=bidir)
 
         # load initial weights
-        if load_model_file is not None:
+        if load_model_file is not None and load_model_file != "":
             model.load_weights(load_model_file)
 
         # save first iteration
