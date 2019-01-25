@@ -78,6 +78,11 @@ def interpn(vol, loc, interp_method='linear'):
 
     # flatten and float location Tensors
     loc = tf.cast(loc, 'float32')
+    
+    if isinstance(vol.shape, (tf.Dimension, tf.TensorShape)):
+        volshape = vol.shape.as_list()
+    else:
+        volshape = vol.shape
 
     # interpolate
     if interp_method == 'linear':
@@ -85,6 +90,7 @@ def interpn(vol, loc, interp_method='linear'):
 
         # clip values
         max_loc = [d - 1 for d in vol.get_shape().as_list()]
+        clipped_loc = [tf.clip_by_value(loc[...,d], 0, max_loc[d]) for d in range(nb_dims)]
         loc0lst = [tf.clip_by_value(loc0[...,d], 0, max_loc[d]) for d in range(nb_dims)]
 
         # get other end of point cube
@@ -94,7 +100,7 @@ def interpn(vol, loc, interp_method='linear'):
         # compute the difference between the upper value and the original value
         # differences are basically 1 - (pt - floor(pt))
         #   because: floor(pt) + 1 - pt = 1 + (floor(pt) - pt) = 1 - (pt - floor(pt))
-        diff_loc1 = [loc1[d] - loc[...,d] for d in range(nb_dims)]
+        diff_loc1 = [loc1[d] - clipped_loc[d] for d in range(nb_dims)]
         diff_loc0 = [1 - d for d in diff_loc1]
         weights_loc = [diff_loc1, diff_loc0] # note reverse ordering since weights are inverse of diff.
 
@@ -117,7 +123,7 @@ def interpn(vol, loc, interp_method='linear'):
             # vol_val = tf.gather_nd(vol, indices)
             # faster way to gather than gather_nd, because the latter needs tf.stack which is slow :(
             idx = sub2ind(vol.shape[:-1], subs)
-            vol_val = tf.gather(tf.reshape(vol, [-1, vol.shape[-1]]), idx)
+            vol_val = tf.gather(tf.reshape(vol, [-1, volshape[-1]]), idx)
 
             # get the weight of this cube_pt based on the distance
             # if c[d] is 0 --> want weight = 1 - (pt - floor[pt]) = diff_loc1
