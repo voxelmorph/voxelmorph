@@ -61,8 +61,7 @@ In the original MICCAI code, the parameters were applied after the scaling of th
 
 - For the MICCAI2018 version, we integrate the velocity field using [`neuron.layers.VecInt`]((https://github.com/adalca/neuron/blob/master/neuron/layers.py)). By default we integrate using scaling and squaring, which we found efficient.
 
-
-# Papers
+# VoxelMorph Papers
 
 If you use voxelmorph or some part of the code, please cite (see [bibtex](citations.bib)):
 
@@ -89,7 +88,24 @@ IEEE TMI: Transactions on Medical Imaging. 2019.
 [Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [Amy Zhao](http://people.csail.mit.edu/xamyzhao/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
+# Unified Segmentation
+
+Building on VoxelMorph, we recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. We provide the atlases used during training. Example usage:
+
+```
+python train_unsupervised_segmentation.py /path/to/your/volume/data/
+python test_unsupervised_segmentation.py input_file.nii output_seg_filename.nii
+```
+
+Paper:  
+-  **Unsupervised deep learning for Bayesian brain MRI segmentation**  
+[Adrian V. Dalca](http://adalca.mit.edu), [Evan Yu](https://www.bme.cornell.edu/research/grad-students/evan-yu), [Polina Golland](https://people.csail.mit.edu/polina/), [Bruce Fischl](https://www.martinos.org/user/5499), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [Juan E. Iglesias](https://sites.google.com/site/jeiglesias/)  
+Under Review. [eprint arXiv:1904.11319](https://arxiv.org/abs/1904.11319)
+
+
+
 # Significant Updates
+2019-04-27: Added support for unified segmentation  
 2019-01-07: Added example register.py file
 2018-11-10: Added support for multi-gpu training  
 2018-10-12: Significant overhaul of code, especially training scripts and new model files.  
