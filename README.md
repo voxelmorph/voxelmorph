@@ -90,7 +90,7 @@ CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 # Unified Segmentation
 
-Building on VoxelMorph, we recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. We provide the atlases used during training. Example usage:
+We recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. We provide the atlases used during training. Example usage:
 
 ```
 python train_unsupervised_segmentation.py /path/to/your/volume/data/
