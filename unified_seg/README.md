@@ -31,4 +31,4 @@ If you use the code, please cite (see [bibtex](../citations.bib)):
 Under Review. [eprint arXiv:1904.11319](https://arxiv.org/abs/1904.11319)
 
 # Contact:
-For and problems or questions please open an issue in github or email us at unifiedseg@mit.edu
+For and problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=unifiedseg) in github or email us at unifiedseg@mit.edu
