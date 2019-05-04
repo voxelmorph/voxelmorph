@@ -60,7 +60,7 @@ def miccai2018_gen_s2s(gen, batch_size=1, bidir=False):
             yield ([X, Y], [Y, zeros])
 
 
-def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
+def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None, np_var='vol_data'):
     """
     generate examples
 
@@ -71,6 +71,8 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
         The following are fairly specific to our data structure, please change to your own
         return_segs: logical on whether to return segmentations
         seg_dir: the segmentations directory.
+        np_var: specify the name of the variable in numpy files, if your data is stored in 
+            npz files. default to 'vol_data'
     """
 
     while True:
@@ -78,7 +80,7 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
 
         X_data = []
         for idx in idxes:
-            X = load_volfile(vol_names[idx])
+            X = load_volfile(vol_names[idx], np_var=np_var)
             X = X[np.newaxis, ..., np.newaxis]
             X_data.append(X)
 
@@ -91,7 +93,7 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
         if return_segs:
             X_data = []
             for idx in idxes:
-                X_seg = load_volfile(vol_names[idx].replace('norm', 'aseg'))
+                X_seg = load_volfile(vol_names[idx].replace('norm', 'aseg'), np_var=np_var)
                 X_seg = X_seg[np.newaxis, ..., np.newaxis]
                 X_data.append(X_seg)
             
@@ -103,16 +105,19 @@ def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None):
         yield tuple(return_vals)
 
 
-def load_example_by_name(vol_name, seg_name):
+def load_example_by_name(vol_name, seg_name, np_var='vol_data'):
     """
     load a specific volume and segmentation
+
+    np_var: specify the name of the variable in numpy files, if your data is stored in 
+        npz files. default to 'vol_data'
     """
-    X = load_volfile(vol_name)
+    X = load_volfile(vol_name, np_var)
     X = X[np.newaxis, ..., np.newaxis]
 
     return_vals = [X]
 
-    X_seg = load_volfile(seg_name)
+    X_seg = load_volfile(seg_name, np_var)
     X_seg = X_seg[np.newaxis, ..., np.newaxis]
 
     return_vals.append(X_seg)
@@ -120,11 +125,11 @@ def load_example_by_name(vol_name, seg_name):
     return tuple(return_vals)
 
 
-def load_volfile(datafile):
+def load_volfile(datafile, np_var='vol_data'):
     """
     load volume file
     formats: nii, nii.gz, mgz, npz
-    if it's a npz (compressed numpy), assume variable names 'vol_data' 
+    if it's a npz (compressed numpy), variable names innp_var (default: 'vol_data')
     """
     assert datafile.endswith(('.nii', '.nii.gz', '.mgz', '.npz')), 'Unknown data file'
 
@@ -139,6 +144,8 @@ def load_volfile(datafile):
         X = nib.load(datafile).get_data()
         
     else: # npz
-        X = np.load(datafile)['vol_data']
+        if np_var is None:
+            np_var = 'vol_data'
+        X = np.load(datafile)[np_var]
 
     return X
