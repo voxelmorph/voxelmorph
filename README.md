@@ -88,19 +88,15 @@ IEEE TMI: Transactions on Medical Imaging. 2019.
 [Guha Balakrishnan](http://people.csail.mit.edu/balakg/), [Amy Zhao](http://people.csail.mit.edu/xamyzhao/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
+# Notes on Data
+In our initial papers, we used publically available data, but unfortunately we cannot redistribute it (due to the constraints of those datasets). We do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. 
+
+We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
+
+
 # Unified Segmentation
 
-We recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. We provide the atlases used during training. Example usage:
-
-```
-python train_unsupervised_segmentation.py /path/to/your/volume/data/
-python test_unsupervised_segmentation.py input_file.nii output_seg_filename.nii
-```
-
-Paper:  
--  **Unsupervised deep learning for Bayesian brain MRI segmentation**  
-[Adrian V. Dalca](http://adalca.mit.edu), [Evan Yu](https://www.bme.cornell.edu/research/grad-students/evan-yu), [Polina Golland](https://people.csail.mit.edu/polina/), [Bruce Fischl](https://www.martinos.org/user/5499), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/), [Juan E. Iglesias](https://sites.google.com/site/jeiglesias/)  
-Under Review. [eprint arXiv:1904.11319](https://arxiv.org/abs/1904.11319)
+We recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. See the [unified seg README for more information](unified_seg/README.md).
 
 
 
@@ -112,10 +108,6 @@ Under Review. [eprint arXiv:1904.11319](https://arxiv.org/abs/1904.11319)
 2018-09-15: Added MICCAI2018 support and py3 transition  
 2018-05-14: Initial Repository for CVPR version, py2.7
 
-# Notes on Data
-In our initial papers, we used publically available data, but unfortunately we cannot redistribute it (due to the constraints of those datasets). We do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. 
-
-We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
 
 
 # Contact:
