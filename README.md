@@ -112,8 +112,11 @@ Under Review. [eprint arXiv:1904.11319](https://arxiv.org/abs/1904.11319)
 2018-09-15: Added MICCAI2018 support and py3 transition  
 2018-05-14: Initial Repository for CVPR version, py2.7
 
-# Notes
-In our initial papers, we do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. Note that you likely do not need to perform all of these steps, and indeed VoxelMorph has been used in other work with other data.
+# Notes on Data
+In our initial papers, we used publically available data, but unfortunately we cannot redistribute it (due to the constraints of those datasets). We do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. 
+
+We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
+
 
 # Contact:
 For and problems or questions please open an issue in github or email us at voxelmorph@mit.edu
