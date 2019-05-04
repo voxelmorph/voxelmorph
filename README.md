@@ -111,4 +111,5 @@ We recently published a method on deep learning methods for unsupervised segment
 
 
 # Contact:
-For and problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=voxelmorph) in github or email us at voxelmorph@mit.edu
+For any problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=voxelmorph) in github (preferred).  
+Alternatively, please contact us at voxelmorph@mit.edu, but our response might be slower through this route.
