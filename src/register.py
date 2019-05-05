@@ -21,7 +21,7 @@ from keras.backend.tensorflow_backend import set_session
 import nibabel as nib
 
 # project
-import networks
+import networks, losses
 sys.path.append('../ext/neuron')
 import neuron.layers as nrn_layers
 
@@ -51,14 +51,18 @@ def register(gpu_id, moving, fixed, model_file, out_img, out_warp):
 
     with tf.device(gpu):
         # load model
-        custom_layers = {'SpatialTransformer':nrn_layers.SpatialTransformer,
-                 'VecInt':nrn_layers.VecInt,
-                 'Sample':networks.Sample,
-                 'Rescale':networks.RescaleDouble,
-                 'Resize':networks.ResizeDouble,
-                 'Negate':networks.Negate}
+        custom_objects = {'SpatialTransformer': nrn_layers.SpatialTransformer,
+                 'VecInt': nrn_layers.VecInt,
+                 'Sample': networks.Sample,
+                 'Rescale': networks.RescaleDouble,
+                 'Resize': networks.ResizeDouble,
+                 'Negate': networks.Negate,
+                 'recon_loss': losses.Miccai2018(0.02, 10).recon_loss, # values shouldn't matter
+                 'kl_loss': losses.Miccai2018(0.02, 10).kl_loss        # values shouldn't matter
+                 }
 
-        net = keras.models.load_model(model_file, custom_objects=custom_layers)
+
+        net = keras.models.load_model(model_file, custom_objects=custom_objects)
 
         # register
         [moved, warp] = net.predict([mov, fix])
