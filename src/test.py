@@ -19,8 +19,8 @@ import datagenerators
 
 
 def test(model_name, gpu_id, 
-		 compute_type = 'GPU',  # GPU or CPU
-		 nf_enc=[16,32,32,32], nf_dec=[32,32,32,32,32,16,16]):
+         compute_type = 'GPU',  # GPU or CPU
+         nf_enc=[16,32,32,32], nf_dec=[32,32,32,32,32,16,16]):
     """
     test
 
@@ -38,7 +38,7 @@ def test(model_name, gpu_id,
     atlas_seg = atlas['seg']
     vol_size = atlas_vol.shape[1:-1]
 
-	# gpu handling
+    # gpu handling
     gpu = '/gpu:' + str(gpu_id)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     config = tf.ConfigProto()
@@ -58,7 +58,7 @@ def test(model_name, gpu_id,
     if compute_type == 'CPU':
         grid, xx, yy, zz = util.volshape2grid_3d(vol_size, nargout=4)
 
-	# load subject test
+    # load subject test
     X_vol, X_seg = datagenerators.load_example_by_name('../data/test_vol.npz', '../data/test_seg.npz')
 
     with tf.device(gpu):
