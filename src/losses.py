@@ -52,7 +52,9 @@ class NCC():
 
         # compute filters
         sum_filt = tf.ones([*self.win, 1, 1])
-        strides = [1] * (ndims + 2)
+        strides = 1
+        if ndims > 1:
+            strides = [1] * (ndims + 2)
         padding = 'SAME'
 
         # compute local sums via convolution
