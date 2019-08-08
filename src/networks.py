@@ -26,6 +26,7 @@ sys.path.append('../ext/neuron')
 sys.path.append('../ext/pynd-lib')
 sys.path.append('../ext/pytools-lib')
 import neuron.layers as nrn_layers
+import neuron.models as nrn_models
 import neuron.utils as nrn_utils
 
 # other vm functions
@@ -319,6 +320,246 @@ def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
     return Model(inputs=[src_img, src_atl], outputs=[loss_vol, flow])
 
 
+
+########################################################
+# Atlas creation functions
+########################################################
+
+
+
+def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
+             indexing='ij', bidir=False, ret_flows=False, full_size=False,
+             vel_resize=1/2, src=None, tgt=None):
+    """
+    diffeomorphic net, similar to miccai2018, but no sampling.
+
+    architecture for probabilistic diffeomoprhic VoxelMorph presented in the MICCAI 2018 paper. 
+    You may need to modify this code (e.g., number of layers) to suit your project needs.
+
+    The stationary velocity field operates in a space (0.5)^3 of vol_size for computational reasons.
+
+    :param vol_size: volume size. e.g. (256, 256, 256)
+    :param enc_nf: list of encoder filters. right now it needs to be 1x4.
+           e.g. [16,32,32,32]
+    :param dec_nf: list of decoder filters. right now it must be 1x6, see unet function.
+    :param use_miccai_int: whether to use the manual miccai implementation of scaling and squaring integration
+            note that the 'velocity' field outputted in that case was 
+            since then we've updated the code to be part of a flexible layer. see neuron.layers.VecInt
+            **This param will be phased out (set to False behavior)**
+    :param int_steps: the number of integration steps
+    :param indexing: xy or ij indexing. we recommend ij indexing if training from scratch. 
+            miccai 2018 runs were done with xy indexing.
+            **This param will be phased out (set to 'ij' behavior)**
+    :return: the keras model
+    """    
+    ndims = len(vol_size)
+    assert ndims in [1, 2, 3], "ndims should be one of 1, 2, or 3. found: %d" % ndims
+
+    # get unet
+    unet_model = unet_core(vol_size, enc_nf, dec_nf, full_size=full_size, src=src, tgt=tgt, src_feats=src_feats)
+    [src, tgt] = unet_model.inputs
+
+    # velocity sample
+    # unet_model.layers[-1].name = 'vel'
+    # vel = unet_model.output
+    x_out = unet_model.outputs[-1]
+
+    # velocity mean and logsigma layers
+    Conv = getattr(KL, 'Conv%dD' % ndims)
+    vel = Conv(ndims, kernel_size=3, padding='same',
+                       kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(x_out)
+
+    if full_size and vel_resize != 1:
+        vel = trf_resize(vel, 1.0/vel_resize, name='flow-resize')    
+
+    # new implementation in neuron is cleaner.
+    flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(vel)
+    if bidir:
+        # rev_z_sample = Lambda(lambda x: -x)(z_sample)
+        neg_vel = Negate()(vel)
+        neg_flow = nrn_layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_vel)
+
+    # get up to final resolution
+    flow = trf_resize(flow, vel_resize, name='diffflow')
+    if bidir:
+        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
+
+    # transform
+    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_src')([src, flow])
+    if bidir:
+        y_tgt = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_tgt')([tgt, neg_flow])
+
+    # prepare outputs and losses
+    outputs = [y, vel]
+    if bidir:
+        outputs = [y, y_tgt, vel]
+
+    model = Model(inputs=[src, tgt], outputs=outputs)
+
+    if ret_flows:
+        outputs += [model.get_layer('diffflow').output, model.get_layer('neg_diffflow').output]
+        return Model(inputs=[src, tgt], outputs=outputs)
+    else: 
+        return model
+
+
+def atl_img_model(vol_shape, mult=1.0, src=None, atl_layer_name='img_params'):
+    """
+    atlas model with flow representation
+    idea: starting with some (probably rough) atlas (like a ball or average shape),
+    the output atlas is this input ball plus a 
+    """
+
+    # get a new layer (std)
+    if src is None:
+        src = Input(shape=[*vol_shape, 1], name='input_atlas')
+
+    # get the velocity field
+    v_layer = LocalParamWithInput(shape=[*vol_shape, 1],
+                                  mult=mult,
+                                  name=atl_layer_name,
+                                  my_initializer=RandomNormal(mean=0.0, stddev=1e-7))
+    v = v_layer(src)  # this is so memory-wasteful...
+
+    return keras.models.Model(src, v)
+
+
+
+
+
+def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
+                                atl_mult=1.0,
+                                bidir=True,
+                                smooth_pen_layer='diffflow',
+                                vel_resize=1/2,
+                                int_steps=5,
+                                nb_conv_features=32,
+                                cond_im_input_shape=[10,12,14,1],
+                                cond_nb_levels=5,
+                                cond_conv_size=[3,3,3],
+                                use_stack=True,
+                                do_mean_layer=True,
+                                pheno_input_shape=[1],
+                                atlas_feats=1,
+                                name='cond_model',
+                                mean_cap=100,
+                                templcondsi=False,
+                                templcondsi_init=None,
+                                full_size=False,
+                                ret_vm=False,
+                                extra_conv_layers=0,
+                                **kwargs):
+            
+    # conv layer class
+    Conv = getattr(KL, 'Conv%dD' % len(vol_shape))
+
+    # vm model. inputs: "atlas" (we will replace this) and 
+    mn = diff_net(vol_shape, nf_enc, nf_dec, int_steps=int_steps, bidir=bidir, src_feats=atlas_feats,
+                  full_size=full_size, vel_resize=vel_resize, ret_flows=(not use_stack), **kwargs)
+    
+    # pre-warp model (atlas model)
+    pheno_input = KL.Input(pheno_input_shape, name='pheno_input')
+    dense_tensor = KL.Dense(np.prod(cond_im_input_shape), activation='elu')(pheno_input)
+    reshape_tensor = KL.Reshape(cond_im_input_shape)(dense_tensor)
+    pheno_init_model = keras.models.Model(pheno_input, reshape_tensor)
+    pheno_tmp_model = nrn_models.conv_dec(nb_conv_features, cond_im_input_shape, cond_nb_levels, cond_conv_size,
+                             nb_labels=nb_conv_features, final_pred_activation='linear',
+                             input_model=pheno_init_model, name='atlasmodel')
+    last_tensor = pheno_tmp_model.output
+    for i in range(extra_conv_layers):
+        last_tensor = Conv(nb_conv_features, kernel_size=cond_conv_size, padding='same', name='atlas_ec_%d' % i)(last_tensor)
+    pout = Conv(atlas_feats, kernel_size=3, padding='same', name='atlasmodel_c',
+                 kernel_initializer=RandomNormal(mean=0.0, stddev=1e-7),
+                 bias_initializer=RandomNormal(mean=0.0, stddev=1e-7))(last_tensor)
+    atlas_input = KL.Input([*vol_shape, atlas_feats], name='atlas_input')
+    if not templcondsi:
+        atlas_tensor = KL.Add(name='atlas')([atlas_input, pout])
+    else:
+        atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
+
+        # change first channel to be result from seg with another add layer
+        tmp_layer = KL.Lambda(lambda x: K.softmax(x[...,1:]))(atlas_tensor)  # this is just tmp. Do not use me.
+        cl = Conv(1, kernel_size=1, padding='same', use_bias=False, name='atlas_gen', kernel_initializer=RandomNormal(mean=0, stddev=1e-5))
+        ximg = cl(tmp_layer)
+        if templcondsi_init is not None:
+            w = cl.get_weights()
+            w[0] = templcondsi_init.reshape(w[0].shape)
+            cl.set_weights(w)
+        atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][...,1:]]), name='atlas')([ximg, atlas_tensor]) 
+
+    pheno_model = keras.models.Model([pheno_tmp_model.input, atlas_input], atlas_tensor)
+
+    # stack models
+    inputs = pheno_model.inputs + [mn.inputs[1]]
+
+    if use_stack:
+        sm = nrn_utils.stack_models([pheno_model, mn], [[0]])
+        neg_diffflow_out = sm.get_layer('neg_diffflow').get_output_at(-1)
+        diffflow_out = mn.get_layer(smooth_pen_layer).get_output_at(-1)
+        warped_src = sm.get_layer('warped_src').get_output_at(-1)
+        warped_tgt = sm.get_layer('warped_tgt').get_output_at(-1)
+
+    else:
+        assert bidir
+        assert smooth_pen_layer == 'diffflow'
+        warped_src, warped_tgt, _, diffflow_out, neg_diffflow_out = mn(pheno_model.outputs + [mn.inputs[1]])
+        sm = keras.models.Model(inputs, [warped_src, warped_tgt])
+        
+    if do_mean_layer:
+        mean_layer = nrn_layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_diffflow_out)
+        outputs = [warped_src, warped_tgt, mean_layer, diffflow_out]
+    else:
+        outputs = [warped_src, warped_tgt, diffflow_out]
+
+
+    model = keras.models.Model(inputs, outputs, name=name)
+    if ret_vm:
+        return model, mn
+    else:
+        return model
+
+
+
+
+
+def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
+                        atl_mult=1.0,
+                        bidir=True,
+                        smooth_pen_layer='diffflow',
+                        atl_int_steps=3,
+                        vel_resize=1/2,
+                        int_steps=3,
+                        mean_cap=100,
+                        atl_layer_name='atlas',
+                        **kwargs):
+    
+    
+
+    # vm model
+    mn = diff_net(vol_shape, nf_enc, nf_dec, int_steps=int_steps, bidir=bidir, 
+                        vel_resize=vel_resize, **kwargs)
+    
+    # pre-warp model (atlas model)
+    pw = atl_img_model(vol_shape, mult=atl_mult, src=mn.inputs[0], atl_layer_name=atl_layer_name) # Wait I'm confused....
+
+    # stack models
+    sm = nrn_utils.stack_models([pw, mn], [[0]])
+    # note: sm.outputs might be out of order now
+
+    # TODO: I'm not sure the mean layer is the right direction
+    mean_layer = nrn_layers.MeanStream(name='mean_stream', cap=mean_cap)(sm.get_layer('neg_diffflow').get_output_at(-1))
+
+    outputs = [sm.get_layer('warped_src').get_output_at(-1),
+               sm.get_layer('warped_tgt').get_output_at(-1),
+               mean_layer,
+               mn.get_layer(smooth_pen_layer).get_output_at(-1)]
+
+    model = keras.models.Model(mn.inputs, outputs)
+    return model
+
+
+
+
 ########################################################
 # Helper functions
 ########################################################
@@ -419,3 +660,39 @@ class ResizeDouble(nrn_layers.Resize):
     def __init__(self, **kwargs):
         self.zoom_factor = 2
         super(ResizeDouble, self).__init__(self.zoom_factor, **kwargs)
+
+
+class LocalParamWithInput(Layer):
+    """ 
+    The neuron.layers.LocalParam has an issue where _keras_shape gets lost upon calling get_output :(
+        tried using call() but this requires an input (or i don't know how to fix it)
+        the fix was that after the return, for every time that tensor would be used i would need to do something like
+        new_vec._keras_shape = old_vec._keras_shape
+
+        which messed up the code. Instead, we'll do this quick version where we need an input, but we'll ignore it.
+
+        this doesn't have the _keras_shape issue since we built on the input and use call()
+    """
+
+    def __init__(self, shape, my_initializer='RandomNormal', mult=1.0, **kwargs):
+        self.shape=shape
+        self.initializer = my_initializer
+        self.biasmult = mult
+        super(LocalParamWithInput, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel', 
+                                      shape=self.shape,  # input_shape[1:]
+                                      initializer=self.initializer,
+                                      trainable=True)
+        super(LocalParamWithInput, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        # want the x variable for it's keras properties and the batch.
+        b = 0*K.batch_flatten(x)[:,0:1] + 1
+        params = K.expand_dims(K.flatten(self.kernel * self.biasmult), 0)
+        z = K.reshape(K.dot(b, params), [-1, *self.shape])
+        return z
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], *self.shape)
