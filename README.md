@@ -109,6 +109,7 @@ We recently published a method on deep learning methods for unsupervised segment
 
 
 # Significant Updates
+2019-08-08: Added support for building templates
 2019-04-27: Added support for unified segmentation  
 2019-01-07: Added example register.py file
 2018-11-10: Added support for multi-gpu training  
