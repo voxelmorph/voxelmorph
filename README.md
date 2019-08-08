@@ -94,6 +94,14 @@ In our initial papers, we used publically available data, but unfortunately we c
 We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
 
 
+# Creation of Deformable Templates
+
+Please use `train_img_template.py` for template construction. 
+
+8/8/2019: We are currently working hard at adding more template creation features by merging the development branch with the official voxelmorph release. We expect more features uploaded by the end of the day.
+
+
+
 # Unified Segmentation
 
 We recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. See the [unified seg README for more information](unified_seg/README.md).
