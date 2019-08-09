@@ -98,7 +98,8 @@ We encourage users to download and process their own data. See [a list of medica
 
 Please use `train_img_template.py` for template construction. 
 
-8/8/2019: We are currently working hard at adding more template creation features by merging the development branch with the official voxelmorph release. We expect more features uploaded by the end of the day.
+8/8/2019: We are currently working hard at adding more template creation features by merging the development branch with the official voxelmorph release. We expect more features uploaded by the end of the day. **Update**: Due to the outage on the Cornell campus (the same one that has arXiv servers down we can't seem to uplaod new models. We'll update when we can.)
+
 
 
 
