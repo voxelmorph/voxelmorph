@@ -96,10 +96,7 @@ We encourage users to download and process their own data. See [a list of medica
 
 # Creation of Deformable Templates
 
-Please use `train_img_template.py` for template construction. 
-
-8/8/2019: We are currently working hard at adding more template creation features by merging the development branch with the official voxelmorph release. We expect more features uploaded by the end of the day. **Update**: Due to the outage on the Cornell campus (the same one that has arXiv servers down we can't seem to uplaod new models. We'll update when we can.)
-
+Please use `train_img_template.py` to play with the template construction method presented in https://arxiv.org/abs/1908.02738. We've also provided an unconditional model in `/data/uncond_atlas_creation_k.npy`, and h5 model weights for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
 
 
 
