@@ -108,6 +108,7 @@ We've also provided an unconditional atlas in `/data/uncond_atlas_creation_k.npy
 
 Models in h5 format weights are provided for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
 
+**Explore the atlases [interactively here](http://voxelmorph.mit.edu/atlas_creation/)** with tipiX!
 
 
 # Unified Segmentation
