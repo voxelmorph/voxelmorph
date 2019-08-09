@@ -96,9 +96,13 @@ We encourage users to download and process their own data. See [a list of medica
 
 # Creation of Deformable Templates
 
-We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738). 
+We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738): 
 
-To experiment with this code, please use `train_img_template.py`, which uses the same conventions as voxelmorph.
+  *  **Learning Conditional Deformable Templates with Convolutional Networks**  
+[Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
+[eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738) 2019
+
+To experiment with this method, please use `train_img_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
 
 We've also provided an unconditional atlas in `/data/uncond_atlas_creation_k.npy`. 
 
