@@ -96,7 +96,13 @@ We encourage users to download and process their own data. See [a list of medica
 
 # Creation of Deformable Templates
 
-Please use `train_img_template.py` to play with the template construction method presented in https://arxiv.org/abs/1908.02738. We've also provided an unconditional model in `/data/uncond_atlas_creation_k.npy`, and h5 model weights for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
+We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738). 
+
+To experiment with this code, please use `train_img_template.py`, which uses the same conventions as voxelmorph.
+
+We've also provided an unconditional atlas in `/data/uncond_atlas_creation_k.npy`. 
+
+Models in h5 format weights are provided for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
 
 
 
