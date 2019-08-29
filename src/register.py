@@ -57,8 +57,8 @@ def register(gpu_id, moving, fixed, model_file, out_img, out_warp):
                  'Rescale': networks.RescaleDouble,
                  'Resize': networks.ResizeDouble,
                  'Negate': networks.Negate,
-                 'recon_loss': losses.Miccai2018(0.02, 10).recon_loss, # values shouldn't matter
-                 'kl_loss': losses.Miccai2018(0.02, 10).kl_loss        # values shouldn't matter
+                 'recon_loss': losses.Miccai2018(0.02, 10, flow_vol_shape=[32]).recon_loss, # values shouldn't matter
+                 'kl_loss': losses.Miccai2018(0.02, 10, flow_vol_shape=[32]).kl_loss        # values shouldn't matter
                  }
 
 
