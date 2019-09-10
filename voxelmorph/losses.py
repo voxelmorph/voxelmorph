@@ -9,19 +9,6 @@ import keras.backend as K
 import numpy as np
 
 
-def binary_dice(y_true, y_pred):
-    """
-    N-D dice for binary segmentation
-    """
-    ndims = len(y_pred.get_shape().as_list()) - 2
-    vol_axes = 1 + np.range(ndims)
-
-    top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
-    bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
-    dice = tf.reduce_mean(top/bottom)
-    return -dice
-
-
 class NCC():
     """
     local (over window) normalized cross correlation
@@ -69,7 +56,7 @@ class NCC():
         u_I = I_sum/win_size
         u_J = J_sum/win_size
 
-        cross = IJ_sum - u_J*I_sum - u_I*J_sum + u_I*u_J*win_size
+        cross = IJ_sum - u_J*I_sum - u_I*J_sum + u_I*u_J*win_size  # TODO: simplify this
         I_var = I2_sum - 2 * u_I * I_sum + u_I*u_I*win_size
         J_var = J2_sum - 2 * u_J * J_sum + u_J*u_J*win_size
 
@@ -118,6 +105,26 @@ class Grad():
             df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
         return tf.add_n(df) / len(df)
 
+
+def binary_dice(y_true, y_pred):
+    """
+    simple N-D dice for binary segmentation
+
+    TODO: combine with neuron.metrics.dice
+    """
+    ndims = len(y_pred.get_shape().as_list()) - 2
+    vol_axes = 1 + np.range(ndims)
+
+    top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
+    bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
+    dice = tf.reduce_mean(top/bottom)
+    return -dice
+
+
+
+###############################################################################
+# Paper-specific Losses
+###############################################################################
 
 class Miccai2018():
     """
