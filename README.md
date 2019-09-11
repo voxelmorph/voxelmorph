@@ -65,6 +65,13 @@ In the original MICCAI code, the parameters were applied after the scaling of th
 
 If you use voxelmorph or some part of the code, please cite (see [bibtex](citations.bib)):
 
+  * For the atlas formation model:  
+
+    **Learning Conditional Deformable Templates with Convolutional Networks**  
+  [Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
+  NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
+
+
   * For the diffeomorphic or probabilistic model:
 
     **Unsupervised Learning of Probabilistic Diffeomorphic Registration for Images and Surfaces**  
