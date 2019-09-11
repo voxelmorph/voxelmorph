@@ -11,6 +11,9 @@ import sys
 
 # third party
 import numpy as np
+
+# keras imports.
+# TODO: these imports should be cleaner...
 import keras.backend as K
 from keras.models import Model
 import keras.layers as KL
@@ -22,15 +25,15 @@ import keras.initializers
 import tensorflow as tf
 
 # import neuron layers, which will be useful for Transforming.
+# TODO: switch to nice local imports...
 sys.path.append('../ext/neuron')
 sys.path.append('../ext/pynd-lib')
 sys.path.append('../ext/pytools-lib')
-import neuron.layers as nrn_layers
-import neuron.models as nrn_models
-import neuron.utils as nrn_utils
+import neuron as ne
 
 # other vm functions
 import losses
+import layers
 
 
 def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_feats=1, tgt_feats=1):
@@ -113,7 +116,7 @@ def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
                   kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5))(x)
 
     # warp the source with the flow
-    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
+    y = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
     # prepare model
     model = Model(inputs=[src, tgt], outputs=[y, flow])
     return model
@@ -160,7 +163,7 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
     flow_params = concatenate([flow_mean, flow_log_sigma])
 
     # velocity sample
-    flow = Sample(name="z_sample")([flow_mean, flow_log_sigma])
+    flow = layers.Sample(name="z_sample")([flow_mean, flow_log_sigma])
 
     # integrate if diffeomorphic (i.e. treating 'flow' above as stationary velocity field)
     if use_miccai_int:
@@ -169,17 +172,17 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
         # was manually composed of a Transform and and Add Layer.
         v = flow
         for _ in range(int_steps):
-            v1 = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([v, v])
+            v1 = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([v, v])
             v = keras.layers.add([v, v1])
         flow = v
 
     else:
         # new implementation in neuron is cleaner.
         z_sample = flow
-        flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(z_sample)
+        flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(z_sample)
         if bidir:
-            rev_z_sample = Negate()(z_sample)
-            neg_flow = nrn_layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(rev_z_sample)
+            rev_z_sample = layers.Negate()(z_sample)
+            neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(rev_z_sample)
 
     # get up to final resolution
     flow = trf_resize(flow, vel_resize, name='diffflow')
@@ -188,9 +191,9 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
         neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
 
     # transform
-    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
+    y = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
     if bidir:
-        y_tgt = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing)([tgt, neg_flow])
+        y_tgt = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([tgt, neg_flow])
 
     # prepare outputs and losses
     outputs = [y, flow_params]
@@ -214,7 +217,7 @@ def nn_trf(vol_size, indexing='xy'):
 
     # note the nearest neighbour interpolation method
     # note xy indexing because Guha's original code switched x and y dimensions
-    nn_output = nrn_layers.SpatialTransformer(interp_method='nearest', indexing=indexing)
+    nn_output = ne.layers.SpatialTransformer(interp_method='nearest', indexing=indexing)
     nn_spatial_output = nn_output([subj_input, trf_input])
     return keras.models.Model([subj_input, trf_input], nn_spatial_output)
 
@@ -247,7 +250,7 @@ def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
     Conv = getattr(KL, 'Conv%dD' % ndims)
     flow1 = Conv(ndims, kernel_size=3, padding='same', name='flow', kernel_initializer=weaknorm)(x)
     if diffeomorphic:
-        flow2 = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=8)(flow1)
+        flow2 = ne.layers.VecInt(method='ss', name='flow-int', int_steps=8)(flow1)
     else:
         flow2 = flow1
     if full_size:
@@ -257,7 +260,7 @@ def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
 
     # warp atlas
     if warp_method == 'WARP':
-        warped_atlas = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_atlas')([src_atl, flow])
+        warped_atlas = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_atlas')([src_atl, flow])
     else:
         warped_atlas = src_atl
 
@@ -373,11 +376,11 @@ def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
         vel = trf_resize(vel, 1.0/vel_resize, name='flow-resize')    
 
     # new implementation in neuron is cleaner.
-    flow = nrn_layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(vel)
+    flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(vel)
     if bidir:
         # rev_z_sample = Lambda(lambda x: -x)(z_sample)
-        neg_vel = Negate()(vel)
-        neg_flow = nrn_layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_vel)
+        neg_vel = layers.Negate()(vel)
+        neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_vel)
 
     # get up to final resolution
     flow = trf_resize(flow, vel_resize, name='diffflow')
@@ -385,9 +388,9 @@ def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
         neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
 
     # transform
-    y = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_src')([src, flow])
+    y = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_src')([src, flow])
     if bidir:
-        y_tgt = nrn_layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_tgt')([tgt, neg_flow])
+        y_tgt = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_tgt')([tgt, neg_flow])
 
     # prepare outputs and losses
     outputs = [y, vel]
@@ -415,7 +418,7 @@ def atl_img_model(vol_shape, mult=1.0, src=None, atl_layer_name='img_params'):
         src = Input(shape=[*vol_shape, 1], name='input_atlas')
 
     # get the velocity field
-    v_layer = LocalParamWithInput(shape=[*vol_shape, 1],
+    v_layer = layers.LocalParamWithInput(shape=[*vol_shape, 1],
                                   mult=mult,
                                   name=atl_layer_name,
                                   my_initializer=RandomNormal(mean=0.0, stddev=1e-7))
@@ -462,7 +465,7 @@ def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
     dense_tensor = KL.Dense(np.prod(cond_im_input_shape), activation='elu')(pheno_input)
     reshape_tensor = KL.Reshape(cond_im_input_shape)(dense_tensor)
     pheno_init_model = keras.models.Model(pheno_input, reshape_tensor)
-    pheno_tmp_model = nrn_models.conv_dec(nb_conv_features, cond_im_input_shape, cond_nb_levels, cond_conv_size,
+    pheno_tmp_model = ne.models.conv_dec(nb_conv_features, cond_im_input_shape, cond_nb_levels, cond_conv_size,
                              nb_labels=nb_conv_features, final_pred_activation='linear',
                              input_model=pheno_init_model, name='atlasmodel')
     last_tensor = pheno_tmp_model.output
@@ -493,7 +496,7 @@ def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
     inputs = pheno_model.inputs + [mn.inputs[1]]
 
     if use_stack:
-        sm = nrn_utils.stack_models([pheno_model, mn], [[0]])
+        sm = ne.utils.stack_models([pheno_model, mn], [[0]])
         neg_diffflow_out = sm.get_layer('neg_diffflow').get_output_at(-1)
         diffflow_out = mn.get_layer(smooth_pen_layer).get_output_at(-1)
         warped_src = sm.get_layer('warped_src').get_output_at(-1)
@@ -506,7 +509,7 @@ def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
         sm = keras.models.Model(inputs, [warped_src, warped_tgt])
         
     if do_mean_layer:
-        mean_layer = nrn_layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_diffflow_out)
+        mean_layer = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_diffflow_out)
         outputs = [warped_src, warped_tgt, mean_layer, diffflow_out]
     else:
         outputs = [warped_src, warped_tgt, diffflow_out]
@@ -543,11 +546,11 @@ def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
     pw = atl_img_model(vol_shape, mult=atl_mult, src=mn.inputs[0], atl_layer_name=atl_layer_name) # Wait I'm confused....
 
     # stack models
-    sm = nrn_utils.stack_models([pw, mn], [[0]])
+    sm = ne.utils.stack_models([pw, mn], [[0]])
     # note: sm.outputs might be out of order now
 
     # TODO: I'm not sure the mean layer is the right direction
-    mean_layer = nrn_layers.MeanStream(name='mean_stream', cap=mean_cap)(sm.get_layer('neg_diffflow').get_output_at(-1))
+    mean_layer = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(sm.get_layer('neg_diffflow').get_output_at(-1))
 
     outputs = [sm.get_layer('warped_src').get_output_at(-1),
                sm.get_layer('warped_tgt').get_output_at(-1),
@@ -578,121 +581,15 @@ def conv_block(x_in, nf, strides=1):
     return x_out
 
 
-def sample(args):
-    """
-    sample from a normal distribution
-    """
-    mu = args[0]
-    log_sigma = args[1]
-    noise = tf.random_normal(tf.shape(mu), 0, 1, dtype=tf.float32)
-    z = mu + tf.exp(log_sigma/2.0) * noise
-    return z
+
 
 
 def trf_resize(trf, vel_resize, name='flow'):
     if vel_resize > 1:
-        trf = nrn_layers.Resize(1/vel_resize, name=name+'_tmp')(trf)
-        return Rescale(1 / vel_resize, name=name)(trf)
+        trf = ne.layers.Resize(1/vel_resize, name=name+'_tmp')(trf)
+        return layers.Rescale(1 / vel_resize, name=name)(trf)
 
     else: # multiply first to save memory (multiply in smaller space)
-        trf = Rescale(1 / vel_resize, name=name+'_tmp')(trf)
-        return  nrn_layers.Resize(1/vel_resize, name=name)(trf)
+        trf = layers.Rescale(1 / vel_resize, name=name+'_tmp')(trf)
+        return  ne.layers.Resize(1/vel_resize, name=name)(trf)
 
-
-class Sample(Layer):
-    """ 
-    Keras Layer: Gaussian sample from [mu, sigma]
-    """
-
-    def __init__(self, **kwargs):
-        super(Sample, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        super(Sample, self).build(input_shape)  # Be sure to call this somewhere!
-
-    def call(self, x):
-        return sample(x)
-
-    def compute_output_shape(self, input_shape):
-        return input_shape[0]
-
-class Negate(Layer):
-    """ 
-    Keras Layer: negative of the input
-    """
-
-    def __init__(self, **kwargs):
-        super(Negate, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        super(Negate, self).build(input_shape)  # Be sure to call this somewhere!
-
-    def call(self, x):
-        return -x
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-class Rescale(Layer):
-    """ 
-    Keras layer: rescale data by fixed factor
-    """
-
-    def __init__(self, resize, **kwargs):
-        self.resize = resize
-        super(Rescale, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        super(Rescale, self).build(input_shape)  # Be sure to call this somewhere!
-
-    def call(self, x):
-        return x * self.resize 
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-class RescaleDouble(Rescale):
-    def __init__(self, **kwargs):
-        self.resize = 2
-        super(RescaleDouble, self).__init__(self.resize, **kwargs)
-
-class ResizeDouble(nrn_layers.Resize):
-    def __init__(self, **kwargs):
-        self.zoom_factor = 2
-        super(ResizeDouble, self).__init__(self.zoom_factor, **kwargs)
-
-
-class LocalParamWithInput(Layer):
-    """ 
-    The neuron.layers.LocalParam has an issue where _keras_shape gets lost upon calling get_output :(
-        tried using call() but this requires an input (or i don't know how to fix it)
-        the fix was that after the return, for every time that tensor would be used i would need to do something like
-        new_vec._keras_shape = old_vec._keras_shape
-
-        which messed up the code. Instead, we'll do this quick version where we need an input, but we'll ignore it.
-
-        this doesn't have the _keras_shape issue since we built on the input and use call()
-    """
-
-    def __init__(self, shape, my_initializer='RandomNormal', mult=1.0, **kwargs):
-        self.shape=shape
-        self.initializer = my_initializer
-        self.biasmult = mult
-        super(LocalParamWithInput, self).__init__(**kwargs)
-
-    def build(self, input_shape):
-        self.kernel = self.add_weight(name='kernel', 
-                                      shape=self.shape,  # input_shape[1:]
-                                      initializer=self.initializer,
-                                      trainable=True)
-        super(LocalParamWithInput, self).build(input_shape)  # Be sure to call this somewhere!
-
-    def call(self, x):
-        # want the x variable for it's keras properties and the batch.
-        b = 0*K.batch_flatten(x)[:,0:1] + 1
-        params = K.expand_dims(K.flatten(self.kernel * self.biasmult), 0)
-        z = K.reshape(K.dot(b, params), [-1, *self.shape])
-        return z
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], *self.shape)
