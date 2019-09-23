@@ -235,3 +235,91 @@ class Miccai2018():
     def recon_loss(self, y_true, y_pred):
         """ reconstruction loss """
         return 1. / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
+
+
+class SparseVM(object):
+'''
+SparseVM Sparse Normalized Local Cross Correlation (SLCC)
+'''
+    def __init__(self, mask):
+        self.mask = mask
+
+    def conv_block(self,data, mask, conv_layer, mask_conv_layer, core_name):
+        '''
+        data is the data tensor
+        mask is a binary tensor the same size as data
+
+        steps:
+        - set empty voxels in data using data *= mask
+        - conv data and mask with the conv conv_layer
+        - re-weight data
+        - binarize mask
+        '''
+
+   # mask.dtype
+   # data.dtype
+    # make sure the data is sparse according to the mask
+        wt_data = keras.layers.Lambda(lambda x: x[0] * x[1], name='%s_pre_wmult' % core_name)([data, mask])
+   # convolve data
+        conv_data = conv_layer(wt_data)  
+    
+    # convolve mask
+        conv_mask = mask_conv_layer(mask)
+        zero_mask = keras.layers.Lambda(lambda x:x*0+1)(mask)
+        conv_mask_allones = mask_conv_layer(zero_mask) # all_ones mask to get the edge counts right.
+        mask_conv_layer.trainable = False
+        o = np.ones(mask_conv_layer.get_weights()[0].shape)
+        mask_conv_layer.set_weights([o])
+    
+    # re-weight data (this is what makes the conv makes sense)
+        data_norm = lambda x: x[0] / (x[1] + 1e-2)
+#    data_norm = lambda x: x[0] / K.maximum(x[1]/x[2], 1)
+        out_data = keras.layers.Lambda(data_norm, name='%s_norm_im' % core_name)([conv_data, conv_mask])
+        mask_norm = lambda x: tf.cast(x > 0, tf.float32)
+        out_mask = keras.layers.Lambda(mask_norm, name='%s_norm_wt' % core_name)(conv_mask)
+
+        return (out_data, out_mask, conv_data, conv_mask)
+
+
+         
+    def sparse_conv_cc3D(self, atlas_mask, conv_size = 13, sum_filter = 1, padding = 'same', activation = 'elu'):
+    '''
+    Sparse Normalized Local Cross Correlation (SLCC) for 3D images
+    '''
+        def loss(I, J):
+            # pass in mask to class: e.g. Mask(model.get_layer("mask").output).sparse_conv_cc3D(atlas_mask),
+            mask = self.mask
+            # need the next two lines to specify channel for source image (otherwise won't compile)
+            I = I[:,:,:,:,0]
+            I = tf.expand_dims(I, -1)
+             
+            I2 = I*I
+            J2 = J*J
+            IJ = I*J
+            input_shape = I.shape
+            # want the size without the channel and batch dimensions
+            ndims = len(input_shape) -2
+            strides = [1] * ndims
+            convL = getattr(KL, 'Conv%dD' % ndims)
+            im_conv = convL(sum_filter, conv_size, padding=padding, strides=strides,kernel_initializer=keras.initializers.Ones())
+            im_conv.trainable = False
+            mask_conv = convL(1, conv_size, padding=padding, use_bias=False, strides=strides,kernel_initializer=keras.initializers.Ones())
+            mask_conv.trainable = False
+
+            combined_mask = mask*atlas_mask
+            u_I, out_mask_I, not_used, conv_mask_I = self.conv_block(I, mask, im_conv, mask_conv, 'u_I')
+            u_J, out_mask_J, not_used, conv_mask_J = self.conv_block(J, atlas_mask, im_conv, mask_conv, 'u_J')
+            not_used, not_used_mask, I_sum, conv_mask = self.conv_block(I, combined_mask, im_conv, mask_conv, 'I_sum')
+            not_used, not_used_mask, J_sum, conv_mask = self.conv_block(J, combined_mask, im_conv, mask_conv, 'J_sum')
+            not_used, not_used_mask, I2_sum, conv_mask = self.conv_block(I2, combined_mask, im_conv, mask_conv, 'I2_sum')
+            not_used, not_used_mask, J2_sum, conv_mask = self.conv_block(J2, combined_mask, im_conv, mask_conv, 'J2_sum')
+            not_used, not_used_mask, IJ_sum, conv_mask = self.conv_block(IJ, combined_mask, im_conv, mask_conv, 'IJ_sum')
+    
+            cross = IJ_sum - u_J*I_sum - u_I*J_sum + u_I*u_J*conv_mask
+            I_var = I2_sum - 2 * u_I * I_sum + u_I*u_I*conv_mask
+            J_var = J2_sum - 2 * u_J * J_sum + u_J*u_J*conv_mask
+            cc = cross*cross / (I_var*J_var + 1e-2) 
+            return -1.0 * tf.reduce_mean(cc)
+        return loss
+
+           
