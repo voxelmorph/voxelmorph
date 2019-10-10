@@ -238,9 +238,9 @@ class Miccai2018():
 
 
 class SparseVM(object):
-'''
-SparseVM Sparse Normalized Local Cross Correlation (SLCC)
-'''
+    '''
+    SparseVM Sparse Normalized Local Cross Correlation (SLCC)
+    '''
     def __init__(self, mask):
         self.mask = mask
 
@@ -256,14 +256,14 @@ SparseVM Sparse Normalized Local Cross Correlation (SLCC)
         - binarize mask
         '''
 
-   # mask.dtype
-   # data.dtype
-    # make sure the data is sparse according to the mask
+        # mask.dtype
+        # data.dtype
+        # make sure the data is sparse according to the mask
         wt_data = keras.layers.Lambda(lambda x: x[0] * x[1], name='%s_pre_wmult' % core_name)([data, mask])
-   # convolve data
+        # convolve data
         conv_data = conv_layer(wt_data)  
     
-    # convolve mask
+        # convolve mask
         conv_mask = mask_conv_layer(mask)
         zero_mask = keras.layers.Lambda(lambda x:x*0+1)(mask)
         conv_mask_allones = mask_conv_layer(zero_mask) # all_ones mask to get the edge counts right.
@@ -271,9 +271,9 @@ SparseVM Sparse Normalized Local Cross Correlation (SLCC)
         o = np.ones(mask_conv_layer.get_weights()[0].shape)
         mask_conv_layer.set_weights([o])
     
-    # re-weight data (this is what makes the conv makes sense)
+        # re-weight data (this is what makes the conv makes sense)
         data_norm = lambda x: x[0] / (x[1] + 1e-2)
-#    data_norm = lambda x: x[0] / K.maximum(x[1]/x[2], 1)
+        # data_norm = lambda x: x[0] / K.maximum(x[1]/x[2], 1)
         out_data = keras.layers.Lambda(data_norm, name='%s_norm_im' % core_name)([conv_data, conv_mask])
         mask_norm = lambda x: tf.cast(x > 0, tf.float32)
         out_mask = keras.layers.Lambda(mask_norm, name='%s_norm_wt' % core_name)(conv_mask)
@@ -283,9 +283,9 @@ SparseVM Sparse Normalized Local Cross Correlation (SLCC)
 
          
     def sparse_conv_cc3D(self, atlas_mask, conv_size = 13, sum_filter = 1, padding = 'same', activation = 'elu'):
-    '''
-    Sparse Normalized Local Cross Correlation (SLCC) for 3D images
-    '''
+        '''
+        Sparse Normalized Local Cross Correlation (SLCC) for 3D images
+        '''
         def loss(I, J):
             # pass in mask to class: e.g. Mask(model.get_layer("mask").output).sparse_conv_cc3D(atlas_mask),
             mask = self.mask
