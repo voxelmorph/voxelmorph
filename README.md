@@ -4,6 +4,10 @@ This repository incorporates several variants, first presented at CVPR2018 (init
 
 keywords: machine learning, convolutional neural networks, alignment, mapping, registration
 
+## RecentUpdates
+
+See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
+
 # Instructions
 
 ## Setup
