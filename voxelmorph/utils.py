@@ -2,10 +2,7 @@ import os
 
 
 def get_backend():
-    if os.environ.get('VXM_BACKEND'):
-        return 'pytorch'
-    else:
-        return 'tensorflow'
+    return 'pytorch' if os.environ.get('VXM_BACKEND') == 'pytorch' else 'tensorflow'
 
 
 def load_volfile(filename, np_var='vol_data'):
