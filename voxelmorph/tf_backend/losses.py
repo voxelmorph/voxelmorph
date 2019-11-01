@@ -2,8 +2,6 @@
 losses for VoxelMorph
 """
 
-
-# Third party inports
 import tensorflow as tf
 import keras.backend as K
 import numpy as np
@@ -17,7 +15,6 @@ class NCC():
     def __init__(self, win=None, eps=1e-5):
         self.win = win
         self.eps = eps
-
 
     def ncc(self, I, J):
         # get dimension of volume
@@ -121,10 +118,10 @@ def binary_dice(y_true, y_pred):
     return -dice
 
 
-
 ###############################################################################
 # Paper-specific Losses
 ###############################################################################
+
 
 class Miccai2018():
     """
@@ -137,7 +134,6 @@ class Miccai2018():
         self.prior_lambda = prior_lambda
         self.D = None
         self.flow_vol_shape = flow_vol_shape
-
 
     def _adj_filt(self, ndims):
         """
@@ -162,7 +158,6 @@ class Miccai2018():
                     
         return filt
 
-
     def _degree_matrix(self, vol_shape):
         # get shape stats
         ndims = len(vol_shape)
@@ -176,7 +171,6 @@ class Miccai2018():
         filt_tf = tf.convert_to_tensor(self._adj_filt(ndims), dtype=tf.float32)
         strides = [1] * (ndims + 2)
         return conv_fn(z, filt_tf, strides, "SAME")
-
 
     def prec_loss(self, y_pred):
         """
@@ -202,7 +196,6 @@ class Miccai2018():
             sm += K.mean(df * df)
 
         return 0.5 * sm / ndims
-
 
     def kl_loss(self, y_true, y_pred):
         """
@@ -237,7 +230,6 @@ class Miccai2018():
 
         # combine terms
         return 0.5 * ndims * (sigma_term + prec_term) # ndims because we averaged over dimensions as well
-
 
     def recon_loss(self, y_true, y_pred):
         """ reconstruction loss """

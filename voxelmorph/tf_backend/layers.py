@@ -4,24 +4,16 @@ Layers for voxelmorph model
 TODO: clean up and join with neuron.layers
 """
 
-# main imports
 import sys
-
-# third party
 import numpy as np
 
-# keras imports
+import tensorflow as tf
 import keras.backend as K
 from keras.layers import Layer
-import tensorflow as tf
 
-# import neuron layers, which will be useful for Transforming.
 # TODO: switch to nice local imports...
 sys.path.append('../ext/neuron')
 import neuron as ne
-
-
-# some useful layers from Neuron
 from neuron.layers import Resize, Sample, RescaleValues
 
 

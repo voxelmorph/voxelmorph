@@ -1,39 +1,30 @@
 """
-Networks for voxelmorph model
+Tensorflow networks for voxelmorph model
 
 In general, these are fairly specific architectures that were designed for the presented papers.
 However, the VoxelMorph concepts are not tied to a very particular architecture, and we 
-encourage you to explore architectures that fit your needs. 
+encourage you to explore architectures that fit your needs.
 see e.g. more powerful unet function in https://github.com/adalca/neuron/blob/master/neuron/models.py
 """
-# main imports
-import sys
 
-# third party
+import sys
 import numpy as np
 
-# keras imports.
-# TODO: these imports should be cleaner...
-import keras.backend as K
-from keras.models import Model
-import keras.layers as KL
-from keras.layers import Layer
-from keras.layers import Conv3D, Activation, Input, UpSampling3D, concatenate
-from keras.layers import LeakyReLU, Reshape, Lambda
-from keras.initializers import RandomNormal
-import keras.initializers
 import tensorflow as tf
+import keras.backend as K
+import keras.layers as KL
+from keras.models import Model
+from keras.layers import Layer, Conv3D, Activation, Input, UpSampling3D
+from keras.layers import concatenate, LeakyReLU, Reshape, Lambda
+from keras.initializers import RandomNormal, Constant
 
-# import neuron layers, which will be useful for Transforming.
 # TODO: switch to nice local imports...
 sys.path.append('../ext/neuron')
 sys.path.append('../ext/pynd-lib')
 sys.path.append('../ext/pytools-lib')
 import neuron as ne
 
-# other vm functions
-import losses
-import layers
+from . import layers
 
 
 def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_feats=1, tgt_feats=1):
@@ -89,6 +80,59 @@ def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_
         x = conv_block(x, dec_nf[6])
 
     return Model(inputs=[src, tgt], outputs=[x])
+
+
+def vxmnet(vol_size, enc_nf, dec_nf, full_size=True, int_steps=7, indexing='ij', bidir=False, vel_resize=0.5, use_probs=False):
+    """
+    Initial attempt at a combined cvpr2018_net + miccai2018_net network. This is a work
+    in progress and has not been tested.
+    """
+
+    # ensure correct dimensionality
+    ndims = len(vol_size)
+    assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+    # (1) build core unet
+    unet = unet_core(vol_size, enc_nf, dec_nf, full_size=full_size)  # TODO use neuron unet
+    source, target = unet.inputs
+    x = unet.outputs[-1]
+
+    # (2) transform unet output into a flow field
+    flow_mean = Conv(ndims, kernel_size=3, padding='same',
+                kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(x)
+
+    # optionally include probabilities
+    if use_probs:
+        # we're going to initialize the velocity variance very low, to start stable
+        flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
+                        kernel_initializer=RandomNormal(mean=0.0, stddev=1e-10),
+                        bias_initializer=Constant(value=-10),
+                        name='log_sigma')(x)
+        flow_params = concatenate([flow_mean, flow_logsigma])
+        flow = layers.Sample(name="z_sample")([flow_mean, flow_logsigma])
+    else:
+        flow_params = flow_mean
+        flow = flow_mean
+
+    # (3) integrate to produce diffeomorphic warp (i.e. treat 'flow' as a stationary velocity field)
+    pos_flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)
+    if bidir:
+        neg_flow = layers.Negate()(flow)
+        neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
+
+    # (4) get up to final resolution
+    pos_flow = trf_resize(pos_flow, vel_resize, name='diffflow')
+    if bidir:
+        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
+
+    # (5) warp the source with the flow field
+    y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([source, pos_flow])
+    if bidir:
+        y_target = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([target, neg_flow])
+
+    # build the model
+    outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params] 
+    return Model(inputs=[source, target], outputs=outputs)
 
 
 def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
@@ -158,7 +202,7 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
     # we're going to initialize the velocity variance very low, to start stable.
     flow_log_sigma = Conv(ndims, kernel_size=3, padding='same',
                             kernel_initializer=RandomNormal(mean=0.0, stddev=1e-10),
-                            bias_initializer=keras.initializers.Constant(value=-10),
+                            bias_initializer=Constant(value=-10),
                             name='log_sigma')(x_out)
     flow_params = concatenate([flow_mean, flow_log_sigma])
 
@@ -323,11 +367,9 @@ def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
     return Model(inputs=[src_img, src_atl], outputs=[loss_vol, flow])
 
 
-
 ########################################################
 # Atlas creation functions
 ########################################################
-
 
 
 def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
@@ -418,40 +460,34 @@ def atl_img_model(vol_shape, mult=1.0, src=None, atl_layer_name='img_params'):
         src = Input(shape=[*vol_shape, 1], name='input_atlas')
 
     # get the velocity field
-    v_layer = layers.LocalParamWithInput(shape=[*vol_shape, 1],
-                                  mult=mult,
-                                  name=atl_layer_name,
-                                  my_initializer=RandomNormal(mean=0.0, stddev=1e-7))
+    v_layer = layers.LocalParamWithInput(shape=[*vol_shape, 1], mult=mult, name=atl_layer_name,
+                                         my_initializer=RandomNormal(mean=0.0, stddev=1e-7))
     v = v_layer(src)  # this is so memory-wasteful...
-
     return keras.models.Model(src, v)
 
 
-
-
-
 def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
-                                atl_mult=1.0,
-                                bidir=True,
-                                smooth_pen_layer='diffflow',
-                                vel_resize=1/2,
-                                int_steps=5,
-                                nb_conv_features=32,
-                                cond_im_input_shape=[10,12,14,1],
-                                cond_nb_levels=5,
-                                cond_conv_size=[3,3,3],
-                                use_stack=True,
-                                do_mean_layer=True,
-                                pheno_input_shape=[1],
-                                atlas_feats=1,
-                                name='cond_model',
-                                mean_cap=100,
-                                templcondsi=False,
-                                templcondsi_init=None,
-                                full_size=False,
-                                ret_vm=False,
-                                extra_conv_layers=0,
-                                **kwargs):
+                              atl_mult=1.0,
+                              bidir=True,
+                              smooth_pen_layer='diffflow',
+                              vel_resize=1/2,
+                              int_steps=5,
+                              nb_conv_features=32,
+                              cond_im_input_shape=[10,12,14,1],
+                              cond_nb_levels=5,
+                              cond_conv_size=[3,3,3],
+                              use_stack=True,
+                              do_mean_layer=True,
+                              pheno_input_shape=[1],
+                              atlas_feats=1,
+                              name='cond_model',
+                              mean_cap=100,
+                              templcondsi=False,
+                              templcondsi_init=None,
+                              full_size=False,
+                              ret_vm=False,
+                              extra_conv_layers=0,
+                              **kwargs):
             
     # conv layer class
     Conv = getattr(KL, 'Conv%dD' % len(vol_shape))
@@ -522,9 +558,6 @@ def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
         return model
 
 
-
-
-
 def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
                         atl_mult=1.0,
                         bidir=True,
@@ -535,9 +568,6 @@ def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
                         mean_cap=100,
                         atl_layer_name='atlas',
                         **kwargs):
-    
-    
-
     # vm model
     mn = diff_net(vol_shape, nf_enc, nf_dec, int_steps=int_steps, bidir=bidir, 
                         vel_resize=vel_resize, **kwargs)
@@ -552,20 +582,21 @@ def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
     # TODO: I'm not sure the mean layer is the right direction
     mean_layer = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(sm.get_layer('neg_diffflow').get_output_at(-1))
 
-    outputs = [sm.get_layer('warped_src').get_output_at(-1),
-               sm.get_layer('warped_tgt').get_output_at(-1),
-               mean_layer,
-               mn.get_layer(smooth_pen_layer).get_output_at(-1)]
+    outputs = [
+        sm.get_layer('warped_src').get_output_at(-1),
+        sm.get_layer('warped_tgt').get_output_at(-1),
+        mean_layer,
+        mn.get_layer(smooth_pen_layer).get_output_at(-1)
+    ]
 
     model = keras.models.Model(mn.inputs, outputs)
     return model
 
 
-
-
 ########################################################
 # Helper functions
 ########################################################
+
 
 def conv_block(x_in, nf, strides=1):
     """
@@ -581,9 +612,6 @@ def conv_block(x_in, nf, strides=1):
     return x_out
 
 
-
-
-
 def trf_resize(trf, vel_resize, name='flow'):
     if vel_resize > 1:
         trf = ne.layers.Resize(1/vel_resize, name=name+'_tmp')(trf)
@@ -592,4 +620,3 @@ def trf_resize(trf, vel_resize, name='flow'):
     else: # multiply first to save memory (multiply in smaller space)
         trf = layers.Rescale(1 / vel_resize, name=name+'_tmp')(trf)
         return  ne.layers.Resize(1/vel_resize, name=name)(trf)
-
