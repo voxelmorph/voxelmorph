@@ -32,9 +32,67 @@ sys.path.append('../ext/pytools-lib')
 import neuron as ne
 
 # other vm functions
-import losses
 import layers
 
+
+
+########################################################
+# transform networks
+########################################################
+
+def transform(vol_size,
+             interp_method='linear',
+             indexing='ij',
+             nb_feats=1,
+             int_steps=0,
+             int_method='ss',
+             vel_resize=1,
+             **kwargs):  # kwargs are for VecInt
+    """
+    Simple transform model 
+
+    Note: this is essentially a wrapper for the neuron.utils.transform
+
+    TODO: have a new 'Transform' layer that is specific to VoxelMorph that 
+    can be a deformation or something else.
+    TODO: move SpatialTransform to voxelmorph?
+    """
+    ndims = len(vol_size)
+
+    # nn warp model
+    subj_input = Input((*vol_size, nb_feats), name='subj_input')
+    trf_input = Input((*[int(f*vel_resize) for f in vol_size], ndims) , name='trf_input')
+
+    if int_steps > 0:
+        trf = ne.layers.VecInt(method=int_method,
+                               name='trf-int',
+                               int_steps=int_steps,
+                               **kwargs)(trf_input)
+        trf = trf_resize(trf, vel_resize, name='flow') # TODO change to layers.ResizeTransform
+        
+    else:
+        trf = trf_input
+
+    # note the nearest neighbour interpolation method
+    # use xy indexing when Guha's original code switched x and y dimensions
+    nn_output = ne.layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
+    nn_spatial_output = nn_output([subj_input, trf])
+    return Model([subj_input, trf_input], nn_spatial_output)
+
+
+def transform_nn(vol_size, **kwargs):
+    """
+    Simple transform model for nearest-neighbor based transformation
+    """
+    return transform(vol_size,
+                     interp_method='nearest',
+                     **kwargs)
+    
+
+
+########################################################
+# core networks
+########################################################
 
 def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_feats=1, tgt_feats=1):
     """
@@ -89,6 +147,88 @@ def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_
         x = conv_block(x, dec_nf[6])
 
     return Model(inputs=[src, tgt], outputs=[x])
+
+
+
+def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
+             indexing='ij', bidir=False, ret_flows=False, full_size=False,
+             vel_resize=1/2, src=None, tgt=None):
+    """
+    diffeomorphic net, similar to miccai2018, but no sampling.
+
+    architecture for probabilistic diffeomoprhic VoxelMorph presented in the MICCAI 2018 paper. 
+    You may need to modify this code (e.g., number of layers) to suit your project needs.
+
+    The stationary velocity field operates in a space (0.5)^3 of vol_size for computational reasons.
+
+    :param vol_size: volume size. e.g. (256, 256, 256)
+    :param enc_nf: list of encoder filters. right now it needs to be 1x4.
+           e.g. [16,32,32,32]
+    :param dec_nf: list of decoder filters. right now it must be 1x6, see unet function.
+    :param use_miccai_int: whether to use the manual miccai implementation of scaling and squaring integration
+            note that the 'velocity' field outputted in that case was 
+            since then we've updated the code to be part of a flexible layer. see neuron.layers.VecInt
+            **This param will be phased out (set to False behavior)**
+    :param int_steps: the number of integration steps
+    :param indexing: xy or ij indexing. we recommend ij indexing if training from scratch. 
+            miccai 2018 runs were done with xy indexing.
+            **This param will be phased out (set to 'ij' behavior)**
+    :return: the keras model
+    """    
+    ndims = len(vol_size)
+    assert ndims in [1, 2, 3], "ndims should be one of 1, 2, or 3. found: %d" % ndims
+
+    # get unet
+    unet_model = unet_core(vol_size, enc_nf, dec_nf, full_size=full_size, src=src, tgt=tgt, src_feats=src_feats)
+    [src, tgt] = unet_model.inputs
+
+    # velocity sample
+    # unet_model.layers[-1].name = 'vel'
+    # vel = unet_model.output
+    x_out = unet_model.outputs[-1]
+
+    # velocity mean and logsigma layers
+    Conv = getattr(KL, 'Conv%dD' % ndims)
+    vel = Conv(ndims, kernel_size=3, padding='same',
+                       kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(x_out)
+
+    if full_size and vel_resize != 1:
+        vel = trf_resize(vel, 1.0/vel_resize, name='flow-resize')    
+
+    # new implementation in neuron is cleaner.
+    flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(vel)
+    if bidir:
+        # rev_z_sample = Lambda(lambda x: -x)(z_sample)
+        neg_vel = layers.Negate()(vel)
+        neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_vel)
+
+    # get up to final resolution
+    flow = trf_resize(flow, vel_resize, name='diffflow')
+    if bidir:
+        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
+
+    # transform
+    y = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_src')([src, flow])
+    if bidir:
+        y_tgt = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_tgt')([tgt, neg_flow])
+
+    # prepare outputs and losses
+    outputs = [y, vel]
+    if bidir:
+        outputs = [y, y_tgt, vel]
+
+    model = Model(inputs=[src, tgt], outputs=outputs)
+
+    if ret_flows:
+        outputs += [model.get_layer('diffflow').output, model.get_layer('neg_diffflow').output]
+        return Model(inputs=[src, tgt], outputs=outputs)
+    else: 
+        return model
+
+
+########################################################
+# legacy networks
+########################################################
 
 
 def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
@@ -204,24 +344,6 @@ def miccai2018_net(vol_size, enc_nf, dec_nf, int_steps=7, use_miccai_int=False, 
     return Model(inputs=[src, tgt], outputs=outputs)
 
 
-def nn_trf(vol_size, indexing='xy'):
-    """
-    Simple transform model for nearest-neighbor based transformation
-    Note: this is essentially a wrapper for the neuron.utils.transform(..., interp_method='nearest')
-    """
-    ndims = len(vol_size)
-
-    # nn warp model
-    subj_input = Input((*vol_size, 1), name='subj_input')
-    trf_input = Input((*vol_size, ndims) , name='trf_input')
-
-    # note the nearest neighbour interpolation method
-    # note xy indexing because Guha's original code switched x and y dimensions
-    nn_output = ne.layers.SpatialTransformer(interp_method='nearest', indexing=indexing)
-    nn_spatial_output = nn_output([subj_input, trf_input])
-    return keras.models.Model([subj_input, trf_input], nn_spatial_output)
-
-
 def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
                            diffeomorphic=True,
                            full_size=True,
@@ -323,87 +445,9 @@ def cvpr2018_net_probatlas(vol_size, enc_nf, dec_nf, nb_labels,
     return Model(inputs=[src_img, src_atl], outputs=[loss_vol, flow])
 
 
-
 ########################################################
 # Atlas creation functions
 ########################################################
-
-
-
-def diff_net(vol_size, enc_nf, dec_nf, int_steps=7, src_feats=1,
-             indexing='ij', bidir=False, ret_flows=False, full_size=False,
-             vel_resize=1/2, src=None, tgt=None):
-    """
-    diffeomorphic net, similar to miccai2018, but no sampling.
-
-    architecture for probabilistic diffeomoprhic VoxelMorph presented in the MICCAI 2018 paper. 
-    You may need to modify this code (e.g., number of layers) to suit your project needs.
-
-    The stationary velocity field operates in a space (0.5)^3 of vol_size for computational reasons.
-
-    :param vol_size: volume size. e.g. (256, 256, 256)
-    :param enc_nf: list of encoder filters. right now it needs to be 1x4.
-           e.g. [16,32,32,32]
-    :param dec_nf: list of decoder filters. right now it must be 1x6, see unet function.
-    :param use_miccai_int: whether to use the manual miccai implementation of scaling and squaring integration
-            note that the 'velocity' field outputted in that case was 
-            since then we've updated the code to be part of a flexible layer. see neuron.layers.VecInt
-            **This param will be phased out (set to False behavior)**
-    :param int_steps: the number of integration steps
-    :param indexing: xy or ij indexing. we recommend ij indexing if training from scratch. 
-            miccai 2018 runs were done with xy indexing.
-            **This param will be phased out (set to 'ij' behavior)**
-    :return: the keras model
-    """    
-    ndims = len(vol_size)
-    assert ndims in [1, 2, 3], "ndims should be one of 1, 2, or 3. found: %d" % ndims
-
-    # get unet
-    unet_model = unet_core(vol_size, enc_nf, dec_nf, full_size=full_size, src=src, tgt=tgt, src_feats=src_feats)
-    [src, tgt] = unet_model.inputs
-
-    # velocity sample
-    # unet_model.layers[-1].name = 'vel'
-    # vel = unet_model.output
-    x_out = unet_model.outputs[-1]
-
-    # velocity mean and logsigma layers
-    Conv = getattr(KL, 'Conv%dD' % ndims)
-    vel = Conv(ndims, kernel_size=3, padding='same',
-                       kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(x_out)
-
-    if full_size and vel_resize != 1:
-        vel = trf_resize(vel, 1.0/vel_resize, name='flow-resize')    
-
-    # new implementation in neuron is cleaner.
-    flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(vel)
-    if bidir:
-        # rev_z_sample = Lambda(lambda x: -x)(z_sample)
-        neg_vel = layers.Negate()(vel)
-        neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_vel)
-
-    # get up to final resolution
-    flow = trf_resize(flow, vel_resize, name='diffflow')
-    if bidir:
-        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
-
-    # transform
-    y = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_src')([src, flow])
-    if bidir:
-        y_tgt = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing, name='warped_tgt')([tgt, neg_flow])
-
-    # prepare outputs and losses
-    outputs = [y, vel]
-    if bidir:
-        outputs = [y, y_tgt, vel]
-
-    model = Model(inputs=[src, tgt], outputs=outputs)
-
-    if ret_flows:
-        outputs += [model.get_layer('diffflow').output, model.get_layer('neg_diffflow').output]
-        return Model(inputs=[src, tgt], outputs=outputs)
-    else: 
-        return model
 
 
 def atl_img_model(vol_shape, mult=1.0, src=None, atl_layer_name='img_params'):
@@ -425,9 +469,6 @@ def atl_img_model(vol_shape, mult=1.0, src=None, atl_layer_name='img_params'):
     v = v_layer(src)  # this is so memory-wasteful...
 
     return keras.models.Model(src, v)
-
-
-
 
 
 def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
@@ -522,9 +563,6 @@ def cond_img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
         return model
 
 
-
-
-
 def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
                         atl_mult=1.0,
                         bidir=True,
@@ -561,8 +599,6 @@ def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
     return model
 
 
-
-
 ########################################################
 # Helper functions
 ########################################################
@@ -579,9 +615,6 @@ def conv_block(x_in, nf, strides=1):
                  kernel_initializer='he_normal', strides=strides)(x_in)
     x_out = LeakyReLU(0.2)(x_out)
     return x_out
-
-
-
 
 
 def trf_resize(trf, vel_resize, name='flow'):
