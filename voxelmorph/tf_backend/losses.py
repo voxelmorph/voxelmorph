@@ -110,7 +110,7 @@ def binary_dice(y_true, y_pred):
     TODO: combine with neuron.metrics.dice
     """
     ndims = len(y_pred.get_shape().as_list()) - 2
-    vol_axes = 1 + np.range(ndims)
+    vol_axes = list(range(1, ndims+1))
 
     top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
     bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
