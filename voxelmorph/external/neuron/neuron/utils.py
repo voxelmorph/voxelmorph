@@ -61,11 +61,9 @@ def interpn(vol, loc, interp_method='linear'):
     
     if isinstance(loc, (list, tuple)):
         loc = tf.stack(loc, -1)
-
-    # since loc can be a list, nb_dims has to be based on vol.
     nb_dims = loc.shape[-1]
 
-    if nb_dims != len(vol.shape[:-1]):
+    if len(vol.shape) not in [nb_dims, nb_dims+1]:
         raise Exception("Number of loc Tensors %d does not match volume dimension %d"
                         % (nb_dims, len(vol.shape[:-1])))
 
@@ -129,7 +127,7 @@ def interpn(vol, loc, interp_method='linear'):
             # if c[d] is 0 --> want weight = 1 - (pt - floor[pt]) = diff_loc1
             # if c[d] is 1 --> want weight = pt - floor[pt] = diff_loc0
             wts_lst = [weights_loc[c[d]][d] for d in range(nb_dims)]
-            # tf stacking is slow, we we will use prod_n()
+            # tf stacking is slow, we will use prod_n()
             # wlm = tf.stack(wts_lst, axis=0)
             # wt = tf.reduce_prod(wlm, axis=0)
             wt = prod_n(wts_lst)
@@ -181,18 +179,13 @@ def resize(vol, zoom_factor, interp_method='linear'):
     new_shape = [vol_shape[f] * zoom_factor[f] for f in range(ndims)]
     new_shape = [int(f) for f in new_shape]
 
-    # get grid for new shape
-    grid = volshape_to_ndgrid(new_shape)
-    grid = [tf.cast(f, 'float32') for f in grid]
-    offset = [grid[f] / zoom_factor[f] - grid[f] for f in range(ndims)]
-    offset = tf.stack(offset, ndims)
+    lin = [tf.linspace(0., vol_shape[d]-1., new_shape[d]) for d in range(ndims)]
+    grid = ndgrid(*lin)
 
-    # transform
-    return transform(vol, offset, interp_method)
+    return interpn(vol, grid, interp_method=interp_method)
 
 
-def zoom(*args, **kwargs):
-    return resize(*args, **kwargs)
+zoom = resize
 
 
 def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
@@ -297,6 +290,32 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij'):
     return interpn(vol, loc, interp_method=interp_method)
 
 
+def compose(disp_1, disp_2, indexing='ij'):
+    """
+    compose two dense deformations specified by their displacements
+
+    We have two fields
+        A --> B (so field is in space of B)
+        and
+        B --> C (so field is in the space of C)
+    this function gives a new warp field
+        A --> C (so field is in the sapce of C)
+
+    Parameters:
+        disp_1: first displacement (A-->B) with size [*vol_shape, ndims]
+        disp_2: second  displacement (B-->C) with size [*vol_shape, ndims]
+        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
+            In general, prefer to leave this 'ij'
+
+    Returns:
+        composed field disp_3 which takes data from A to C
+    """
+
+    assert indexing == 'ij', "currently only ij indexing is implemented in compose"
+
+    return disp_2 + transform(disp_1, disp_2, interp_method='linear', indexing=indexing)
+
+
 def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
     """
     Integrate (stationary of time-dependent) vector field (N-D Tensor) in tensorflow
@@ -381,26 +400,37 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
 
         # process time point.
         out_time_pt = kwargs['out_time_pt'] if 'out_time_pt' in kwargs.keys() else 1
-        single_out_time_pt = not isinstance(out_time_pt, (list, tuple))
-        if single_out_time_pt: out_time_pt = [out_time_pt]
-        K_out_time_pt = K.variable([0, *out_time_pt])
+        out_time_pt = tf.cast(K.flatten(out_time_pt), tf.float32)
+        len_out_time_pt = out_time_pt.get_shape().as_list()[0]
+        assert len_out_time_pt is not None, 'len_out_time_pt is None :('
+        z = out_time_pt[0:1]*0.0  # initializing with something like tf.zeros(1) gives a control flow issue.
+        K_out_time_pt = K.concatenate([z, out_time_pt], 0)
+
+        # enable a new integration function than tf.contrib.integrate.odeint
+        odeint_fn = tf.contrib.integrate.odeint
+        if 'odeint_fn' in kwargs.keys() and kwargs['odeint_fn'] is not None:
+            odeint_fn = kwargs['odeint_fn']
 
         # process initialization
         if 'init' not in kwargs.keys() or kwargs['init'] == 'zero':
-            disp0 = vec*0
+            disp0 = vec*0  # initial displacement is 0
         else:
             raise ValueError('non-zero init for ode method not implemented')
 
-        # compute integration with tf.contrib.integrate.odeint
+        # compute integration with odeint
         if 'ode_args' not in kwargs.keys(): kwargs['ode_args'] = {}
-        disp = tf.contrib.integrate.odeint(fn, disp0, K_out_time_pt, **kwargs['ode_args'])
-        disp = K.permute_dimensions(disp[1:len(out_time_pt)+1, :], [*range(1,len(disp.shape)), 0])
+        disp = odeint_fn(fn, disp0, K_out_time_pt, **kwargs['ode_args'])
+        disp = K.permute_dimensions(disp[1:len_out_time_pt+1, :], [*range(1,len(disp.shape)), 0])
 
         # return
-        if single_out_time_pt: 
+        if len_out_time_pt == 1: 
             disp = disp[...,0]
 
     return disp
+
+
+
+
 
 
 def volshape_to_ndgrid(volshape, **kwargs):
@@ -465,20 +495,6 @@ def ndgrid(*args, **kwargs):
     return meshgrid(*args, indexing='ij', **kwargs)
 
 
-def flatten(v):
-    """
-    flatten Tensor v
-    
-    Parameters:
-        v: Tensor to be flattened
-    
-    Returns:
-        flat Tensor
-    """
-
-    return tf.reshape(v, [-1])
-
-
 def meshgrid(*args, **kwargs):
     """
     
@@ -541,7 +557,6 @@ def meshgrid(*args, **kwargs):
     sz = [x.get_shape().as_list()[0] for x in args]
 
     # output_dtype = tf.convert_to_tensor(args[0]).dtype.base_dtype
-
     if indexing == "xy" and ndim > 1:
         output[0] = tf.reshape(output[0], (1, -1) + (1,) * (ndim - 2))
         output[1] = tf.reshape(output[1], (-1, 1) + (1,) * (ndim - 2))
@@ -554,32 +569,37 @@ def meshgrid(*args, **kwargs):
     # mult_fact = tf.ones(shapes, output_dtype)
     # return [x * mult_fact for x in output]
     for i in range(len(output)):       
-        output[i] = tf.tile(output[i], tf.stack([*sz[:i], 1, *sz[(i+1):]]))
+        stack_sz = [*sz[:i], 1, *sz[(i+1):]]
+        if indexing == 'xy' and ndim > 1 and i < 2:
+            stack_sz[0], stack_sz[1] = stack_sz[1], stack_sz[0]
+        output[i] = tf.tile(output[i], tf.stack(stack_sz))
     return output
+
+
+def flatten(v):
+    """
+    flatten Tensor v
+    
+    Parameters:
+        v: Tensor to be flattened
+    
+    Returns:
+        flat Tensor
+    """
+
+    return tf.reshape(v, [-1])
+
     
 
     
 def prod_n(lst):
+    """
+    Alternative to tf.stacking and prod, since tf.stacking can be slow
+    """
     prod = lst[0]
     for p in lst[1:]:
         prod *= p
     return prod
-
-
-def sub2ind(siz, subs, **kwargs):
-    """
-    assumes column-order major
-    """
-    # subs is a list
-    assert len(siz) == len(subs), 'found inconsistent siz and subs: %d %d' % (len(siz), len(subs))
-
-    k = np.cumprod(siz[::-1])
-
-    ndx = subs[-1]
-    for i, v in enumerate(subs[:-1][::-1]):
-        ndx = ndx + v * k[i]
-
-    return ndx
 
 
 
@@ -638,7 +658,30 @@ def gaussian_kernel(sigma, windowsize=None, indexing='ij'):
 
 
 
+def _softmax(x, axis=-1, alpha=1):
+    """
+    building on keras implementation, with additional alpha parameter
 
+    Softmax activation function.
+    # Arguments
+        x : Tensor.
+        axis: Integer, axis along which the softmax normalization is applied.
+        alpha: a value to multiply all x
+    # Returns
+        Tensor, output of softmax transformation.
+    # Raises
+        ValueError: In case `dim(x) == 1`.
+    """
+    x = alpha * x
+    ndim = K.ndim(x)
+    if ndim == 2:
+        return K.softmax(x)
+    elif ndim > 2:
+        e = K.exp(x - K.max(x, axis=axis, keepdims=True))
+        s = K.sum(e, axis=axis, keepdims=True)
+        return e / s
+    else:
+        raise ValueError('Cannot apply softmax to a tensor that is 1D')
 
 
 
@@ -724,10 +767,18 @@ def mod_submodel(orig_model,
             dct[layer] is a list of lists of layers.
         """
 
-        out_layers = orig_model.output_layers
-        out_node_idx = orig_model.output_layers_node_indices
+        if hasattr(orig_model, 'output_layers'):
+            out_layers = orig_model.output_layers
+            out_node_idx = orig_model.output_layers_node_indices
+            node_list = [ol._inbound_nodes[out_node_idx[i]] for i, ol in enumerate(out_layers)]
 
-        node_list = [ol._inbound_nodes[out_node_idx[i]] for i, ol in enumerate(out_layers)]
+        else:
+            out_layers = orig_model._output_layers
+            
+            node_list = []
+            for i, ol in enumerate(orig_model._output_layers):
+                node_list += ol._inbound_nodes
+            node_list  = list(set(node_list ))
             
         dct = {}
         dct_node_idx = {}
@@ -915,6 +966,9 @@ def robust_multi_gpu_model(model, gpus, verbose=True):
 
 
 
+
+
+
 def logtanh(x, a=1):
     """
     log * tanh
@@ -932,6 +986,75 @@ def arcsinh(x, alpha=1):
     """
     return tf.asinh(x * alpha) / alpha
 
+
+def logistic(x, x0=0., alpha=1., L=1.):
+    """
+    returns L/(1+exp(-alpha * (x-x0)))
+    """
+    assert L > 0, 'L (height of logistic) should be > 0'
+    assert alpha > 0, 'alpha (slope) of logistic should be > 0'
+    
+    return L / (1 + tf.exp(-alpha * (x-x0)))
+
+def sigmoid(x):
+    return logistic(x, x0=0., alpha=1., L=1.)
+
+def logistic_fixed_ends(x, start=-1., end=1., L=1., **kwargs):
+    """
+    f is logistic with fixed ends, so that f(start) = 0, and f(end) = L.
+    this is currently done a bit heuristically: it's a sigmoid, with a linear function added to correct the ends.
+    """
+    assert end > start, 'End of fixed points should be greater than start'
+    # tf.assert_greater(end, start, message='assert')
+    
+    # clip to start and end
+    x = tf.clip_by_value(x, start, end)
+    
+    # logistic function
+    xv = logistic(x, L=L, **kwargs)
+    
+    # ends of linear corrective function
+    sv = logistic(start, L=L, **kwargs)
+    ev = logistic(end, L=L, **kwargs)
+    
+    # corrective function
+    df = end - start
+    linear_corr = (end-x)/df * (- sv) + (x-start)/df * (-ev + L)
+    
+    # return fixed logistic
+    return xv + linear_corr
+
+def sigmoid_fixed_ends(x, start=-1., end=1., L=1., **kwargs):
+    return logistic_fixed_ends(x, start=-1., end=1., L=1., x0=0., alpha=1.)
+
+def soft_round(x, alpha=25):
+    fx = tf.floor(x)
+    xd = x - fx
+    return fx + logistic_fixed_ends(xd, start=0., end=1., x0=0.5, alpha=alpha)
+
+def soft_delta(x, x0=0., alpha=100, reg='l1'):
+    """
+    recommended defaults:
+    alpha = 100 for l1
+    alpha = 1000 for l2
+    """
+    if reg == 'l1':
+        xa = tf.abs(x - x0)
+    else:
+        assert reg == 'l2'
+        xa = tf.square(x - x0)
+    return (1 - logistic(xa, alpha=alpha)) * 2
+
+
+def odd_shifted_relu(x, shift=-0.5, scale=2.0):
+    """
+    Odd shifted ReLu
+    Essentially in x > 0, it is a shifted ReLu, and in x < 0 it's a negative mirror. 
+    """
+
+    shift = float(shift)
+    scale = float(scale)
+    return scale * K.relu(x - shift)  - scale * K.relu(- x - shift)
 
 
 
@@ -1216,6 +1339,28 @@ def next_vol_pred(model, data_generator, verbose=False):
 
 
 
+
+
+def sub2ind(siz, subs, **kwargs):
+    """
+    assumes column-order major
+    """
+    # subs is a list
+    assert len(siz) == len(subs), \
+        'found inconsistent siz and subs: %d %d' % (len(siz), len(subs))
+
+    k = np.cumprod(siz[::-1])
+
+    ndx = subs[-1]
+    for i, v in enumerate(subs[:-1][::-1]):
+        ndx = ndx + v * k[i]
+
+    return ndx
+
+
+
+
+
 ###############################################################################
 # functions from some external source
 ###############################################################################
@@ -1252,6 +1397,13 @@ def batch_gather(reference, indices):
     batch_size = K.shape(reference)[0]
     indices = tf.stack([tf.range(batch_size), indices], axis=1)
     return tf.gather_nd(reference, indices)
+
+
+def model_diagram(model):
+    outfile = NamedTemporaryFile().name + '.png'
+    plot_model(model, to_file=outfile, show_shapes=True)
+    Image(outfile, width=100)
+
 
 
 ###############################################################################

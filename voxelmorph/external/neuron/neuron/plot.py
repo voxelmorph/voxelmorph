@@ -1,7 +1,7 @@
 """
-tensorflow/keras plot utilities for the neuron project
+plot utilities for the neuron project
 
-If you use this code, please cite 
+If you use this code, please cite the first paper this was built for:
 Dalca AV, Guttag J, Sabuncu MR
 Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation, 
 CVPR 2018
@@ -25,15 +25,19 @@ def slices(slices_in,           # the 2D slices
            grid=False,          # option to plot the images in a grid or a single row
            width=15,            # width in in
            show=True,           # option to actually show the plot (plt.show())
+           axes_off=True,
            imshow_args=None):
     '''
     plot a grid of slices (2d images)
     '''
 
     # input processing
+    if type(slices_in) == np.ndarray:
+        slices_in = [slices_in]
     nb_plots = len(slices_in)
     for si, slice_in in enumerate(slices_in):
-        assert len(slice_in.shape) == 2, 'each slice has to be 2d: 2d channels'
+        if len(slice_in.shape) != 2:
+            assert len(slice_in.shape) == 3 and slice_in.shape[-1] == 3, 'each slice has to be 2d or RGB (3 channels)'
         slices_in[si] = slice_in.astype('float')
         
 
@@ -106,13 +110,15 @@ def slices(slices_in,           # the 2D slices
         row_axs = axs if rows == 1 else axs[row]
         ax = row_axs[col]
 
-        ax.axis('off')
+        if axes_off:
+            ax.axis('off')
 
     # show the plots
     fig.set_size_inches(width, rows/cols*width)
-    plt.tight_layout()
+    
 
     if show:
+        plt.tight_layout()
         plt.show()
 
     return (fig, axs)
@@ -151,6 +157,7 @@ def flow(slices_in,           # the 2D slices
          img_indexing=True,   # whether to match the image view, i.e. flip y axis
          grid=False,          # option to plot the images in a grid or a single row
          show=True,            # option to actually show the plot (plt.show())
+         quiver_width=None,
          scale=1):             # note quiver essentially draws quiver length = 1/scale
     '''
     plot a grid of flows (2d+2 images)
@@ -230,6 +237,7 @@ def flow(slices_in,           # the 2D slices
                   color=colormap(norm(colors).flatten()),
                   angles='xy',
                   units='xy',
+                  width=quiver_width,
                   scale=scale[i])
         ax.axis('equal')
     
@@ -252,3 +260,44 @@ def flow(slices_in,           # the 2D slices
         plt.show()
 
     return (fig, axs)
+
+
+def pca(pca, x, y):
+    x_mean = np.mean(x, 0)
+    x_std = np.std(x, 0)
+
+    W = pca.components_
+    x_mu = W @ pca.mean_  # pca.mean_ is y_mean
+    y_hat = x @ W + pca.mean_
+
+    y_err = y_hat - y
+    y_rel_err = y_err / np.maximum(0.5*(np.abs(y)+np.abs(y_hat)), np.finfo('float').eps)
+
+    plt.figure(figsize=(15, 7))
+    plt.subplot(2, 3, 1)
+    plt.plot(pca.explained_variance_ratio_)
+    plt.title('var %% explained')
+    plt.subplot(2, 3, 2)
+    plt.plot(np.cumsum(pca.explained_variance_ratio_))
+    plt.ylim([0, 1.01])
+    plt.grid()
+    plt.title('cumvar explained')
+    plt.subplot(2, 3, 3)
+    plt.plot(np.cumsum(pca.explained_variance_ratio_))
+    plt.ylim([0.8, 1.01])
+    plt.grid()
+    plt.title('cumvar explained')
+
+    plt.subplot(2, 3, 4)
+    plt.plot(x_mean)
+    plt.plot(x_mean + x_std, 'k')
+    plt.plot(x_mean - x_std, 'k')
+    plt.title('x mean across dims (sorted)')
+    plt.subplot(2, 3, 5)
+    plt.hist(y_rel_err.flat, 100)
+    plt.title('y rel err histogram')
+    plt.subplot(2, 3, 6)
+    plt.imshow(W @ np.transpose(W), cmap=plt.get_cmap('gray'))
+    plt.colorbar()
+    plt.title('W * W\'')
+    plt.show()

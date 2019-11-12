@@ -3,15 +3,14 @@
 # general imports
 import sys
 import os
+import zipfile
 
 # third party imports
 import numpy as np
 import nibabel as nib
 import scipy
-from keras.utils import np_utils 
 import keras
-import keras.preprocessing
-import keras.preprocessing.image
+from keras.utils import np_utils 
 from keras.models import Model
 
 # local packages
@@ -377,50 +376,6 @@ def vol_seg(volpath,
         yield (input_vol, output_vol)
 
 
-# def seg_seg(volpath,
-#             segpath,
-#             crop=None, resize_shape=None, rescale=None, # processing parameters
-#             verbose=False,
-#             name='seg_seg', # name, optional
-#             ext='.npz',
-#             nb_restart_cycle=None,  # number of files to restart after
-#             nb_labels_reshape=-1,
-#             collapse_2d=None,
-#             force_binary=False,
-#             nb_input_feats=1,
-#             **kwargs):
-#     """
-#     generator with (volume, segmentation)
-
-#     verbose is passed down to the base generators.py primitive generator (e.g. vol, here)
-
-#     ** kwargs are any named arguments for vol(...), 
-#         except verbose, data_proc_fn, ext, nb_labels_reshape and name 
-#             (which this function will control when calling vol())
-#     """
-
-#     # compute processing function
-#     proc_seg_fn = lambda x: nrn_proc.vol_proc(x, crop=crop, resize_shape=resize_shape,
-#                                               interp_order=0, rescale=rescale)
-
-#     # get seg generator, matching nb_files
-#     seg_gen = vol(segpath, **kwargs, ext=ext, nb_restart_cycle=nb_restart_cycle,
-#                   force_binary=force_binary, collapse_2d = collapse_2d,
-#                   data_proc_fn=proc_seg_fn, nb_labels_reshape=nb_labels_reshape, keep_vol_size=True,
-#                   name=name+' seg', verbose=False)
-
-#     # on next (while):
-#     while 1:
-#         # get input and output (seg) vols
-#         input_vol = next(seg_gen).astype('float16')
-#         vol_size = np.prod(input_vol.shape[1:-1])  # get the volume size
-#         output_vol = np.reshape(input_vol, (input_vol.shape[0], vol_size, input_vol.shape[-1]))
-
-#         # output input and output
-#         yield (input_vol, output_vol)
-
-
-
 def vol_cat(volpaths, # expect two folders in here
             crop=None, resize_shape=None, rescale=None, # processing parameters
             verbose=False,
@@ -474,7 +429,6 @@ def vol_cat(volpaths, # expect two folders in here
                 data = -data
 
             yield (data, z)
-
 
 
 def add_prior(gen,
@@ -711,7 +665,6 @@ def vol_seg_prior(*args,
             yield (input_vol, [output_vol, prior_batch])
 
 
-
 def vol_prior_hack(*args,
                    proc_vol_fn=None,
                    proc_seg_fn=None,
@@ -855,6 +808,7 @@ def vol_seg_hack(volpath,
         # output input and output
         yield input_vol
 
+
 def vol_sr_slices(volpath,
                   nb_input_slices,
                   nb_slice_spacing,
@@ -941,310 +895,7 @@ def vol_sr_slices(volpath,
                 start_indices = list(range(batch_start, batch_start + batch_size))
                 input_batch, output_batch = indices_to_batch(vol_data, start_indices, nb_slices_in_subvol, nb_slice_spacing)
                 yield (input_batch, output_batch)
-
-
-
-        
-
-    
-
-
-
-
-
-
-
-def ext_data(segpath,
-             volpath,
-             batch_size,
-             expected_files=None,
-             ext='.npy',
-             nb_restart_cycle=None,
-             data_proc_fn=None,  # processing function that takes in one arg (the volume)
-             vol_rand_seed=None,
-             name='ext_data',
-             verbose=False,
-             yield_incomplete_final_batch=True,
-             patch_stride=1,
-             extract_slice=None,
-             patch_size=None,
-             ext_data_fields=None,
-             expected_nb_files = -1):
-    assert ext_data_fields is not None, "Need some external data fields"
-
-   # get filenames at given paths
-    volfiles = _get_file_list(segpath, ext, vol_rand_seed)
-    nb_files = len(volfiles)
-    assert nb_files > 0, "Could not find any files at %s with extension %s" % (segpath, ext)
-
-    # compute subvolume split
-    vol_data = _load_medical_volume(os.path.join(volpath, expected_files[0]), '.npz')
-    # process volume
-    if data_proc_fn is not None:
-        vol_data = data_proc_fn(vol_data)
-
-    # nb_patches_per_vol = 1
-    # if patch_size is not None and all(f is not None for f in patch_size):
-        # nb_patches_per_vol = np.prod(pl.gridsize(vol_data.shape, patch_size, patch_stride))
-    if nb_restart_cycle is None:
-        nb_restart_cycle = nb_files
-
-    # assert nb_restart_cycle <= (nb_files * nb_patches_per_vol), \
-        # '%s restart cycle (%s) too big (%s) in %s' % \
-        # (name, nb_restart_cycle, nb_files * nb_patches_per_vol, volpath)
-
-    # check the number of files matches expected (if passed)
-    if expected_nb_files >= 0:
-        assert nb_files == expected_nb_files, \
-            "number of files do not match: %d, %d" % (nb_files, expected_nb_files)
-    if expected_files is not None:
-        if not (volfiles == expected_files):
-            print('file lists did not match !!!', file=sys.stderr)
-
-    # iterate through files
-    fileidx = -1
-    batch_idx = -1
-    feat_idx = 0
-    while 1:
-        fileidx = np.mod(fileidx + 1, nb_restart_cycle)
-        if verbose and fileidx == 0:
-            print('starting %s cycle' % name)
-
-        this_ext_data = np.load(os.path.join(segpath, volfiles[fileidx]))
-        # print(os.path.join(segpath, volfiles[fileidx]), " was loaded")
-
-        for _ in range(nb_patches_per_vol):
-            if batch_idx == -1:
-                ext_data_batch = [this_ext_data[f] for f in ext_data_fields]
-            else:
-                tmp_data = [this_ext_data[f] for f in ext_data_fields]
-                ext_data_batch = [[*ext_data_batch[f], this_ext_data[f]] for f in range(len(tmp_data))]
-            
-            # yield patch
-            batch_idx += 1
-            batch_done = batch_idx == batch_size - 1
-            files_done = np.mod(fileidx + 1, nb_restart_cycle) == 0
-            final_batch = (yield_incomplete_final_batch and files_done)
-            if verbose and final_batch:
-                print('last batch in %s cycle %d' % (name, fileidx))
-
-        if batch_done or final_batch:
-            for fi,f in enumerate(ext_data_batch):
-                ext_data_batch[fi] = np.array(f)
-
-            batch_idx = -1
-            yield ext_data_batch
-
-
-
-def vol_ext_data(volpath,
-                 segpath,
-                 proc_vol_fn=None,
-                 proc_seg_fn=None,
-                 verbose=False,
-                 name='vol_seg', # name, optional
-                 ext='.npz',
-                 nb_restart_cycle=None,  # number of files to restart after
-                 nb_labels_reshape=-1,
-                 collapse_2d=None,
-                 force_binary=False,
-                 nb_input_feats=1,
-                 relabel=None,
-                 vol_rand_seed=None,
-                 vol_subname='norm',  # subname of volume
-                 seg_subname='norm',  # subname of segmentation
-                 **kwargs):
-    """
-    generator with (volume, segmentation)
-
-    verbose is passed down to the base generators.py primitive generator (e.g. vol, here)
-
-    ** kwargs are any named arguments for vol(...),
-        except verbose, data_proc_fn, ext, nb_labels_reshape and name
-            (which this function will control when calling vol())
-    """
-
-    # get vol generator
-    vol_gen = vol(volpath, **kwargs, ext=ext,
-                  nb_restart_cycle=nb_restart_cycle, collapse_2d=collapse_2d, force_binary=False,
-                  relabel=None, data_proc_fn=proc_vol_fn, nb_labels_reshape=1, name=name+' vol',
-                  verbose=verbose, nb_feats=nb_input_feats, vol_rand_seed=vol_rand_seed)
-
-    # get seg generator, matching nb_files
-    # vol_files = [f.replace('norm', 'aseg') for f in _get_file_list(volpath, ext)]
-    # vol_files = [f.replace('orig', 'aseg') for f in vol_files]
-    vol_files = [f.replace(vol_subname, seg_subname) for f in _get_file_list(volpath, ext, vol_rand_seed)]
-    seg_gen = ext_data(segpath, 
-                       volpath,
-                       **kwargs,
-                       data_proc_fn=proc_seg_fn,
-                       ext='.npy',
-                       nb_restart_cycle=nb_restart_cycle,
-                       vol_rand_seed=vol_rand_seed,
-                       expected_files=vol_files,
-                       name=name+' ext_data',
-                       verbose=False)
-
-    # on next (while):
-    while 1:
-        # get input and output (seg) vols
-        input_vol = next(vol_gen).astype('float16')
-        output_vol = next(seg_gen) #.astype('float16')
-
-        # output input and output
-        yield (input_vol, output_vol)
-
-
-
-
-def vol_ext_data_prior(*args,
-                  proc_vol_fn=None,
-                  proc_seg_fn=None,
-                  prior_type='location',  # file-static, file-gen, location
-                  prior_file=None,  # prior filename
-                  prior_feed='input',  # input or output
-                  patch_stride=1,
-                  patch_size=None,
-                  batch_size=1,
-                  collapse_2d=None,
-                  extract_slice=None,
-                  force_binary=False,
-                  nb_input_feats=1,
-                  verbose=False,
-                  vol_rand_seed=None,
-                  **kwargs):
-    """
-    generator that appends prior to (volume, segmentation) depending on input
-    e.g. could be ((volume, prior), segmentation)
-    """
-
-    if verbose:
-        print('starting vol_seg_prior')
-
-    # prepare the vol_seg
-    gen = vol_ext_data(*args, **kwargs,
-                  proc_vol_fn=None,
-                  proc_seg_fn=None,
-                  collapse_2d=collapse_2d,
-                  extract_slice=extract_slice,
-                  force_binary=force_binary,
-                  verbose=verbose,
-                  patch_size=patch_size,
-                  patch_stride=patch_stride,
-                  batch_size=batch_size,
-                  vol_rand_seed=vol_rand_seed,
-                  nb_input_feats=nb_input_feats)
-
-    # get prior
-    if prior_type == 'location':
-        prior_vol = nd.volsize2ndgrid(vol_size)
-        prior_vol = np.transpose(prior_vol, [1, 2, 3, 0])
-        prior_vol = np.expand_dims(prior_vol, axis=0) # reshape for model
-
-    else: # assumes a npz filename passed in prior_file
-        with timer.Timer('loading prior', verbose):
-            data = np.load(prior_file)
-            prior_vol = data['prior'].astype('float16')
-
-    if force_binary:
-        nb_labels = prior_vol.shape[-1]
-        prior_vol[:, :, :, 1] = np.sum(prior_vol[:, :, :, 1:nb_labels], 3)
-        prior_vol = np.delete(prior_vol, range(2, nb_labels), 3)
-
-    nb_channels = prior_vol.shape[-1]
-
-    if extract_slice is not None:
-        if isinstance(extract_slice, int):
-            prior_vol = prior_vol[:, :, extract_slice, np.newaxis, :]
-        else:  # assume slices
-            prior_vol = prior_vol[:, :, extract_slice, :]
-
-    # get the prior to have the right volume [x, y, z, nb_channels]
-    assert np.ndim(prior_vol) == 4, "prior is the wrong size"
-
-    # prior generator
-    if patch_size is None:
-        patch_size = prior_vol.shape[0:3]
-    assert len(patch_size) == len(patch_stride)
-    prior_gen = patch(prior_vol, [*patch_size, nb_channels],
-                      patch_stride=[*patch_stride, nb_channels],
-                      batch_size=batch_size,
-                      collapse_2d=collapse_2d,
-                      infinite=True,
-                      variable_batch_size=True,
-                      nb_labels_reshape=0)
-    assert next(prior_gen) is None, "bad prior gen setup"
-
-    # generator loop
-    while 1:
-
-        # generate input and output volumes
-        input_vol, output_vol = next(gen)
-        if verbose and np.all(input_vol.flat == 0):
-            print("all entries are 0")
-
-        # generate prior batch
-        prior_batch = prior_gen.send(input_vol.shape[0])
-
-        if prior_feed == 'input':
-            yield ([input_vol, prior_batch], output_vol)
-        else:
-            assert prior_feed == 'output'
-            yield (input_vol, [output_vol, prior_batch])
-
-
-def max_patch_in_vol_cat(volpaths,
-                         patch_size,
-                         patch_stride,
-                         model,
-                         tst_model,
-                         out_layer,
-                         name='max_patch_in_vol_cat', # name, optional
-                         **kwargs): # named arguments for vol_cat(...)
-    """
-    given a model by reference
-    goes to the next volume and, given a patch_size, finds
-    the highest prediction of out_layer_name, and yields that patch index to the model
-
-    TODO: this doesn't work if called while training, something about running through the graph
-    perhaps need to do a different tf session?
-    """
-
-    # strategy: call vol_cat on full volume
-    vol_cat_gen = vol_cat(volpaths, **kwargs)
-
-    # need to make a deep copy:
-    #model_tmp = Model(inputs=model.inputs, outputs=model.get_layer(out_layer).output)
-    # nrn_models.copy_weights(model_tmp, tst_model)
-    #nrn_models.copy_weights(tst_model, tst_model)
-    #asdasd
-    tst_model = model
-
-    while 1:
-        # get next volume
-        try:
-            sample = next(vol_cat_gen)
-        except:
-            print("Failed loading file. Skipping", file=sys.stderr)
-            continue
-        sample_vol = np.squeeze(sample[0])
-        patch_gen = patch(sample_vol, patch_size, patch_stride=patch_stride)
-
-        # go through its patches
-        max_resp = -np.infty
-        max_idx = np.nan
-        max_out = None
-        for idx, ptc in enumerate(patch_gen):
-            # predict
-            res = np.squeeze(tst_model.predict(ptc))[1]
-            if res > max_resp:
-                max_ptc = ptc
-                max_out = sample[1]
-                max_idx = idx
-
-        # yield the right patch
-        yield (max_ptc, max_out)
-
+   
 
 def img_seg(volpath,
             segpath,
@@ -1380,10 +1031,6 @@ def _relabel(vol_data, labels, forcecheck=False):
     
     return new_vol_data
 
-
-
-
-import zipfile
 
 def _npz_headers(npz, namelist=None):
     """

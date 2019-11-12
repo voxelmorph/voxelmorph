@@ -30,6 +30,7 @@ import pynd.segutils as su
 import neuron.plot as nrn_plt
 import neuron.utils as nrn_utils
 
+
 class ModelWeightCheck(keras.callbacks.Callback):
     """
         check model weights for nan and infinite entries
@@ -81,6 +82,7 @@ class ModelWeightCheck(keras.callbacks.Callback):
             self.wts = wts
             logs['max_diff'] = diff
             # print("max diff", diff)
+
 
 class CheckLossTrend(keras.callbacks.Callback):
     """
@@ -135,8 +137,6 @@ class CheckLossTrend(keras.callbacks.Callback):
 
             # cut the first loss and stack athe latest loss.
             self.losses = [*self.losses[1:], logs['loss']]
-
-
 
 
 class PlotTestSlices(keras.callbacks.Callback):
@@ -336,6 +336,7 @@ class PredictMetrics(keras.callbacks.Callback):
                         varname = '%s_label_%d' % (metric.__name__, self.label_ids[idx])
                         logs[varname] = meanmet[idx, midx]
 
+
 class ModelCheckpoint(keras.callbacks.Callback):
     """
     A modification of keras' ModelCheckpoint, but allow for saving on_batch_end
@@ -470,6 +471,7 @@ class ModelCheckpoint(keras.callbacks.Callback):
                     else:
                         self.model.save(filepath, overwrite=True)
 
+
 class ModelCheckpointParallel(keras.callbacks.Callback):
     """
     
@@ -592,6 +594,8 @@ class ModelCheckpointParallel(keras.callbacks.Callback):
                         self.model.layers[-(num_outputs+1)].save_weights(filepath, overwrite=True)
                     else:
                         self.model.layers[-(num_outputs+1)].save(filepath, overwrite=True)
+
+
 
 ##################################################################################################
 # helper functions

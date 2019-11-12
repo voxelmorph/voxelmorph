@@ -379,11 +379,20 @@ def grid(vol_size, patch_size, patch_stride=1, start_sub=0, nargout=1, grid_type
 
 def patch_gen(vol, patch_size, stride=1, nargout=1, rand=False, rand_seed=None):
     """
-    NOT VERY WELL TESTED
     generator of patches from volume
 
-    TODO: use .grid() to get sub
+    Parameters:
+        vol (numpy array): the n-d volume to be patched
+        patch_size (numpy vector): the size of the patches
+        patch_stride (int or numpy vector, optional): stride (separation) in each dimension.
+            default: 1
+        nargout (int, optional): how much to yield
+            1 (default: the patch) or 2 (tuple with the patch and volume slices for that patch)
+        rand (logical, optional): whether to randomize patch order (default: False)
+        rand_seed (number, optional): random seed if randomizing patch order
 
+    TODO: test more...
+    TODO: use .grid() to get sub
     """
 
     # some parameter checking

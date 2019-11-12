@@ -8,3 +8,5 @@ from . import inits
 from . import models
 from . import utils
 from . import layers
+from . import vae_tools
+from . import regularizers

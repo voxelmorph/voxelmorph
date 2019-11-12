@@ -40,7 +40,6 @@ def boundingbox(bwvol):
     return np.concatenate((starts, ends), 0)
 
 
-
 def bwdist(bwvol):
     """
     positive distance transform from positive entries in logical image
@@ -65,7 +64,6 @@ def bwdist(bwvol):
 
     # get distance
     return scipy.ndimage.morphology.distance_transform_edt(revbwvol)
-
 
 
 def bw2sdtrf(bwvol):
@@ -105,12 +103,45 @@ def bw2sdtrf(bwvol):
     return posdst * notbwvol - negdst * bwvol
 
 
+bw_to_sdtrf = bw2sdtrf
+
+
+def bw_grid(vol_shape, spacing):
+    """
+    draw a black and white ND grid.
+
+    Parameters
+    ----------
+        vol_shape: expected volume size
+        spacing: scalar or list the same size as vol_shape
+
+    Returns
+    -------
+        grid_vol: a volume the size of vol_shape with white lines on black background
+    """
+
+    # check inputs
+    if not isinstance(spacing, (list, tuple)):
+        spacing = [spacing] * len(vol_shape)
+    assert len(vol_shape) == len(spacing)
+
+    # go through axes
+    grid_image = np.zeros(vol_shape)
+    for d, v in enumerate(vol_shape):
+        rng = [np.arange(0, f) for f in vol_shape]
+        rng[d] = np.append(np.arange(0, v, spacing[d]), -1)
+        grid_image[ndgrid(*rng)] = 1
+
+    return grid_image
+
+
 def bw_convex_hull(bwvol):
-    # transform bw to mesh.
+    # transform bw to nd grid.
     grid = volsize2ndgrid(bwvol.shape)
+
     # get the 1 points
-    q = np.concatenate([grid[d].flat for d in bwvol.ndims], 1)
-    return q
+    return np.concatenate([grid[d].flat for d in bwvol.ndims], 1)
+
 
 def bw2contour(bwvol, type='both', thr=1.01):
     """
@@ -147,26 +178,7 @@ def bw2contour(bwvol, type='both', thr=1.01):
         return np.abs(sdtrf) < thr
 
 
-def ndgrid(*args, **kwargs):
-    """
-    Disclaimer: This code is taken directly from the scitools package [1]
-    Since at the time of writing scitools predominantly requires python 2.7 while we work with 3.5+
-    To avoid issues, we copy the quick code here.
-
-    Same as calling ``meshgrid`` with *indexing* = ``'ij'`` (see
-    ``meshgrid`` for documentation).
-    """
-    kwargs['indexing'] = 'ij'
-    return np.meshgrid(*args, **kwargs)
-
-
-def volsize2ndgrid(volsize):
-    """
-    return the dense nd-grid for the volume with size volsize
-    essentially return the ndgrid fpr
-    """
-    ranges = [np.arange(e) for e in volsize]
-    return ndgrid(*ranges)
+bw_to_contour = bw2contour
 
 
 def bw_sphere(volshape, rad, loc=None):
@@ -190,7 +202,29 @@ def bw_sphere(volshape, rad, loc=None):
     return dst <= rad
 
 
-def volcrop(vol, new_vol_size=None, start=None, end=None, crop=None):
+def ndgrid(*args, **kwargs):
+    """
+    Disclaimer: This code is taken directly from the scitools package [1]
+    Since at the time of writing scitools predominantly requires python 2.7 while we work with 3.5+
+    To avoid issues, we copy the quick code here.
+
+    Same as calling ``meshgrid`` with *indexing* = ``'ij'`` (see
+    ``meshgrid`` for documentation).
+    """
+    kwargs['indexing'] = 'ij'
+    return np.meshgrid(*args, **kwargs)
+
+
+def volsize2ndgrid(volsize):
+    """
+    return the dense nd-grid for the volume with size volsize
+    essentially return the ndgrid fpr
+    """
+    ranges = [np.arange(e) for e in volsize]
+    return ndgrid(*ranges)
+
+
+def volcrop(vol, new_vol_shape=None, start=None, end=None, crop=None):
     """
     crop a nd volume.
 
@@ -198,7 +232,7 @@ def volcrop(vol, new_vol_size=None, start=None, end=None, crop=None):
     ----------
     vol : nd array
         the nd-dimentional volume to crop. If only specified parameters, is returned intact
-    new_vol_size : nd vector, optional
+    new_vol_shape : nd vector, optional
         the new size of the cropped volume
     crop : nd tuple, optional
         either tuple of integers or tuple of tuples.
@@ -214,64 +248,78 @@ def volcrop(vol, new_vol_size=None, start=None, end=None, crop=None):
     cropped_vol : nd array
     """
 
-    vol_size = np.asarray(vol.shape)
+    vol_shape = np.asarray(vol.shape)
 
     # check which parameters are passed
-    passed_new_vol_size = new_vol_size is not None
+    passed_new_vol_shape = new_vol_shape is not None
     passed_start = start is not None
     passed_end = end is not None
     passed_crop = crop is not None
 
     # from whatever is passed, we want to obtain start and end.
     if passed_start and passed_end:
-        assert not (passed_new_vol_size or passed_crop), \
+        assert not (passed_new_vol_shape or passed_crop), \
             "If passing start and end, don't pass anything else"
 
-    elif passed_new_vol_size:
+    elif passed_new_vol_shape:
         # compute new volume size and crop_size
         assert not passed_crop, "Cannot use both new volume size and crop info"
 
         # compute start and end
         if passed_start:
             assert not passed_end, \
-                "When giving passed_new_vol_size, cannot pass both start and end"
-            end = start + new_vol_size
+                "When giving passed_new_vol_shape, cannot pass both start and end"
+            end = start + new_vol_shape
 
         elif passed_end:
             assert not passed_start, \
-                "When giving passed_new_vol_size, cannot pass both start and end"
-            start = end - new_vol_size
+                "When giving passed_new_vol_shape, cannot pass both start and end"
+            start = end - new_vol_shape
 
         else: # none of crop_size, crop, start or end are passed
-            mid = np.asarray(vol_size) // 2
-            start = mid - (new_vol_size // 2)
-            end = start + new_vol_size
+            mid = np.asarray(vol_shape) // 2
+            start = mid - (new_vol_shape // 2)
+            end = start + new_vol_shape
 
     elif passed_crop:
-        assert not (passed_start or passed_end or new_vol_size), \
-            "Cannot pass both passed_crop and start or end or new_vol_size"
+        assert not (passed_start or passed_end or new_vol_shape), \
+            "Cannot pass both passed_crop and start or end or new_vol_shape"
         
         if isinstance(crop[0], (list, tuple)):
-            end = vol_size - [val[1] for val in crop]
+            end = vol_shape - [val[1] for val in crop]
             start = [val[0] for val in crop]
         else:
-            end = vol_size - crop
+            end = vol_shape - crop
             start = crop
 
     elif passed_start: # nothing else is passed
-        end = vol_size
+        end = vol_shape
 
     else:
         assert passed_end
-        start = vol_size * 0
+        start = vol_shape * 0
 
     # get indices. Since we want this to be an nd-volume crop function, we
     # idx = []
     # for i in range(len(end)):
     #     idx.append(slice(start[i], end[i]))
-    idx = range(start, end)
 
-    return vol[np.ix_(*idx)]
+    # special case 1, 2, 3 since it's faster with slicing
+    if len(start) == 1:
+        rvol = vol[start[0]:end[0]]
+    elif len(start) == 2:
+        rvol = vol[start[0]:end[0], start[1]:end[1]]
+    elif len(start) == 3:
+        rvol = vol[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+    elif len(start) == 4:
+        rvol = vol[start[0]:end[0], start[1]:end[1], start[2]:end[2], start[3]:end[3]]
+    elif len(start) == 5:
+        rvol = vol[start[0]:end[0], start[1]:end[1], start[2]:end[2], start[3]:end[3], start[4]:end[4]]
+    else:
+        idx = range(start, end)
+        rvol = vol[np.ix_(*idx)]
+
+    return rvol
 
 
 def slice(*args):
@@ -293,6 +341,7 @@ def slice(*args):
     # prepare
     idx = [slice(start[i], end[i], step[i]) for i in range(len(end))]
     return idx
+
 
 def range(*args):
     """
@@ -336,7 +385,6 @@ def arange(*args):
     return idx
 
 
-
 def axissplit(arr, axis):
     """
     Split a nd volume along an exis into n volumes, where n is the size of the axis dim.
@@ -358,8 +406,6 @@ def axissplit(arr, axis):
     """
     nba = arr.shape[axis]
     return np.split(arr, nba, axis=axis)
-
-
 
 
 def sub2ind(arr, size, **kwargs):
@@ -389,7 +435,6 @@ def centroid(im):
     return [np.sum(p.flat) / np.sum(im.shape) for p in prob]
 
 
-
 def ind2sub_entries(indices, size, **kwargs):
     """
     returns a nb_entries -by- nb_dims (essentially the transpose of ind2sub)
@@ -403,6 +448,10 @@ def ind2sub_entries(indices, size, **kwargs):
     subvec = np.vstack(sub).transpose()
     # Warning this might be F-style-like stacking... it's a bit confusing
     return subvec
+
+
+    
+
 
 ###############################################################################
 # internal

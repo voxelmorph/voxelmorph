@@ -1,0 +1,15 @@
+@inproceedings{dalca2018anatomical,
+  title={Anatomical Priors in Convolutional Networks for Unsupervised Biomedical Segmentation},
+  author={Dalca, Adrian V and Guttag, John and Sabuncu, Mert R},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  pages={9290--9299},
+  year={2018}
+}
+
+
+@article{dalca2019imputation,
+  title={Unsupervised Data Imputation via Variational Inference of Deep Subspaces},
+  author={Dalca, Adrian V and Guttag, John and Sabuncu, Mert R},
+  journal={arXiv preprint arXiv:1903.03503},
+  year={2019}
+}
