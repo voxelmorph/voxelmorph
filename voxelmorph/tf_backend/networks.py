@@ -9,7 +9,7 @@ see e.g. more powerful unet function in https://github.com/adalca/neuron/blob/ma
 
 import sys
 import numpy as np
-
+import neuron as ne
 import tensorflow as tf
 import keras.backend as K
 import keras.layers as KL
@@ -18,13 +18,6 @@ from keras.layers import Layer, Conv3D, Activation, Input, UpSampling3D
 from keras.layers import concatenate, LeakyReLU, Reshape, Lambda
 from keras.initializers import RandomNormal, Constant
 
-# TODO: switch to nice local imports...
-sys.path.append('../ext/neuron')
-sys.path.append('../ext/pynd-lib')
-sys.path.append('../ext/pytools-lib')
-import neuron as ne
-
-# other vm functions
 from . import layers
 
 

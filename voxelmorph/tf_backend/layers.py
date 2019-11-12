@@ -6,15 +6,10 @@ TODO: clean up and join with neuron.layers
 
 import sys
 import numpy as np
-
+import neuron as ne
 import tensorflow as tf
 import keras.backend as K
 from keras.layers import Layer
-
-# TODO: switch to nice local imports...
-sys.path.append('../ext/neuron')
-import neuron as ne
-from neuron.layers import Resize, Sample, RescaleValues
 
 
 class ResizeTransform(Layer):
@@ -51,7 +46,7 @@ class ResizeTransform(Layer):
         return input_shape
 
 
-class DoubleValues(RescaleValues):
+class DoubleValues(ne.layers.RescaleValues):
     def __init__(self, **kwargs):
         self.resize = 2
         super(DoubleValues, self).__init__(self.resize, **kwargs)
