@@ -1,11 +1,3 @@
-"""
-data generators for VoxelMorph
-
-for the CVPR and MICCAI papers, we have data arranged in train/validate/test folders
-inside each folder is a /vols/ and a /asegs/ folder with the volumes
-and segmentations. All of our papers use npz formated data.
-"""
-
 import os
 import sys
 import numpy as np
@@ -13,115 +5,43 @@ import numpy as np
 from . import utils
 
 
-def cvpr2018_gen(gen, atlas_vol_bs, batch_size=1):
-    """ generator used for cvpr 2018 model """
-    volshape = atlas_vol_bs.shape[1:-1]
+def subj2atlas(volnames, volshape, atlas, bidir=False, batch_size=1):
+    """Generator for subject to atlas registration."""
     zeros = np.zeros((batch_size, *volshape, len(volshape)))
+    atlas = np.repeat(atlas, batch_size, axis=0)
+    gen = volgen(volnames, batch_size=batch_size)
     while True:
-        X = next(gen)[0]
-        yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
+        subj = next(gen)[0]
+        invols  = [subj, atlas]
+        outvols = [atlas, subj, zeros] if bidir else [atlas, zeros]
+        yield (invols, outvols)
 
 
-def cvpr2018_gen_s2s(gen, batch_size=1):
-    """ generator used for cvpr 2018 model for subject 2 subject registration """
-    zeros = None
-    while True:
-        X1 = next(gen)[0]
-        X2 = next(gen)[0]
-
-        if zeros is None:
-            volshape = X1.shape[1:-1]
-            zeros = np.zeros((batch_size, *volshape, len(volshape)))
-        yield ([X1, X2], [X2, zeros])
-
-
-def miccai2018_gen(gen, atlas_vol_bs, batch_size=1, bidir=False):
-    """ generator used for miccai 2018 model """
-    volshape = atlas_vol_bs.shape[1:-1]
+def subj2subj(volnames, volshape, bidir=False, batch_size=1):
+    """Generator for subject to subject registration."""
     zeros = np.zeros((batch_size, *volshape, len(volshape)))
+    gen = volgen(volnames, batch_size=batch_size)
     while True:
-        X = next(gen)[0]
-        if bidir:
-            yield ([X, atlas_vol_bs], [atlas_vol_bs, X, zeros])
-        else:
-            yield ([X, atlas_vol_bs], [atlas_vol_bs, zeros])
+        subj1 = next(gen)[0]
+        subj2 = next(gen)[0]
+        invols  = [subj1, subj2]
+        outvols = [subj2, subj1, zeros] if bidir else [subj2, zeros]
+        yield (invols, outvols)
 
 
-def miccai2018_gen_s2s(gen, batch_size=1, bidir=False):
-    """ generator used for miccai 2018 model """
-    zeros = None
+def volgen(vol_names, batch_size=1, return_segs=False, np_var='vol_data'):
+    """Generator for random volume (and segmentaion) loading."""
     while True:
-        X = next(gen)[0]
-        Y = next(gen)[0]
-        if zeros is None:
-            volshape = X.shape[1:-1]
-            zeros = np.zeros((batch_size, *volshape, len(volshape)))
-        if bidir:
-            yield ([X, Y], [Y, X, zeros])
-        else:
-            yield ([X, Y], [Y, zeros])
+        indices = np.random.randint(len(vol_names), size=batch_size)
 
+        # load volumes and concatenate
+        vols = [utils.load_vol(vol_names[i], np_var=np_var, reshape=True) for i in indices]
+        x = [np.concatenate(x, axis=0)]
 
-def example_gen(vol_names, batch_size=1, return_segs=False, seg_dir=None, np_var='vol_data'):
-    """
-    generate examples
-
-    Parameters:
-        vol_names: a list or tuple of filenames
-        batch_size: the size of the batch (default: 1)
-
-        The following are fairly specific to our data structure, please change to your own
-        return_segs: logical on whether to return segmentations
-        seg_dir: the segmentations directory.
-        np_var: specify the name of the variable in numpy files, if your data is stored in 
-            npz files. default to 'vol_data'
-    """
-
-    while True:
-        idxes = np.random.randint(len(vol_names), size=batch_size)
-
-        X_data = []
-        for idx in idxes:
-            X = utils.load_volfile(vol_names[idx], np_var=np_var)
-            X = X[np.newaxis, ..., np.newaxis]
-            X_data.append(X)
-
-        if batch_size > 1:
-            return_vals = [np.concatenate(X_data, 0)]
-        else:
-            return_vals = [X_data[0]]
-
-        # also return segmentations
+        # optionally load segmentations and concatenate
         if return_segs:
-            X_data = []
-            for idx in idxes:
-                X_seg = utils.load_volfile(vol_names[idx].replace('norm', 'aseg'), np_var=np_var)
-                X_seg = X_seg[np.newaxis, ..., np.newaxis]
-                X_data.append(X_seg)
-            
-            if batch_size > 1:
-                return_vals.append(np.concatenate(X_data, 0))
-            else:
-                return_vals.append(X_data[0])
+            seg_names = [vol_names[i].replace('norm', 'aseg') for i in indices]
+            segs = [utils.load_vol(s, np_var=np_var, reshape=True) for s in seg_names]
+            x.append(np.concatenate(segs, axis=0))
 
-        yield tuple(return_vals)
-
-
-def load_example_by_name(vol_name, seg_name, np_var='vol_data'):
-    """
-    load a specific volume and segmentation
-
-    np_var: specify the name of the variable in numpy files, if your data is stored in 
-        npz files. default to 'vol_data'
-    """
-    X = utils.load_volfile(vol_name, np_var)
-    X = X[np.newaxis, ..., np.newaxis]
-
-    return_vals = [X]
-
-    X_seg = utils.load_volfile(seg_name, np_var)
-    X_seg = X_seg[np.newaxis, ..., np.newaxis]
-
-    return_vals.append(X_seg)
-
-    return tuple(return_vals)
+        yield tuple(x)
