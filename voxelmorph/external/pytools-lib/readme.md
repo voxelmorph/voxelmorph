@@ -1,2 +1,0 @@
-# pytools
-General python tools
