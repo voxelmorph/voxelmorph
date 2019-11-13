@@ -10,6 +10,8 @@ import neuron as ne
 import tensorflow as tf
 import keras.backend as K
 from keras.layers import Layer
+from neuron.layers import Resize, RescaleValues
+
 
 
 class ResizeTransform(Layer):
@@ -59,6 +61,54 @@ class ResizeDouble(ne.layers.Resize):
     def __init__(self, **kwargs):
         self.zoom_factor = 2
         super(ResizeDouble, self).__init__(self.zoom_factor, **kwargs)
+
+
+def sample(args):
+    """
+    sample from a normal distribution
+    """
+    mu = args[0]
+    log_sigma = args[1]
+    noise = tf.random_normal(tf.shape(mu), 0, 1, dtype=tf.float32)
+    z = mu + tf.exp(log_sigma/2.0) * noise
+    return z
+
+
+class Sample(Layer):
+    """ 
+    Keras Layer: Gaussian sample from [mu, sigma]
+    """
+
+    def __init__(self, **kwargs):
+        super(Sample, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(Sample, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return sample(x)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape[0]
+
+
+class Rescale(Layer):
+    """ 
+    Keras layer: rescale data by fixed factor
+    """
+
+    def __init__(self, resize, **kwargs):
+        self.resize = resize
+        super(Rescale, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(Rescale, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return x * self.resize 
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
 
 class LocalParamWithInput(Layer):
