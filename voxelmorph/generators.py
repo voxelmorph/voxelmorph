@@ -67,13 +67,13 @@ def volgen(vol_names, batch_size=1, return_segs=False, np_var='vol_data'):
         indices = np.random.randint(len(vol_names), size=batch_size)
 
         # load volumes and concatenate
-        imgs = [utils.load_volfile(vol_names[i], np_var=np_var, reshape=True) for i in indices]
+        imgs = [utils.load_volfile(vol_names[i], np_var=np_var, add_axes=True) for i in indices]
         vols = [np.concatenate(imgs, axis=0)]
 
         # optionally load segmentations and concatenate
         if return_segs:
             seg_names = [vol_names[i].replace('norm', 'aseg') for i in indices]
-            segs = [utils.load_volfile(s, np_var=np_var, reshape=True) for s in seg_names]
+            segs = [utils.load_volfile(s, np_var=np_var, add_axes=True) for s in seg_names]
             vols.append(np.concatenate(segs, axis=0))
 
         yield tuple(vols)
