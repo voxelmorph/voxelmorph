@@ -1,102 +1,72 @@
 """
-Example script to register two volumes with VoxelMorph models
+Example script to register two volumes with VoxelMorph models.
 
-Please make sure to use trained models appropriately. 
-Let's say we have a model trained to register subject (moving) to atlas (fixed)
-One could run:
+Please make sure to use trained models appropriately. Let's say we have a model trained to register a
+subject (moving) to an atlas (fixed). To register a subject to the atlas and save the warp field, run:
 
-python register.py --gpu 0 /path/to/test_vol.nii.gz /path/to/atlas_norm.nii.gz --out_img /path/to/out.nii.gz --model_file ../models/cvpr2018_vm2_cc.h5 
+    python register.py <moving> <atlas> <model> -o <warped-image> -w <warp>
+
+For example, our test volume can be warped to the atlas with the cvpr2018-trained model by running:
+
+    python register.py data/test_vol.nii.gz data/atlas_norm.nii.gz models/cvpr2018_vm2_cc.h5 -o data/test_warped.nii.gz
+
+The warped input will be saved to data/test_warped.nii.gz
 """
 
-# py imports
 import os
-import sys
-from argparse import ArgumentParser
-
-# third party
-import tensorflow as tf
+import argparse
 import numpy as np
-import keras
-from keras.backend.tensorflow_backend import set_session
 import nibabel as nib
-
-# project
-import networks, losses
-sys.path.append('../ext/neuron')
-import neuron.layers as nrn_layers
-
-def register(gpu_id, moving, fixed, model_file, out_img, out_warp):
-    """
-    register moving and fixed. 
-    """  
-    assert model_file, "A model file is necessary"
-    assert out_img or out_warp, "output image or warp file needs to be specified"
-
-    # GPU handling
-    if gpu_id is not None:
-        gpu = '/gpu:' + str(gpu_id)
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        config.allow_soft_placement = True
-        set_session(tf.Session(config=config))
-    else:
-        gpu = '/cpu:0'
-
-    # load data
-    mov_nii = nib.load(moving)
-    mov = mov_nii.get_data()[np.newaxis, ..., np.newaxis]
-    fix_nii = nib.load(fixed)
-    fix = fix_nii.get_data()[np.newaxis, ..., np.newaxis]
-
-    with tf.device(gpu):
-        # load model
-        custom_objects = {'SpatialTransformer': nrn_layers.SpatialTransformer,
-                 'VecInt': nrn_layers.VecInt,
-                 'Sample': networks.Sample,
-                 'Rescale': networks.RescaleDouble,
-                 'Resize': networks.ResizeDouble,
-                 'Negate': networks.Negate,
-                 'recon_loss': losses.Miccai2018(0.02, 10).recon_loss, # values shouldn't matter
-                 'kl_loss': losses.Miccai2018(0.02, 10).kl_loss        # values shouldn't matter
-                 }
+import voxelmorph as vxm
+import tensorflow as tf
+import keras
 
 
-        net = keras.models.load_model(model_file, custom_objects=custom_objects)
+# parse commandline args
+parser = argparse.ArgumentParser()
+parser.add_argument('moving', help='moving image (source) filename')
+parser.add_argument('fixed', help='fixed image (target) filename')
+parser.add_argument('model', help='keras model filename')
+parser.add_argument('-g', '--gpu', help='GPU number - if not supplied, CPU is used')
+parser.add_argument('-o', '--out-image', help='warped output image filename')
+parser.add_argument('-w', '--warp', help='output warp filename')
+args = parser.parse_args()
 
-        # register
-        [moved, warp] = net.predict([mov, fix])
+# device handling
+if args.gpu:
+    device = '/gpu:' + args.gpu
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    config.allow_soft_placement = True
+    tf.keras.backend.set_session(tf.Session(config=config))
+else:
+    device = '/cpu:0'
 
-    # output image
-    if out_img is not None:
-        img = nib.Nifti1Image(moved[0,...,0], mov_nii.affine)
-        nib.save(img, out_img)
+# load moving image
+moving_image = nib.load(args.moving)
+moving = moving_image.get_data()[np.newaxis, ..., np.newaxis]
+affine = moving_image.affine
 
-    # output warp
-    if out_warp is not None:
-        img = nib.Nifti1Image(warp[0,...], mov_nii.affine)
-        nib.save(img, out_warp)
+# load fixed image
+fixed_image = nib.load(args.fixed)
+fixed = fixed_image.get_data()[np.newaxis, ..., np.newaxis]
 
+# load model and predict
+with tf.device(device):
+    # load voxelmorph model and compose flow output model
+    net = vxm.networks.load_model(args.model)
+    flownet = vxm.networks.compose_flownet(net)
 
-if __name__ == "__main__":
-    parser = ArgumentParser()
-    
-    # positional arguments
-    parser.add_argument("moving", type=str, default=None,
-                        help="moving file name")
-    parser.add_argument("fixed", type=str, default=None,
-                        help="fixed file name")
+    # predict warp
+    moved, warp = flownet.predict([moving, fixed])
 
-    # optional arguments
-    parser.add_argument("--model_file", type=str,
-                        dest="model_file", default='../models/cvpr2018_vm1_cc.h5',
-                        help="models h5 file")
-    parser.add_argument("--gpu", type=int, default=None,
-                        dest="gpu_id", help="gpu id number")
-    parser.add_argument("--out_img", type=str, default=None,
-                        dest="out_img", help="output image file name")
-    parser.add_argument("--out_warp", type=str, default=None,
-                        dest="out_warp", help="output warp file name")
+# save warped image
+if args.out_image:
+    img = nib.Nifti1Image(moved.squeeze(), moving_image.affine)
+    nib.save(img, args.out_image)
 
-    args = parser.parse_args()
-    register(**vars(args))
+# save warp
+if args.warp:
+    img = nib.Nifti1Image(warp.squeeze(), moving_image.affine)
+    nib.save(img, args.warp)
