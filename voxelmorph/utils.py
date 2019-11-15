@@ -16,10 +16,18 @@ def load_volfile(filename, np_var='vol_data', add_axes=False):
         import nibabel as nib
         vol = nib.load(filename).get_data()
     elif filename.endswith('.npz'):
-        if np_var is None:
-            np_var = 'vol_data'
         vol = np.load(filename)[np_var]
     else:
         raise ValueError('unknown filetype for %s' % filename)
 
     return vol[np.newaxis, ..., np.newaxis] if add_axes else vol
+
+
+def dice(vol1, vol2, labels):
+    dicem = np.zeros(len(labels))
+    for idx, lab in enumerate(labels):
+        top = 2 * np.sum(np.logical_and(vol1 == lab, vol2 == lab))
+        bottom = np.sum(vol1 == lab) + np.sum(vol2 == lab)
+        bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon.
+        dicem[idx] = top / bottom
+    return dicem
