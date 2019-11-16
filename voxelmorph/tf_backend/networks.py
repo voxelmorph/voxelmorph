@@ -11,6 +11,7 @@ import sys
 import numpy as np
 import neuron as ne
 import tensorflow as tf
+import keras
 import keras.backend as K
 import keras.layers as KL
 from keras.models import Model
@@ -50,12 +51,8 @@ def transform(vol_size,
     trf_input = Input((*[int(f*vel_resize) for f in vol_size], ndims) , name='trf_input')
 
     if int_steps > 0:
-        trf = ne.layers.VecInt(method=int_method,
-                               name='trf-int',
-                               int_steps=int_steps,
-                               **kwargs)(trf_input)
+        trf = ne.layers.VecInt(method=int_method, name='trf-int', int_steps=int_steps, **kwargs)(trf_input)
         trf = trf_resize(trf, vel_resize, name='flow') # TODO change to layers.ResizeTransform
-        
     else:
         trf = trf_input
 
@@ -70,15 +67,107 @@ def transform_nn(vol_size, **kwargs):
     """
     Simple transform model for nearest-neighbor based transformation
     """
-    return transform(vol_size,
-                     interp_method='nearest',
-                     **kwargs)
+    return transform(vol_size, interp_method='nearest', **kwargs)
     
 
 
 ########################################################
 # core networks
 ########################################################
+
+
+def unet(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_feats=1, tgt_feats=1):
+
+    # configure inputs
+    source = src if src else Input(shape=(*vol_size, src_feats))
+    target = tgt if tgt else Input(shape=(*vol_size, tgt_feats))
+
+    # configure encoder (down-sampling path)
+    enc_layers = [concatenate([source, target])]
+    for nf in enc_nf:
+        enc_layers.append(conv_block(enc_layers[-1], nf, strides=2))
+
+    # configure decoder (up-sampling path) - this loop stops just short of the full resolution layer
+    x = enc_layers.pop()
+    half_res = len(enc_nf) - 1
+    for nf in dec_nf[:half_res]:
+        x = conv_block(x, nf, strides=1)
+        x = upsample_block(x, enc_layers.pop())
+
+    # TODO assert that full size has at least 6 dec_nf
+
+    # now we take care of the remaining convolutions and do the final up-sampling when (or if) necessary
+    for i, nf in enumerate(dec_nf[half_res:]):
+        x = conv_block(x, nf, strides=1)
+        if full_size and i == 1:
+            x = upsample_block(x, enc_layers.pop())
+
+    return Model(inputs=[source, target], outputs=[x])
+
+
+def vxmnet(vol_size, enc_nf, dec_nf, full_size=True, int_steps=7, indexing='ij', bidir=False, vel_resize=0.5, use_probs=False):
+    """ 
+    TODO velresize
+    TODO sparse density
+    """
+
+    # ensure correct dimensionality
+    ndims = len(vol_size)
+    assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+    # build core unet model and grab inputs
+    unet_model = unet(vol_size, enc_nf, dec_nf, full_size=full_size)
+    source, target = unet_model.inputs
+
+    # transform unet output into a flow field
+    Conv = getattr(KL, 'Conv%dD' % ndims)
+    flow_mean = Conv(ndims, kernel_size=3, padding='same',
+                kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
+
+    # optionally include probabilities
+    if use_probs:
+        # initialize the velocity variance very low, to start stable
+        flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
+                        kernel_initializer=RandomNormal(mean=0.0, stddev=1e-10),
+                        bias_initializer=Constant(value=-10),
+                        name='log_sigma')(unet_model.output)
+        flow_params = concatenate([flow_mean, flow_logsigma])
+        flow = layers.Sample(name="z_sample")([flow_mean, flow_logsigma])
+    else:
+        flow_params = flow_mean
+        flow = flow_mean
+
+    # optionally negate flow for bidirectional model
+    pos_flow = flow
+    if bidir:
+        neg_flow = layers.Negate()(flow)
+
+    # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
+    if int_steps > 0:
+        pos_flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(pos_flow)
+        if bidir:
+            neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
+
+    # resize to final resolution
+    if vel_resize != 1:
+        pos_flow = trf_resize(pos_flow, vel_resize, name='diffflow')
+        if bidir:
+            neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
+
+    # warp image with flow field
+    y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([source, pos_flow])
+    if bidir:
+        y_target = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([target, neg_flow])
+
+    # build the model
+    outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]  #  TOOODOOO
+    return Model(inputs=[source, target], outputs=outputs)
+
+
+########################################################
+# core but old networks
+########################################################
+
 
 def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_feats=1, tgt_feats=1):
     """
@@ -133,59 +222,6 @@ def unet_core(vol_size, enc_nf, dec_nf, full_size=True, src=None, tgt=None, src_
         x = conv_block(x, dec_nf[6])
 
     return Model(inputs=[src, tgt], outputs=[x])
-
-
-def vxmnet(vol_size, enc_nf, dec_nf, full_size=True, int_steps=7, indexing='ij', bidir=False, vel_resize=0.5, use_probs=False):
-    """
-    Initial attempt at a combined cvpr2018_net + miccai2018_net network. This is a work
-    in progress and has not been tested.
-    """
-
-    # ensure correct dimensionality
-    ndims = len(vol_size)
-    assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-
-    # (1) build core unet
-    unet = unet_core(vol_size, enc_nf, dec_nf, full_size=full_size)  # TODO use neuron unet
-    source, target = unet.inputs
-    x = unet.outputs[-1]
-
-    # (2) transform unet output into a flow field
-    flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(x)
-
-    # optionally include probabilities
-    if use_probs:
-        # we're going to initialize the velocity variance very low, to start stable
-        flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
-                        kernel_initializer=RandomNormal(mean=0.0, stddev=1e-10),
-                        bias_initializer=Constant(value=-10),
-                        name='log_sigma')(x)
-        flow_params = concatenate([flow_mean, flow_logsigma])
-        flow = layers.Sample(name="z_sample")([flow_mean, flow_logsigma])
-    else:
-        flow_params = flow_mean
-        flow = flow_mean
-
-    # (3) integrate to produce diffeomorphic warp (i.e. treat 'flow' as a stationary velocity field)
-    pos_flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)
-    if bidir:
-        neg_flow = layers.Negate()(flow)
-        neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
-
-    # (4) get up to final resolution
-    pos_flow = trf_resize(pos_flow, vel_resize, name='diffflow')
-    if bidir:
-        neg_flow = trf_resize(neg_flow, vel_resize, name='neg_diffflow')
-
-    # (5) warp the source with the flow field
-    y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([source, pos_flow])
-    if bidir:
-        y_target = ne.layers.SpatialTransformer(interp_method='linear', indexing=indexing)([target, neg_flow])
-
-    # build the model
-    outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params] 
-    return Model(inputs=[source, target], outputs=outputs)
 
 
 def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
@@ -633,25 +669,55 @@ def img_atlas_diff_model(vol_shape, nf_enc, nf_dec,
 ########################################################
 
 
-def conv_block(x_in, nf, strides=1):
+def conv_block(x, nfeat, strides=1):
     """
-    specific convolution module including convolution followed by leakyrelu
+    Specific convolutional block followed by leakyrelu.
     """
-    ndims = len(x_in.get_shape()) - 2
-    assert ndims in [1, 2, 3], "ndims should be one of 1, 2, or 3. found: %d" % ndims
-
+    ndims = len(x.get_shape()) - 2
+    assert ndims in (1, 2, 3), "ndims should be one of 1, 2, or 3. found: %d" % ndims
     Conv = getattr(KL, 'Conv%dD' % ndims)
-    x_out = Conv(nf, kernel_size=3, padding='same',
-                 kernel_initializer='he_normal', strides=strides)(x_in)
-    x_out = LeakyReLU(0.2)(x_out)
-    return x_out
+
+    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides)(x)
+    return LeakyReLU(0.2)(convolved)
+
+
+def upsample_block(x, connection):
+    """
+    Specific upsampling and concatenation layer for unets.
+    """
+    ndims = len(x.get_shape()) - 2
+    assert ndims in (1, 2, 3), "ndims should be one of 1, 2, or 3. found: %d" % ndims
+    UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
+
+    upsampled = UpSampling()(x)
+    return concatenate([upsampled, connection])
 
 
 def trf_resize(trf, vel_resize, name='flow'):
     if vel_resize > 1:
-        trf = ne.layers.Resize(1/vel_resize, name=name+'_tmp')(trf)
+        trf = ne.layers.Resize(1 / vel_resize, name=name+'_tmp')(trf)
         return layers.Rescale(1 / vel_resize, name=name)(trf)
-
-    else: # multiply first to save memory (multiply in smaller space)
+    else:
+        # multiply first to save memory (multiply in smaller space)
         trf = layers.Rescale(1 / vel_resize, name=name+'_tmp')(trf)
-        return  ne.layers.Resize(1/vel_resize, name=name)(trf)
+        return  ne.layers.Resize(1 / vel_resize, name=name)(trf)
+
+
+def load_model(filename):
+    custom_objects = {
+        'SpatialTransformer': ne.layers.SpatialTransformer,
+        'VecInt': ne.layers.VecInt,
+        'Sample': layers.Sample,
+        'Rescale': layers.Rescale,
+        'Resize': layers.Resize,
+        # 'Negate': layers.Negate  TODO
+        'loss': None
+    }
+    return keras.models.load_model(filename, custom_objects=custom_objects)
+
+
+def compose_flownet(vxmnet):
+    # compose flow output model
+    flow = vxmnet.layers[-1].input[1]
+    outputs = vxmnet.outputs[:-1] + [flow]
+    return keras.models.Model(vxmnet.inputs, outputs)
