@@ -1,189 +1,156 @@
 """
-train atlas-based alignment with CVPR2018 version of VoxelMorph 
+Example script to train a subject-to-atlas VoxelMorph model.
+
+Note: For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
+are subfolders with normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this
+script slightly to accomadate your own data.
+
+To replicate cvpr2018 training:
+    python train.py datadir --int-steps 0
+
+To replicate miccai2018 training:
+    python train.py datadir --int-steps 7 --half-size --resize 0.5 --use-probs --legacy-image-sigma 0.02
 """
 
-# python imports
 import os
-import glob
-import sys
 import random
-from argparse import ArgumentParser
-
-# third-party imports
-import tensorflow as tf
+import argparse
+import glob
 import numpy as np
-from keras.backend.tensorflow_backend import set_session
-from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint
-from keras.utils import multi_gpu_model 
-
-# project imports
-import datagenerators
-import networks
-import losses
-
-sys.path.append('../ext/neuron')
-import neuron.callbacks as nrn_gen
+import keras
+import tensorflow as tf
+import voxelmorph as vxm
 
 
-def train(data_dir,
-          atlas_file, 
-          model,
-          model_dir,
-          gpu_id,
-          lr,
-          nb_epochs,
-          reg_param,
-          steps_per_epoch,
-          batch_size,
-          load_model_file,
-          data_loss,
-          initial_epoch=0):
-    """
-    model training function
-    :param data_dir: folder with npz files for each subject.
-    :param atlas_file: atlas filename. So far we support npz file with a 'vol' variable
-    :param model: either vm1 or vm2 (based on CVPR 2018 paper)
-    :param model_dir: the model directory to save to
-    :param gpu_id: integer specifying the gpu to use
-    :param lr: learning rate
-    :param n_iterations: number of training iterations
-    :param reg_param: the smoothness/reconstruction tradeoff parameter (lambda in CVPR paper)
-    :param steps_per_epoch: frequency with which to save models
-    :param batch_size: Optional, default of 1. can be larger, depends on GPU memory and volume size
-    :param load_model_file: optional h5 model file to initialize with
-    :param data_loss: data_loss: 'mse' or 'ncc
-    """
+# parse the commandline
+parser = argparse.ArgumentParser()
 
-    # load atlas from provided files. The atlas we used is 160x192x224.
-    atlas_vol = np.load(atlas_file)['vol'][np.newaxis, ..., np.newaxis]
-    vol_size = atlas_vol.shape[1:-1] 
-    # prepare data files
-    # for the CVPR and MICCAI papers, we have data arranged in train/validate/test folders
-    # inside each folder is a /vols/ and a /asegs/ folder with the volumes
-    # and segmentations. All of our papers use npz formated data.
-    train_vol_names = glob.glob(os.path.join(data_dir, '*.npz'))
-    random.shuffle(train_vol_names)  # shuffle volume list
-    assert len(train_vol_names) > 0, "Could not find any training data"
+# data organization parameters
+parser.add_argument('datadir', help='base data directory')
+parser.add_argument('--atlas', help='atlas filename (default: data/atlas_norm.npz)')
+parser.add_argument('--model-dir', help='model output directory (default: models)')
+parser.add_argument('--load-model', help='optional model file to initialize with')
 
-    # UNET filters for voxelmorph-1 and voxelmorph-2,
-    # these are architectures presented in CVPR 2018
-    nf_enc = [16, 32, 32, 32]
-    if model == 'vm1':
-        nf_dec = [32, 32, 32, 32, 8, 8]
-    elif model == 'vm2':
-        nf_dec = [32, 32, 32, 32, 32, 16, 16]
-    else: # 'vm2double': 
-        nf_enc = [f*2 for f in nf_enc]
-        nf_dec = [f*2 for f in [32, 32, 32, 32, 32, 16, 16]]
+# training parameters
+parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
+parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
+parser.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
+parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
+parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
 
-    assert data_loss in ['mse', 'cc', 'ncc'], 'Loss should be one of mse or cc, found %s' % data_loss
-    if data_loss in ['ncc', 'cc']:
-        data_loss = losses.NCC().loss        
+# network architecture parameters
+parser.add_argument('--int-steps', type=int, default=7, help='number of integration steps (default: 7)')
+parser.add_argument('--resize', type=float, default=1, help='resize (default: 1)')
+parser.add_argument('--half-size', action='store_true', help='???')
+parser.add_argument('--use-probs', action='store_true', help='enable probabilities')
+parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
 
-    # prepare model folder
-    if not os.path.isdir(model_dir):
-        os.mkdir(model_dir)
+# model hyperparameters
+parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
+parser.add_argument('--lambda', type=float, dest='weight', default=0.01, help='weight of deformation loss (default: 0.01)')
+parser.add_argument('--kl-lambda', type=float, default=10, help='prior lambda regularization for KL loss (default: 10)')
+parser.add_argument('--legacy-image-sigma', dest='sigma', type=float, help='image noise parameter for miccai2018 (recommended: 0.02)')
+args = parser.parse_args()
 
-    # GPU handling
-    gpu = '/gpu:%d' % 0 # gpu_id
-    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_id
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    config.allow_soft_placement = True
-    set_session(tf.Session(config=config))
+batch_size = args.batch_size
+bidir = args.bidir
+use_probs = args.use_probs
+int_steps = args.int_steps
+image_loss = args.image_loss
+full_size = not args.half_size
+
+# get base voxemorph directory so this script can be called from anywhere
+basedir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+# load atlas volume - the atlas we used is 160 x 192 x 224
+atlas_file = args.atlas
+if atlas_file is None:
+    atlas_file = os.path.join(basedir, 'data/atlas_norm.npz')
+atlas = np.load(atlas_file)['vol'][np.newaxis, ..., np.newaxis]
+vol_size = atlas.shape[1:-1]
+
+# load and prepare training data
+train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
+random.shuffle(train_vol_names)  # shuffle volume list
+assert len(train_vol_names) > 0, 'Could not find any training data'
+
+# prepare model folder
+model_dir = os.path.join(basedir, 'models') if not args.model_dir else args.model_dir
+os.makedirs(model_dir, exist_ok=True)
+
+# tensorflow gpu handling
+device = '/gpu:' + args.gpu
+os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+config.allow_soft_placement = True
+tf.keras.backend.set_session(tf.Session(config=config))
+
+# ensure valid batch size given gpu count
+nb_gpus = len(args.gpu.split(','))
+assert np.mod(batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (batch_size, nb_gpus)
+
+# TODO extend this as an argument
+# unet architecture used in CVPR 2018 paper
+nf_enc = [16, 32, 32, 32]
+nf_dec = [32, 32, 32, 32, 32, 16, 16]
+
+with tf.device(device):
 
     # prepare the model
-    with tf.device(gpu):
-        # prepare the model
-        # in the CVPR layout, the model takes in [image_1, image_2] and outputs [warped_image_1, flow]
-        # in the experiments, we use image_2 as atlas
-        model = networks.cvpr2018_net(vol_size, nf_enc, nf_dec)
+    model = vxm.networks.vxmnet(vol_size, nf_enc, nf_dec, bidir=bidir, full_size=full_size,
+                                vel_resize=args.resize, use_probs=use_probs, int_steps=int_steps)
 
-        # load initial weights
-        if load_model_file is not None:
-            print('loading', load_model_file)
-            model.load_weights(load_model_file)
+    # load initial weights (if provided)
+    if args.load_model:
+        model.load_weights(args.load_model)
 
-        # save first iteration
-        model.save(os.path.join(model_dir, '%02d.h5' % initial_epoch))
+    # prepare image loss
+    assert image_loss in ('mse', 'ncc'), 'Loss should be mse or ncc, but found "%s"' % image_loss
+    if image_loss == 'ncc':
+        image_loss = losses.NCC().loss
+    elif image_loss == 'mse' and args.sigma:
+        image_loss = losses.ReconMSE(args.sigma)
 
-    # data generator
-    nb_gpus = len(gpu_id.split(','))
-    assert np.mod(batch_size, nb_gpus) == 0, \
-        'batch_size should be a multiple of the nr. of gpus. ' + \
-        'Got batch_size %d, %d gpus' % (batch_size, nb_gpus)
+    if bidir:
+        losses  = [image_loss, image_loss]
+        weights = [0.5, 0.5]
+    else:
+        losses  = [image_loss]
+        weights = [1]
 
-    train_example_gen = datagenerators.example_gen(train_vol_names, batch_size=batch_size)
-    atlas_vol_bs = np.repeat(atlas_vol, batch_size, axis=0)
-    cvpr2018_gen = datagenerators.cvpr2018_gen(train_example_gen, atlas_vol_bs, batch_size=batch_size)
+    # prepare deformation loss TODO for KL
+    deformation_loss = vxm.losses.KL(args.kl_lambda).loss if use_probs else vxm.losses.Grad('l2').loss
+    losses  += [deformation_loss]
+    weights += [args.weight]
 
-    # prepare callbacks
-    save_file_name = os.path.join(model_dir, '{epoch:02d}.h5')
+# subject to atlas data generator
+generator = vxm.generators.subj2atlas(train_vol_names, atlas, batch_size=batch_size, bidir=bidir)
 
-    # fit generator
-    with tf.device(gpu):
+# prepare model checkpoint save path
+save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-        # multi-gpu support
-        if nb_gpus > 1:
-            save_callback = nrn_gen.ModelCheckpointParallel(save_file_name)
-            mg_model = multi_gpu_model(model, gpus=nb_gpus)
-        
-        # single-gpu
-        else:
-            save_callback = ModelCheckpoint(save_file_name)
-            mg_model = model
+# fit model
+with tf.device(device):
 
-        # compile
-        mg_model.compile(optimizer=Adam(lr=lr), 
-                         loss=[data_loss, losses.Grad('l2').loss],
-                         loss_weights=[1.0, reg_param])
-            
-        # fit
-        mg_model.fit_generator(cvpr2018_gen, 
-                               initial_epoch=initial_epoch,
-                               epochs=nb_epochs,
-                               callbacks=[save_callback],
-                               steps_per_epoch=steps_per_epoch,
-                               verbose=1)
+    # multi-gpu support
+    # TODO fix this
+    if nb_gpus > 1:
+        save_callback = nrn_gen.ModelCheckpointParallel(save_filename)
+        model = multi_gpu_model(model, gpus=nb_gpus)
+    else:
+        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
 
-if __name__ == "__main__":
-    parser = ArgumentParser()
+    model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-    parser.add_argument("data_dir", type=str,
-                        help="data folder")
+    # save starting weights
+    model.save(save_filename.format(epoch=args.initial_epoch))
 
-    parser.add_argument("--atlas_file", type=str,
-                        dest="atlas_file", default='../data/atlas_norm.npz',
-                        help="gpu id number")
-    parser.add_argument("--model", type=str, dest="model",
-                        choices=['vm1', 'vm2', 'vm2double'], default='vm2',
-                        help="Voxelmorph-1 or 2")
-    parser.add_argument("--model_dir", type=str,
-                        dest="model_dir", default='../models/',
-                        help="models folder")
-    parser.add_argument("--gpu", type=str, default=0,
-                        dest="gpu_id", help="gpu id number (or numbers separated by comma)")
-    parser.add_argument("--lr", type=float,
-                        dest="lr", default=1e-4, help="learning rate")
-    parser.add_argument("--epochs", type=int,
-                        dest="nb_epochs", default=1500,
-                        help="number of iterations")
-    parser.add_argument("--lambda", type=float,
-                        dest="reg_param", default=0.01,  # recommend 1.0 for ncc, 0.01 for mse
-                        help="regularization parameter")
-    parser.add_argument("--steps_per_epoch", type=int,
-                        dest="steps_per_epoch", default=100,
-                        help="frequency of model saves")
-    parser.add_argument("--batch_size", type=int,
-                        dest="batch_size", default=1,
-                        help="batch_size")
-    parser.add_argument("--load_model_file", type=str,
-                        dest="load_model_file", default='../models/cvpr2018_vm2_l2.h5',
-                        help="optional h5 model file to initialize with")
-    parser.add_argument("--data_loss", type=str,
-                        dest="data_loss", default='mse',
-                        help="data_loss: mse of ncc")
-
-    args = parser.parse_args()
-    train(**vars(args))
+    model.fit_generator(generator,
+        initial_epoch=args.initial_epoch,
+        epochs=args.epochs,
+        steps_per_epoch=args.steps_per_epoch,
+        callbacks=[save_callback],
+        verbose=1
+    )
