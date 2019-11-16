@@ -103,34 +103,18 @@ class Grad():
         return tf.add_n(df) / len(df)
 
 
-def binary_dice(y_true, y_pred):
-    """
-    simple N-D dice for binary segmentation
-
-    TODO: combine with neuron.metrics.dice
-    """
-    ndims = len(y_pred.get_shape().as_list()) - 2
-    vol_axes = list(range(1, ndims+1))
-
-    top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
-    bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
-    dice = tf.reduce_mean(top/bottom)
-    return -dice
-
-
-###############################################################################
-# Paper-specific Losses
-###############################################################################
-
-
-class Miccai2018():
-    """
-    N-D main loss for VoxelMorph MICCAI Paper
-    prior matching (KL) term + image matching term
-    """
-
-    def __init__(self, image_sigma, prior_lambda, flow_vol_shape=None):
+class ReconMSE():
+    
+    def __init__(self, image_sigma):
         self.image_sigma = image_sigma
+
+    def loss(self, y_true, y_pred):
+        return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
+
+
+class KL():
+
+    def __init__(self, prior_lambda, flow_vol_shape=None):
         self.prior_lambda = prior_lambda
         self.D = None
         self.flow_vol_shape = flow_vol_shape
@@ -197,7 +181,7 @@ class Miccai2018():
 
         return 0.5 * sm / ndims
 
-    def kl_loss(self, y_true, y_pred):
+    def loss(self, y_true, y_pred):
         """
         KL loss
         y_pred is assumed to be D*2 channels: first D for mean, next D for logsigma
@@ -229,8 +213,5 @@ class Miccai2018():
         prec_term = self.prior_lambda * self.prec_loss(mean)
 
         # combine terms
-        return 0.5 * ndims * (sigma_term + prec_term) # ndims because we averaged over dimensions as well
+        return 0.5 * ndims * (sigma_term + prec_term)  # ndims because we averaged over dimensions as well
 
-    def recon_loss(self, y_true, y_pred):
-        """ reconstruction loss """
-        return 1. / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
