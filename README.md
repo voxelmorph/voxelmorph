@@ -4,6 +4,10 @@ This repository incorporates several variants, first presented at CVPR2018 (init
 
 keywords: machine learning, convolutional neural networks, alignment, mapping, registration
 
+## RecentUpdates
+
+See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
+
 # Instructions
 
 ## Setup
@@ -106,8 +110,8 @@ We encourage users to download and process their own data. See [a list of medica
 We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738): 
 
   *  **Learning Conditional Deformable Templates with Convolutional Networks**  
-[Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
-[eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738) 2019
+  [Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
+  NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
 
 To experiment with this method, please use `train_img_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
 

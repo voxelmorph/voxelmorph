@@ -84,6 +84,21 @@ class MSE:
         return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
 
 
+class BinaryDice:
+    """
+    N-D dice for binary segmentation
+    """
+
+    def loss(self, y_true, y_pred):
+        ndims = len(y_pred.get_shape().as_list()) - 2
+        vol_axes = list(range(1, ndims+1))
+
+        top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
+        bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
+        dice = tf.reduce_mean(top/bottom)
+        return -dice
+
+
 class Grad:
     """
     N-D gradient loss.
