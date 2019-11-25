@@ -100,10 +100,9 @@ def transform_to_matrix(trf):
     return np.concatenate([trf.reshape((3, 4)), np.zeros((1, 4))], 0) + np.eye(4)
 
 
-def merge_affines(transforms, resize=1):
+def merge_affines(transforms, resize):
     """
-    Merges a set of affine transforms and optionally scales the matrix to
-    account for volume resizing.
+    Merges a set of affine transforms and scales the matrix to account for volume resizing.
     """
     matrices = [transform_to_matrix(trf) for trf in transforms]
     matrix = functools.reduce(np.matmul, matrices)

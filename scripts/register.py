@@ -76,7 +76,7 @@ if args.affine:
 
         # predict the transform(s) and merge
         affines = affine_matrix_model.predict([moving_resized, fixed_resized])
-        affine = vxm.utils.merge_affines(affines)
+        affine = vxm.utils.merge_affines(affines, resize)
 
         # apply the transform and crop back to the target space
         moving = moving_padded[np.newaxis, ..., np.newaxis]
