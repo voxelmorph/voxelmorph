@@ -1,19 +1,12 @@
 """
 Example script to train a VoxelMorph model.
 
-If an atlas file is provided with the --atlas flag, then subject-to-atlas training is performed.
-Otherwise, it is subject-to-subject.
-
-Note: For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
+For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
 are normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this script slightly
-to accommodate your own data.
+to accommodate your own data. All images should be appropriately cropped and scaled to values between 0 and 1.
 
-To replicate CVPR 2018 training:
-    python train.py datadir --int-steps 0
-
-To replicate miccai2018 training:
-    python train.py datadir --use-probs --legacy-image-sigma 0.02
-
+If an atlas file is provided with the --atlas flag, then subject-to-atlas training is performed. Otherwise,
+registration will be subject-to-subject.
 """
 
 import os

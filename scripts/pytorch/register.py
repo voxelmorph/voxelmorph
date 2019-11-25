@@ -4,8 +4,9 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 subject (moving) to an atlas (fixed). To register a subject to the atlas and save the warp field, run:
 
-    python register.py <moving> <fixed> <config> <weights> -o <warped-image> -w <warp>
+    python register.py moving.nii.gz fixed.nii.gz model.yaml model.ckpt -o warped.nii.gz -w warp.nii.gz
 
+Where model.yaml and model.ckpt represent the model configuration file and weights file, respectively.
 """
 
 import os

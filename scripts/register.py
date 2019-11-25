@@ -4,13 +4,12 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 subject (moving) to an atlas (fixed). To register a subject to the atlas and save the warp field, run:
 
-    python register.py <moving> <fixed> <config> <weights> -o <warped-image> -w <warp>
+    python register.py moving.nii.gz fixed.nii.gz model.yaml model.h5 -o warped.nii.gz -w warp.nii.gz
 
-For example, our test volume can be warped to the atlas with the cvpr2018-trained model by running:
-
-    python register.py data/test_vol.nii.gz data/atlas_norm.nii.gz models/cvpr2018_vm2_cc.h5 -o data/test_warped.nii.gz
-
-The warped input will be saved to data/test_warped.nii.gz
+Where model.yaml and model.h5 represent the model configuration file and weights, respectively. The source
+and target input images are expected to affinely-registered, but if not, an initial linear registration
+can be run by specifing an affine model with the --affine flag, which expects two arguments - the model
+config file and weights file.
 """
 
 import os

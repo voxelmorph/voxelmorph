@@ -1,19 +1,14 @@
 """
 Example script to train a VoxelMorph model.
 
-If an atlas file is provided with the --atlas flag, then subject-to-atlas training is performed.
-Otherwise, it is subject-to-subject.
-
-Note: For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
+For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
 are normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this script slightly
-to accommodate your own data.
+to accommodate your own data. All images should be appropriately cropped and scaled to values between 0 and 1.
 
-To replicate CVPR 2018 training:
-    python train.py datadir --int-steps 0
-
+If an atlas file is provided with the --atlas flag, then subject-to-atlas training is performed. Otherwise,
+registration will be subject-to-subject.
 """
 
-# python imports
 import os
 import random
 import argparse
@@ -82,15 +77,15 @@ device = 'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
 # unet architecture
-nf_enc = args.enc if args.enc else [16, 32, 32, 32]
-nf_dec = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
+enc_nf = args.enc if args.enc else [16, 32, 32, 32]
+dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 # configure network and save parameters
 config = vxm.utils.NetConfig(
     vxm.networks.vxm_net,
     inshape=inshape,
-    nf_enc=nf_enc,
-    nf_dec=nf_dec,
+    enc_nf=enc_nf,
+    dec_nf=dec_nf,
     bidir=bidir,
     int_steps=args.int_steps,
     int_downsize=args.int_downsize
