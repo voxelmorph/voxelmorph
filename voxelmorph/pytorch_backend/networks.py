@@ -111,8 +111,8 @@ class vxm_net(nn.Module):
 
         # configure optional resize layers
         resize = int_steps > 0 and int_downsize > 1
-        self.resize = layers.ResizeTransform(int_downsize) if resize else None
-        self.fullsize = layers.ResizeTransform(1 / int_downsize) if resize else None
+        self.resize = layers.ResizeTransform(int_downsize, ndims) if resize else None
+        self.fullsize = layers.ResizeTransform(1 / int_downsize, ndims) if resize else None
 
         # configure bidirectional training
         self.bidir = bidir

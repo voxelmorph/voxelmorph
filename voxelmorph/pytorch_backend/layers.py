@@ -66,7 +66,7 @@ class ResizeTransform(nn.Module):
     Resize a transform, which involves resizing the vector field *and* rescaling it.
     """
 
-    def __init__(self, vel_resize):
+    def __init__(self, vel_resize, ndims):
         super(ResizeTransform, self).__init__()
         self.factor = 1.0 / vel_resize
         self.mode = 'linear'
