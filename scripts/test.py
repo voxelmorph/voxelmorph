@@ -16,7 +16,8 @@ import keras
 
 # parse commandline args
 parser = argparse.ArgumentParser()
-parser.add_argument('model', help='keras model filename')
+parser.add_argument('config', help='model configuration')
+parser.add_argument('weights', help='keras model weights')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
 args = parser.parse_args()
 
@@ -29,7 +30,7 @@ labels = scipy.io.loadmat('data/labels.mat')['labels'][0]
 # load atlas volume and seg
 atlas_vol = vxm.utils.load_volfile('data/atlas_norm.npz', np_var='vol', add_axes=True)
 atlas_seg = vxm.utils.load_volfile('data/atlas_norm.npz', np_var='seg')
-vol_size = atlas_seg.shape
+inshape = atlas_seg.shape
 
 # device handling
 if args.gpu:
@@ -44,11 +45,11 @@ else:
 
 with tf.device(device):
     # load voxelmorph model and compose flow output model
-    net = vxm.networks.load_model(args.model)
-    flownet = vxm.networks.compose_flownet(net)
+    vxmnet = vxm.utils.NetConfig.read(args.config).build_model(args.weights)
+    flownet = vxm.networks.build_warpnet(vxmnet)
 
     # build nearest-neighbor transfer model
-    transform_model = vxm.networks.transform(vol_size, interp_method='nearest')
+    transform_model = vxm.networks.transform(inshape, interp_method='nearest')
 
 for i, (vol_name, seg_name) in enumerate(test_subjects):
 
@@ -58,7 +59,7 @@ for i, (vol_name, seg_name) in enumerate(test_subjects):
 
     # predict transform
     with tf.device(device):
-        _, warp = flownet.predict([moving_vol, atlas_vol])
+        _, warp = warp_net.predict([moving_vol, atlas_vol])
 
     # warp segments with flow
     warped_seg = transform_model.predict([moving_seg, warp]).squeeze()

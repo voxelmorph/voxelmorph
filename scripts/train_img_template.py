@@ -89,7 +89,7 @@ def train(data_dir,
         atlas_vol = x_avg
     else:
         atlas_vol = np.load(atlas_file)['vol'][np.newaxis, ..., np.newaxis]
-    vol_size = atlas_vol.shape[1:-1]
+    inshape = atlas_vol.shape[1:-1]
 
     # Diffeomorphic network architecture used in MICCAI 2018 paper
     nf_enc = [16,32,32,32]
@@ -123,7 +123,7 @@ def train(data_dir,
     with tf.device(gpu):
         # the MICCAI201 model takes in [image_1, image_2] and outputs [warped_image_1, velocity_stats]
         # in these experiments, we use image_2 as atlas
-        model = networks.img_atlas_diff_model(vol_size, nf_enc, nf_dec, 
+        model = networks.img_atlas_diff_model(inshape, nf_enc, nf_dec, 
                                             atl_mult=1, bidir=bidir,
                                             smooth_pen_layer=smooth_pen_layer)
 
@@ -159,8 +159,8 @@ def train(data_dir,
 
     # atlas_generator specific to this model. Once we're convinced of this, move to datagenerators
     def atl_gen(gen):  
-        zero_flow = np.zeros([batch_size, *vol_size, len(vol_size)])
-        zero_flow_half = np.zeros([batch_size] + [f//2 for f in vol_size] + [len(vol_size)])
+        zero_flow = np.zeros([batch_size, *inshape, len(inshape)])
+        zero_flow_half = np.zeros([batch_size] + [f//2 for f in inshape] + [len(inshape)])
         while 1:
             x2 = next(train_example_gen)[0]
             # TODO: note this is the opposite of train_miccai and it might be confusing.

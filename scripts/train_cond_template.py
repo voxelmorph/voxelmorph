@@ -115,7 +115,7 @@ def train(data_dir,
         atlas_vol = x_avg
     else:
         atlas_vol = np.load(atlas_file)['vol'][np.newaxis, ..., np.newaxis]
-    vol_size = atlas_vol.shape[1:-1]
+    inshape = atlas_vol.shape[1:-1]
 
 
     genobj = Generator(train_vol_names, atlas_vol, y_k=train_atr_dct)
@@ -162,7 +162,7 @@ def train(data_dir,
         bidir = True
         smooth_pen_layer = 'diffflow'
 
-        model, mn = networks.cond_img_atlas_diff_model(vol_size, nf_enc, nf_dec,
+        model, mn = networks.cond_img_atlas_diff_model(inshape, nf_enc, nf_dec,
                                                 atl_mult=1, bidir=bidir, smooth_pen_layer=smooth_pen_layer,
                                                 nb_conv_features=nb_conv_features,
                                                 cond_im_input_shape=cond_im_input_shape,

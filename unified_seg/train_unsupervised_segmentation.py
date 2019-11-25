@@ -89,7 +89,7 @@ def train_unsupervised_segmentation(data_dir,
         for j in range(np.max(mapping.shape)):
             atlas_vol[0, ..., mapping[j]] = atlas_vol[0, ..., mapping[j]] + atlas_full[0, ..., j]
 
-    vol_size = atlas_vol.shape[1:-1]
+    inshape = atlas_vol.shape[1:-1]
 
 
     # load guesses for means and variances
@@ -132,7 +132,7 @@ def train_unsupervised_segmentation(data_dir,
     # prepare the model
     with tf.device(gpu):
         # prepare the model
-        model = networks.cvpr2018_net_probatlas(vol_size, nf_enc, nf_dec, nb_labels,
+        model = networks.cvpr2018_net_probatlas(inshape, nf_enc, nf_dec, nb_labels,
                                                 diffeomorphic=True,
                                                 full_size=False,
                                                 stat_post_warp=stat_post_warp,

@@ -1,20 +1,18 @@
-"""
-losses for VoxelMorph
-"""
-
-import tensorflow as tf
-import keras.backend as K
 import numpy as np
+import tensorflow as tf
+import keras.layers as KL
+import keras.backend as K
 
 
-class NCC():
+class NCC:
     """
-    local (over window) normalized cross correlation
+    Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, win=None, eps=1e-5):
+    def __init__(self, win=None, eps=1e-5, blur_level=1):
         self.win = win
         self.eps = eps
+        self.blur_level = blur_level  # gaussian blur level for bluring y_true
 
     def ncc(self, I, J):
         # get dimension of volume
@@ -29,19 +27,27 @@ class NCC():
         # get convolution function
         conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
 
+        # blur y_true
+        if self.blur_level > 1:
+            sigma = (self.blur_level - 1) ** 2
+            blur_kernel = nrn_utils.gaussian_kernel([sigma] * ndims)
+            blur_kernel = tf.reshape(blur_kernel, blur_kernel.shape.as_list() + [1, 1])
+            blur = lambda x: tf.nn.conv3d(x, blur_kernel, [1, 1, 1, 1, 1], 'SAME')
+            I = KL.Lambda(blur)(I)
+
         # compute CC squares
-        I2 = I*I
-        J2 = J*J
-        IJ = I*J
+        I2 = I * I
+        J2 = J * J
+        IJ = I * J
 
         # compute filters
         sum_filt = tf.ones([*self.win, 1, 1])
         strides = 1
         if ndims > 1:
             strides = [1] * (ndims + 2)
-        padding = 'SAME'
 
         # compute local sums via convolution
+        padding = 'SAME'
         I_sum = conv_fn(I, sum_filt, strides, padding)
         J_sum = conv_fn(J, sum_filt, strides, padding)
         I2_sum = conv_fn(I2, sum_filt, strides, padding)
@@ -50,25 +56,37 @@ class NCC():
 
         # compute cross correlation
         win_size = np.prod(self.win)
-        u_I = I_sum/win_size
-        u_J = J_sum/win_size
+        u_I = I_sum / win_size
+        u_J = J_sum / win_size
 
-        cross = IJ_sum - u_J*I_sum - u_I*J_sum + u_I*u_J*win_size  # TODO: simplify this
-        I_var = I2_sum - 2 * u_I * I_sum + u_I*u_I*win_size
-        J_var = J2_sum - 2 * u_J * J_sum + u_J*u_J*win_size
+        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size  # TODO: simplify this
+        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
+        J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
 
-        cc = cross*cross / (I_var*J_var + self.eps)
+        cc = cross * cross / (I_var * J_var + self.eps)
 
-        # return negative cc.
+        # return mean cc
         return tf.reduce_mean(cc)
 
-    def loss(self, I, J):
-        return - self.ncc(I, J)
+    def loss(self, y_true, y_pred):
+        return 1.0 - self.ncc(y_true, y_pred)
 
 
-class Grad():
+class MSE:
     """
-    N-D gradient loss
+    Sigma-weighted mean squared error for image reconstruction.
+    """
+
+    def __init__(self, image_sigma=1.0):
+        self.image_sigma = image_sigma
+
+    def loss(self, y_true, y_pred):
+        return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
+
+
+class Grad:
+    """
+    N-D gradient loss.
     """
 
     def __init__(self, penalty='l1'):
@@ -103,26 +121,20 @@ class Grad():
         return tf.add_n(df) / len(df)
 
 
-class ReconMSE():
-    
-    def __init__(self, image_sigma):
-        self.image_sigma = image_sigma
+class KL:
+    """
+    Kullback–Leibler divergence for probabilistic flows.
+    """
 
-    def loss(self, y_true, y_pred):
-        return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
-
-
-class KL():
-
-    def __init__(self, prior_lambda, flow_vol_shape=None):
+    def __init__(self, prior_lambda, flow_vol_shape):
         self.prior_lambda = prior_lambda
-        self.D = None
         self.flow_vol_shape = flow_vol_shape
+        self.D = None
 
     def _adj_filt(self, ndims):
         """
         compute an adjacency filter that, for each feature independently, 
-        has a '1' in the immediate neighbor, and 0 elsewehre.
+        has a '1' in the immediate neighbor, and 0 elsewhere.
         so for each filter, the filter has 2^ndims 1s.
         the filter is then setup such that feature i outputs only to feature i
         """
@@ -194,9 +206,6 @@ class KL():
         ndims = len(y_pred.get_shape()) - 2
         mean = y_pred[..., 0:ndims]
         log_sigma = y_pred[..., ndims:]
-        if self.flow_vol_shape is None:
-            # Note: this might not work in multi_gpu mode if vol_shape is not apriori passed in
-            self.flow_vol_shape = y_true.get_shape().as_list()[1:-1]
 
         # compute the degree matrix (only needs to be done once)
         # we usually can't compute this until we know the ndims, 
@@ -214,4 +223,3 @@ class KL():
 
         # combine terms
         return 0.5 * ndims * (sigma_term + prec_term)  # ndims because we averaged over dimensions as well
-

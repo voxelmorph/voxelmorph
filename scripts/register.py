@@ -4,7 +4,7 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 subject (moving) to an atlas (fixed). To register a subject to the atlas and save the warp field, run:
 
-    python register.py <moving> <atlas> <model> -o <warped-image> -w <warp>
+    python register.py <moving> <fixed> <config> <weights> -o <warped-image> -w <warp>
 
 For example, our test volume can be warped to the atlas with the cvpr2018-trained model by running:
 
@@ -26,8 +26,10 @@ import keras
 parser = argparse.ArgumentParser()
 parser.add_argument('moving', help='moving image (source) filename')
 parser.add_argument('fixed', help='fixed image (target) filename')
-parser.add_argument('model', help='keras model filename')
-parser.add_argument('-g', '--gpu', help='GPU number - if not supplied, CPU is used')
+parser.add_argument('config', help='model configuration')
+parser.add_argument('weights', help='keras model weights')
+parser.add_argument('--affine', nargs=2, help='run initial affine registration - must specify config file and weights')
+parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
 parser.add_argument('-o', '--out-image', help='warped output image filename')
 parser.add_argument('-w', '--warp', help='output warp filename')
 args = parser.parse_args()
@@ -45,28 +47,60 @@ else:
 
 # load moving image
 moving_image = nib.load(args.moving)
-moving = moving_image.get_data()[np.newaxis, ..., np.newaxis]
-affine = moving_image.affine
+moving = moving_image.get_data()
 
 # load fixed image
 fixed_image = nib.load(args.fixed)
-fixed = fixed_image.get_data()[np.newaxis, ..., np.newaxis]
+fixed = fixed_image.get_data()
 
-# load model and predict
+if args.affine:
+    # read the affine model config
+    config_file, affine_weights = args.affine
+    config = vxm.utils.NetConfig.read(config_file)
+
+    # pad inputs to a standard size
+    padshape = config['padding']
+    moving_padded, _ = vxm.utils.pad(moving.squeeze(), padshape)
+    fixed_padded, cropping = vxm.utils.pad(fixed.squeeze(), padshape)
+
+    # scale image sizes by some factor
+    resize = config['resize']
+    moving_resized = vxm.utils.resize(moving_padded, resize)[np.newaxis, ..., np.newaxis]
+    fixed_resized = vxm.utils.resize(fixed_padded, resize)[np.newaxis, ..., np.newaxis]
+
+    with tf.device(device):
+        # load the affine model and build a net that returns the affine transforms
+        config['return_affines'] = True
+        affine_net, transforms = config.build_model(affine_weights)
+        affine_matrix_model = keras.Model(affine_net.input, transforms)
+
+        # predict the transform(s) and merge
+        affines = affine_matrix_model.predict([moving_resized, fixed_resized])
+        affine = vxm.utils.merge_affines(affines)
+
+        # apply the transform and crop back to the target space
+        moving = moving_padded[np.newaxis, ..., np.newaxis]
+        affine_transformer = vxm.networks.affine_transformer(moving_padded.shape)
+        aligned = affine_transformer.predict([moving, affine])[0, ..., 0]
+        moving = aligned[cropping]
+
+moving = moving[np.newaxis, ..., np.newaxis]
+fixed = fixed[np.newaxis, ..., np.newaxis]
+
 with tf.device(device):
-    # load voxelmorph model and compose flow output model
-    net = vxm.networks.load_model(args.model)
-    flownet = vxm.networks.compose_flownet(net)
+    # load flow model and convert to warp output model
+    vxm_net = vxm.utils.NetConfig.read(args.config).build_model(args.weights)
+    flownet = vxm.networks.build_warpnet(vxm_net)
 
-    # predict warp
+    # predict warp and warped image
     moved, warp = flownet.predict([moving, fixed])
 
 # save warped image
 if args.out_image:
-    img = nib.Nifti1Image(moved.squeeze(), moving_image.affine)
+    img = nib.Nifti1Image(moved.squeeze(), fixed_image.affine)
     nib.save(img, args.out_image)
 
 # save warp
 if args.warp:
-    img = nib.Nifti1Image(warp.squeeze(), moving_image.affine)
+    img = nib.Nifti1Image(warp.squeeze(), fixed_image.affine)
     nib.save(img, args.warp)
