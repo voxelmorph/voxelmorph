@@ -133,7 +133,7 @@ if __name__ == "__main__":
     parser.add_argument("--atlas_file",
                         type=str,
                         dest="atlas_file",
-                        default='../voxelmorph/data/atlas_norm.npz',
+                        default='../data/atlas_norm.npz',
                         help="gpu id number")
 
     parser.add_argument("--lr",
