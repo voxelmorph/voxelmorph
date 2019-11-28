@@ -4,9 +4,15 @@ This repository incorporates several variants, first presented at CVPR2018 (init
 
 keywords: machine learning, convolutional neural networks, alignment, mapping, registration
 
-## RecentUpdates
+## Recent Updates
 
-See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
+ - Due to popular demand, we added a preliminary **pytorch** version; please see the [pytorch](pytorch) folder.  
+ **Note:** we will soon be updating a new **voxelmorph** version that will integrate both `keras/tensorflow` and `pytorch` versions.
+
+ - New core [tutorial](https://www.kaggle.com/adalca/learn2reg) provides intuition to voxelmorph!
+
+ - See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
+
 
 # Instructions
 
@@ -122,9 +128,10 @@ We recently published a method on deep learning methods for unsupervised segment
 
 
 # Significant Updates
-2019-08-08: Added support for building templates
+2019-11-28: Added a preliminary version of `pytorch`  
+2019-08-08: Added support for building templates  
 2019-04-27: Added support for unified segmentation  
-2019-01-07: Added example register.py file
+2019-01-07: Added example register.py file  
 2018-11-10: Added support for multi-gpu training  
 2018-10-12: Significant overhaul of code, especially training scripts and new model files.  
 2018-09-15: Added MICCAI2018 support and py3 transition  
