@@ -56,10 +56,10 @@ generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.paddin
 if args.atlas:
     # scan-to-atlas generator
     atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
-    generator = vxm.generators.scan2atlas(train_vol_names, atlas, **generator_args)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, **generator_args)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan2scan(train_vol_names, prob_same=args.prob_same, **generator_args)
+    generator = vxm.generators.scan_to_scan(train_vol_names, prob_same=args.prob_same, **generator_args)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]

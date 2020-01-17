@@ -5,7 +5,7 @@ import numpy as np
 from . import utils
 
 
-def scan2atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwargs):
+def scan_to_atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwargs):
     """
     Generator for scan to atlas registration.
 
@@ -30,7 +30,7 @@ def scan2atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwar
         yield (invols, outvols)
 
 
-def scan2scan(volnames, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
+def scan_to_scan(volnames, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
     """
     Generator for scan to scan registration.
 

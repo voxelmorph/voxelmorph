@@ -63,10 +63,10 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 if args.atlas:
     # scan-to-atlas generator
     atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
-    generator = vxm.generators.scan2atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=bidir)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=bidir)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan2scan(train_vol_names, batch_size=args.batch_size, bidir=bidir)
+    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=bidir)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
