@@ -14,7 +14,6 @@ from keras import layers as KL
 from sklearn import decomposition
 from sklearn.decomposition import PCA
 from keras.utils import plot_model
-from IPython.display import display, Image
 
 
 # project imports
@@ -50,6 +49,7 @@ def extract_z_dec(model, sample_layer_name, vis=False, wt_chk=False):
     z_dec_model = keras.models.Model(new_inputs, z_dec_model_outs)
 
     if vis:
+        from IPython.display import Image
         outfile = NamedTemporaryFile().name + '.png'
         plot_model(z_dec_model, to_file=outfile, show_shapes=True)
         Image(outfile, width=100)
