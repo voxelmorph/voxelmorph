@@ -5,8 +5,8 @@ For the CVPR and MICCAI papers, we have data arranged in train, validate, and te
 are normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this script slightly
 to accommodate your own data. All images should be appropriately cropped and scaled to values between 0 and 1.
 
-If an atlas file is provided with the --atlas flag, then subject-to-atlas training is performed. Otherwise,
-registration will be subject-to-subject.
+If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed. Otherwise,
+registration will be scan-to-scan.
 """
 
 import os
@@ -54,12 +54,12 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.padding, zoom=args.resize)
 
 if args.atlas:
-    # subject-to-atlas generator
+    # scan-to-atlas generator
     atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
-    generator = vxm.generators.subj2atlas(train_vol_names, atlas, **generator_args)
+    generator = vxm.generators.scan2atlas(train_vol_names, atlas, **generator_args)
 else:
-    # subject-to-subject generator
-    generator = vxm.generators.subj2subj(train_vol_names, prob_same=args.prob_same, **generator_args)
+    # scan-to-scan generator
+    generator = vxm.generators.scan2scan(train_vol_names, prob_same=args.prob_same, **generator_args)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]

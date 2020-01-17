@@ -21,8 +21,8 @@ parser.add_argument('weights', help='keras model weights')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
 args = parser.parse_args()
 
-# list of test subject volumes and segmentations to evaluate
-test_subjects = [('data/test_vol.npz', 'data/test_seg.npz')]
+# list of test scan volumes and segmentations to evaluate
+test_scans = [('data/test_vol.npz', 'data/test_seg.npz')]
 
 # corresponding seg labels
 labels = scipy.io.loadmat('data/labels.mat')['labels'][0]
@@ -51,9 +51,9 @@ with tf.device(device):
     # build nearest-neighbor transfer model
     transform_model = vxm.networks.transform(inshape, interp_method='nearest')
 
-for i, (vol_name, seg_name) in enumerate(test_subjects):
+for i, (vol_name, seg_name) in enumerate(test_scans):
 
-    # load subject
+    # load scan
     moving_vol = vxm.utils.load_volfile(vol_name, add_axes=True)
     moving_seg = vxm.utils.load_volfile(seg_name, add_axes=True)
 
@@ -66,4 +66,4 @@ for i, (vol_name, seg_name) in enumerate(test_subjects):
     
     # compute volume overlap (dice)
     overlap = vxm.utils.dice(warped_seg, atlas_seg, labels=labels)
-    print('subject %3d:   dice mean = %5.3f  std = %5.3f' % (i, np.mean(overlap), np.std(overlap)))
+    print('scan %3d:   dice mean = %5.3f  std = %5.3f' % (i, np.mean(overlap), np.std(overlap)))

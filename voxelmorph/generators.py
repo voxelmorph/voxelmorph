@@ -5,9 +5,9 @@ import numpy as np
 from . import utils
 
 
-def subj2atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwargs):
+def scan2atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwargs):
     """
-    Generator for subject to atlas registration.
+    Generator for scan to atlas registration.
 
     Parameters:
         volnames: List of volume files to load.
@@ -22,17 +22,17 @@ def subj2atlas(volnames, atlas, bidir=False, batch_size=1, no_warp=False, **kwar
     atlas = np.repeat(atlas, batch_size, axis=0)
     gen = volgen(volnames, batch_size=batch_size, **kwargs)
     while True:
-        subj = next(gen)[0]
-        invols  = [subj, atlas]
-        outvols = [atlas, subj] if bidir else [atlas]
+        scan = next(gen)[0]
+        invols  = [scan, atlas]
+        outvols = [atlas, scan] if bidir else [atlas]
         if not no_warp:
             outvols.append(zeros)
         yield (invols, outvols)
 
 
-def subj2subj(volnames, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
+def scan2scan(volnames, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
     """
-    Generator for subject to subject registration.
+    Generator for scan to scan registration.
 
     Parameters:
         volnames: List of volume files to load.
@@ -45,23 +45,23 @@ def subj2subj(volnames, bidir=False, batch_size=1, prob_same=0, no_warp=False, *
     zeros = None
     gen = volgen(volnames, batch_size=batch_size, **kwargs)
     while True:
-        subj1 = next(gen)[0]
-        subj2 = next(gen)[0]
+        scan1 = next(gen)[0]
+        scan2 = next(gen)[0]
 
         # some induced chance of making source and target equal
         if prob_same > 0 and np.random.rand() < prob_same:
             if np.random.rand() > 0.5:
-                subj1 = subj2
+                scan1 = scan2
             else:
-                subj2 = subj1
+                scan2 = scan1
 
         if not no_warp and zeros is None:
             # cache zeros
-            shape = subj1.shape[1:-1]
+            shape = scan1.shape[1:-1]
             zeros = np.zeros((batch_size, *shape, len(shape)))
 
-        invols  = [subj1, subj2]
-        outvols = [subj2, subj1] if bidir else [subj2]
+        invols  = [scan1, scan2]
+        outvols = [scan2, scan1] if bidir else [scan2]
         if not no_warp:
             outvols.append(zeros)
 

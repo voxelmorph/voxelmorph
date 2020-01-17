@@ -33,7 +33,7 @@ def transform(
     ndims = len(inshape)
 
     # nn warp model
-    subj_input = Input((*inshape, nb_feats), name='subj_input')
+    scan_input = Input((*inshape, nb_feats), name='scan_input')
     trf_input = Input((*[int(f*vel_resize) for f in inshape], ndims) , name='trf_input')
 
     if int_steps > 0:
@@ -45,8 +45,8 @@ def transform(
     # note the nearest neighbour interpolation method
     # use xy indexing when Guha's original code switched x and y dimensions
     nn_output = ne.layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
-    nn_spatial_output = nn_output([subj_input, trf])
-    return Model([subj_input, trf_input], nn_spatial_output)
+    nn_spatial_output = nn_output([scan_input, trf])
+    return Model([scan_input, trf_input], nn_spatial_output)
 
 
 def transform_nn(inshape, **kwargs):

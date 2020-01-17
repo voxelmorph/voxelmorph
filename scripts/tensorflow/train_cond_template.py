@@ -56,7 +56,7 @@ def train(data_dir,
           initial_epoch=0):
     """
     model training function
-    :param data_dir: folder with npz files for each subject.
+    :param data_dir: folder with npz files for each scan.
     :param atlas_file: atlas filename. So far we support npz file with a 'vol' variable
     :param model_dir: model folder to save to
     :param gpu_id: integer specifying the gpu to use
@@ -105,7 +105,7 @@ def train(data_dir,
     # prepare the initial weights for the atlas "layer"
     if atlas_file is None or atlas_file == "":
         nb_atl_creation = 100
-        print('creating "atlas" by averaging %d subjects' % nb_atl_creation)
+        print('creating "atlas" by averaging %d scan' % nb_atl_creation)
         x_avg = 0
         for _ in range(nb_atl_creation):
             x_avg += next(train_example_gen)[0][0,...,0]
@@ -305,7 +305,7 @@ class Generator():
         """
         yield batches of (cond, atlas)
         
-        where cond represent other data about the subject
+        where cond represent other data about the scan
         """
 
         while 1:
@@ -318,7 +318,7 @@ class Generator():
         """
         yield batches of (cond, atlas)
         
-        where cond represent other data about the subject
+        where cond represent other data about the scan
         """
 
         atlas_k_bs = np.repeat(self.atlas_k, batch_size, axis=0)
@@ -333,7 +333,7 @@ class Generator():
         """
         yield batches of (cond, atlas, data)
         
-        where cond represent other data about the subject
+        where cond represent other data about the scan
         """
 
         atlas_k_bs = np.repeat(self.atlas_k, batch_size, axis=0)
