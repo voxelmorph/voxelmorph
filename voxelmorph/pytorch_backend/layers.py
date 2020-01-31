@@ -9,7 +9,7 @@ class SpatialTransformer(nn.Module):
     """
 
     def __init__(self, size, mode='bilinear'):
-        super(SpatialTransformer, self).__init__()
+        super().__init__()
 
         # create sampling grid
         vectors = [torch.arange(0, s) for s in size]
@@ -27,7 +27,7 @@ class SpatialTransformer(nn.Module):
 
         # need to normalize grid values to [-1, 1] for resampler
         for i in range(len(shape)):
-            new_locs[:,i,...] = 2*(new_locs[:,i,...]/(shape[i]-1) - 0.5)
+            new_locs[:, i, ...] = 2 * (new_locs[:, i, ...] / (shape[i] - 1) - 0.5)
 
         # move channels dim to last position
         # also not sure why, but the channels need to be reversed
@@ -47,7 +47,7 @@ class VecInt(nn.Module):
     """
 
     def __init__(self, inshape, nsteps):
-        super(VecInt, self).__init__()
+        super().__init__()
         
         assert nsteps >= 0, 'nsteps should be >= 0, found: %d' % nsteps
         self.nsteps = nsteps
@@ -67,7 +67,7 @@ class ResizeTransform(nn.Module):
     """
 
     def __init__(self, vel_resize, ndims):
-        super(ResizeTransform, self).__init__()
+        super().__init__()
         self.factor = 1.0 / vel_resize
         self.mode = 'linear'
         if ndims == 2:

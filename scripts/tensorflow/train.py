@@ -46,14 +46,11 @@ parser.add_argument('--bidir', action='store_true', help='enable bidirectional c
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
-parser.add_argument('--lambda', type=float, dest='weight', default=0.01, help='weight of deformation loss (default: 0.01)')
+parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient or KL loss (default: 0.01)')
 parser.add_argument('--kl-lambda', type=float, default=10, help='prior lambda regularization for KL loss (default: 10)')
 parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
                     help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')
 args = parser.parse_args()
-
-batch_size = args.batch_size
-bidir = args.bidir
 
 # load and prepare training data
 train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
@@ -62,11 +59,11 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 
 if args.atlas:
     # scan-to-atlas generator
-    atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=bidir)
+    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=bidir)
+    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=args.bidir)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -85,7 +82,7 @@ tf.keras.backend.set_session(tf.Session(config=config))
 
 # ensure valid batch size given gpu count
 nb_gpus = len(args.gpu.split(','))
-assert np.mod(batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (batch_size, nb_gpus)
+assert np.mod(args.batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_gpus)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -94,23 +91,18 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-# configure network and save parameters
-config = vxm.utils.NetConfig(
-    vxm.networks.vxm_net,
-    inshape=inshape,
-    enc_nf=enc_nf,
-    dec_nf=dec_nf,
-    bidir=bidir,
-    use_probs=args.use_probs,
-    int_steps=args.int_steps,
-    int_downsize=args.int_downsize
-)
-config.write(os.path.join(model_dir, 'config.yaml'))
-
 with tf.device(device):
 
-    # build the model from the configuration
-    model = config.build_model()
+    # build the model
+    model = vxm.networks.VxmDense(
+        inshape=inshape,
+        enc_nf=enc_nf,
+        dec_nf=dec_nf,
+        bidir=args.bidir,
+        use_probs=args.use_probs,
+        int_steps=args.int_steps,
+        int_downsize=args.int_downsize
+    )
 
     # load initial weights (if provided)
     if args.load_weights:
@@ -125,7 +117,7 @@ with tf.device(device):
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
     # need two image loss functions if bidirectional
-    if bidir:
+    if args.bidir:
         losses  = [image_loss_func, image_loss_func]
         weights = [0.5, 0.5]
     else:
@@ -135,19 +127,18 @@ with tf.device(device):
     # prepare deformation loss
     if args.use_probs:
         flow_shape = model.outputs[-1].shape[1:-1]
-        deformation_loss_func = vxm.losses.KL(args.kl_lambda, flow_shape).loss
+        losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
     else:
-        deformation_loss_func = vxm.losses.Grad('l2').loss
+        losses += [vxm.losses.Grad('l2').loss]
 
-    losses  += [deformation_loss_func]
-    weights += [args.weight]
+    weights += [args.lambda_weight]
 
     # multi-gpu support
     if nb_gpus > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = keras.utils.multi_gpu_model(model, gpus=nb_gpus)
     else:
-        save_callback = keras.callbacks.ModelCheckpoint(save_filename, save_weights_only=True)
+        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
 
     model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 

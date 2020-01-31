@@ -34,7 +34,7 @@ parser.add_argument('--gpu', default='0', help='GPU ID number(s) (default: 0)')
 parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 parser.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
-parser.add_argument('--load-weights', help='optional weights file to initialize with')
+parser.add_argument('--load-model', help='optional model file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
 
@@ -80,25 +80,23 @@ os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
-# configure network and save parameters
-config = vxm.utils.NetConfig(
-    vxm.networks.vxm_net,
-    inshape=inshape,
-    enc_nf=enc_nf,
-    dec_nf=dec_nf,
-    bidir=bidir,
-    int_steps=args.int_steps,
-    int_downsize=args.int_downsize
-)
-config.write(os.path.join(model_dir, 'config.yaml'))
+if args.load_model:
+    # load initial model (if specified)
+    model = vxm.networks.VxmDense.load(args.load_model)
+else:
+    # otherwise configure new model
+    model = vxm.networks.VxmDense(
+        inshape=inshape,
+        enc_nf=enc_nf,
+        dec_nf=dec_nf,
+        bidir=bidir,
+        int_steps=args.int_steps,
+        int_downsize=args.int_downsize
+    )
 
-# prepare the model and send to device
-model = config.build_model()
+# prepare the model for training and send to device
+model.train()
 model.to(device)
-
-# load initial weights (if provided)
-if args.load_weights:
-    model.load_state_dict(torch.load(args.load_weights, map_location=lambda storage, loc: storage))
 
 # set optimizer
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -127,7 +125,7 @@ weights += [args.weight]
 for epoch in range(args.initial_epoch, args.epochs):
 
     # save model checkpoint
-    torch.save(model.state_dict(), os.path.join(model_dir, '%04d.ckpt' % epoch))
+    model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
     for step in range(args.steps_per_epoch):
 
@@ -152,4 +150,4 @@ for epoch in range(args.initial_epoch, args.epochs):
         optimizer.step()
 
 # final model save
-torch.save(model.state_dict(), os.path.join(model_dir, '%04d.ckpt' % args.epochs))
+model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))

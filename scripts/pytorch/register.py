@@ -4,9 +4,9 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 scan (moving) to an atlas (fixed). To register a scan to the atlas and save the warp field, run:
 
-    python register.py moving.nii.gz fixed.nii.gz model.yaml model.ckpt -o warped.nii.gz -w warp.nii.gz
+    python register.py moving.nii.gz fixed.nii.gz moved.nii.gz --model model.pt --save-warp warp.nii.gz
 
-Where model.yaml and model.ckpt represent the model configuration file and weights file, respectively.
+The source and target input images are expected to be affinely registered.
 """
 
 import os
@@ -19,15 +19,15 @@ import torch
 os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph as vxm
 
+
 # parse commandline args
 parser = argparse.ArgumentParser()
 parser.add_argument('moving', help='moving image (source) filename')
 parser.add_argument('fixed', help='fixed image (target) filename')
-parser.add_argument('config', help='model configuration')
-parser.add_argument('weights', help='keras model weights')
+parser.add_argument('moved', help='registered image output filename')
+parser.add_argument('--model', required=True, help='run nonlinear registration - must specify torch model file')
+parser.add_argument('--save-warp', help='output warp filename')
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-parser.add_argument('-o', '--out-image', help='warped output image filename')
-parser.add_argument('-w', '--warp', help='output warp filename')
 args = parser.parse_args()
 
 # device handling
@@ -38,17 +38,13 @@ else:
     device = 'cpu'
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-# load moving image
-moving_image = nib.load(args.moving)
-moving = moving_image.get_data()[np.newaxis, ..., np.newaxis]
-affine = moving_image.affine
+# load moving and fixed images
+moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=True)
+fixed, fixed_affine = vxm.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
 
-# load fixed image
-fixed_image = nib.load(args.fixed)
-fixed = fixed_image.get_data()[np.newaxis, ..., np.newaxis]
-
-# set up model and load weights
-model = vxm.utils.NetConfig.read(args.config).build_model(args.weights)
+# load and set up model
+model = vxm.networks.VxmDense.load(args.model)
+model.eval()
 model.to(device)
 
 # set up tensors and permute
@@ -58,14 +54,11 @@ input_fixed = torch.from_numpy(fixed).to(device).float().permute(0, 4, 1, 2, 3)
 # predict
 moved, warp = model.warp(input_moving, input_fixed)
 
-# save warped image
-if args.out_image:
-    array = moved.detach().cpu().numpy().squeeze()
-    img = nib.Nifti1Image(array, moving_image.affine)
-    nib.save(img, args.out_image)
+# save moved image
+moved = array = moved.detach().cpu().numpy().squeeze()
+vxm.utils.save_volfile(moved, args.moved, fixed_affine)
 
 # save warp
-if args.warp:
-    array = warp.detach().cpu().numpy().squeeze()
-    img = nib.Nifti1Image(array, moving_image.affine)
-    nib.save(img, args.warp)
+if args.save_warp:
+    warp = warp.detach().cpu().numpy().squeeze()
+    vxm.utils.save_volfile(warp, args.save_warp, fixed_affine)

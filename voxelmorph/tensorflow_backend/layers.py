@@ -1,5 +1,6 @@
 import neuron as ne
 import tensorflow as tf
+import keras.backend as K
 from keras.layers import Layer
 
 
@@ -69,7 +70,7 @@ class LocalParamWithInput(Layer):
 
     def call(self, x):
         # want the x variable for it's keras properties and the batch.
-        b = 0*K.batch_flatten(x)[:,0:1] + 1
+        b = 0 * K.batch_flatten(x)[:, 0:1] + 1
         params = K.expand_dims(K.flatten(self.kernel * self.biasmult), 0)
         z = K.reshape(K.dot(b, params), [-1, *self.shape])
         return z

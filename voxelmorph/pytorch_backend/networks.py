@@ -5,20 +5,22 @@ from torch.distributions.normal import Normal
 
 from .. import utils
 from . import layers
+from .model_io import LoadableModel, store_config_args
 
 
 class unet(nn.Module):
     """ 
     Unet architecture for the voxelmorph models.
-
-    Parameters:
-        inshape: Input shape. e.g. (256, 256, 256)
-        enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-        dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
     """
 
     def __init__(self, inshape, enc_nf, dec_nf):
-        super(unet, self).__init__()
+        super().__init__()
+        """
+        Parameters:
+            inshape: Input shape. e.g. (256, 256, 256)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
+        """
 
         # ensure correct dimensionality
         ndims = len(inshape)
@@ -30,7 +32,7 @@ class unet(nn.Module):
         prev_nf = 2
         self.downarm = nn.ModuleList()
         for nf in enc_nf:
-            self.downarm.append(conv_block(ndims, prev_nf, nf, stride=2))
+            self.downarm.append(ConvBlock(ndims, prev_nf, nf, stride=2))
             prev_nf = nf
 
         # configure decoder (up-sampling path)
@@ -38,14 +40,14 @@ class unet(nn.Module):
         self.uparm = nn.ModuleList()
         for i, nf in enumerate(dec_nf[:len(enc_nf)]):
             channels = prev_nf + enc_history[i] if i > 0 else prev_nf
-            self.uparm.append(conv_block(ndims, channels, nf, stride=1))
+            self.uparm.append(ConvBlock(ndims, channels, nf, stride=1))
             prev_nf = nf
 
         # configure extra decoder convolutions (no up-sampling)
         prev_nf += 2
         self.extras = nn.ModuleList()
         for nf in dec_nf[len(enc_nf):]:
-            self.extras.append(conv_block(ndims, prev_nf, nf, stride=1))
+            self.extras.append(ConvBlock(ndims, prev_nf, nf, stride=1))
             prev_nf = nf
  
     def forward(self, x):
@@ -69,23 +71,25 @@ class unet(nn.Module):
         return x
 
 
-class vxm_net(nn.Module):
-    """ 
-    VoxelMorph model that registers two images.
-
-    Parameters:
-        inshape: Input shape. e.g. (256, 256, 256)
-        enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-        dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
-        int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-        int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
-            is not downsampled when this value is 1.
-        bidir: Enable bidirectional cost function. Default is False.
-        use_probs: Use probabilities in flow field. Default is False.
+class VxmDense(LoadableModel):
+    """
+    VoxelMorph network for (unsupervised) nonlinear registration between two images.
     """
 
+    @store_config_args
     def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False):
-        super(vxm_net, self).__init__()
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+            bidir: Enable bidirectional cost function. Default is False.
+            use_probs: Use probabilities in flow field. Default is False.
+        """
+        super().__init__()
 
         # internal flag indicating whether to return flow or integrated warp during inference
         self.training = True
@@ -170,13 +174,13 @@ class vxm_net(nn.Module):
         return moved, warp
 
 
-class conv_block(nn.Module):
+class ConvBlock(nn.Module):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
 
     def __init__(self, ndims, in_channels, out_channels, stride=1):
-        super(conv_block, self).__init__()
+        super().__init__()
 
         if stride == 1:
             ksize = 3

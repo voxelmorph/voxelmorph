@@ -1,13 +1,16 @@
 """
-Example testing script for trained VoxelMorph models.
+Example testing script for trained VoxelMorph models. This script iterates over a list of
+images and corresponding segmentations, registers them to an atlas, propagates segmentations
+to the atlas, and computes the dice overlap. Usage is:
 
-This script iterates over a list of images and corresponding segmentations, registers them to
-an atlas, propagates segmentations to the atlas, and computes the dice overlap.
+    python test.py --model model.h5 --atlas data/atlas.npz --scans data/test_scan.npz --labels data/labels.npz
+
+Where each atlas and scan npz file is assumed to contain the array variables 'vol' and 'seg'.
+This script will most likely need to be customized to fit your data.
 """
 
 import os
 import argparse
-import scipy
 import numpy as np
 import voxelmorph as vxm
 import tensorflow as tf
@@ -16,20 +19,19 @@ import keras
 
 # parse commandline args
 parser = argparse.ArgumentParser()
-parser.add_argument('config', help='model configuration')
-parser.add_argument('weights', help='keras model weights')
+parser.add_argument('--model', required=True, help='keras warp model file')
+parser.add_argument('--atlas', required=True, help='atlas npz file')
+parser.add_argument('--scans', nargs='+', required=True, help='test scan npz files')
+parser.add_argument('--labels', required=True, help='label lookup file in npz format')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
 args = parser.parse_args()
 
-# list of test scan volumes and segmentations to evaluate
-test_scans = [('data/test_vol.npz', 'data/test_seg.npz')]
-
 # corresponding seg labels
-labels = scipy.io.loadmat('data/labels.mat')['labels'][0]
+labels = np.load(args.labels)['labels']
 
 # load atlas volume and seg
-atlas_vol = vxm.utils.load_volfile('data/atlas_norm.npz', np_var='vol', add_axes=True)
-atlas_seg = vxm.utils.load_volfile('data/atlas_norm.npz', np_var='seg')
+atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
 inshape = atlas_seg.shape
 
 # device handling
@@ -42,24 +44,22 @@ if args.gpu:
     tf.keras.backend.set_session(tf.Session(config=config))
 else:
     device = '/cpu:0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 with tf.device(device):
-    # load voxelmorph model and compose flow output model
-    vxmnet = vxm.utils.NetConfig.read(args.config).build_model(args.weights)
-    flownet = vxm.networks.build_warpnet(vxmnet)
-
-    # build nearest-neighbor transfer model
+    # load warp model and build nearest-neighbor transfer model
+    warp_predictor = vxm.networks.VxmDense.load(args.model).get_predictor_model()
     transform_model = vxm.networks.transform(inshape, interp_method='nearest')
 
-for i, (vol_name, seg_name) in enumerate(test_scans):
+for i, scan in enumerate(args.scans):
 
     # load scan
-    moving_vol = vxm.utils.load_volfile(vol_name, add_axes=True)
-    moving_seg = vxm.utils.load_volfile(seg_name, add_axes=True)
+    moving_vol = vxm.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+    moving_seg = vxm.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=True)
 
     # predict transform
     with tf.device(device):
-        _, warp = warp_net.predict([moving_vol, atlas_vol])
+        _, warp = warp_predictor.predict([moving_vol, atlas_vol])
 
     # warp segments with flow
     warped_seg = transform_model.predict([moving_seg, warp]).squeeze()

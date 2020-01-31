@@ -51,11 +51,11 @@ train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
 random.shuffle(train_vol_names)  # shuffle volume list
 assert len(train_vol_names) > 0, 'Could not find any training data'
 
-generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.padding, zoom=args.resize)
+generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.padding, resize_factor=args.resize)
 
 if args.atlas:
     # scan-to-atlas generator
-    atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
+    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
     generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, **generator_args)
 else:
     # scan-to-scan generator
@@ -86,21 +86,14 @@ enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-# configure network and save parameters
-config = vxm.utils.NetConfig(
-    vxm.networks.affine_net,
-    inshape=inshape,
-    enc_nf=enc_nf,
-    blurs=args.blurs,
-    padding=args.padding,
-    resize=args.resize
-)
-config.write(os.path.join(model_dir, 'config.yaml'))
-
 with tf.device(device):
 
-    # build the model from the configuration
-    model, _ = config.build_model()
+    # build the model
+    model = vxm.networks.VxmAffine(
+        inshape,
+        enc_nf=enc_nf,
+        blurs=args.blurs
+    )
 
     # load initial weights (if provided)
     if args.load_weights:
@@ -111,7 +104,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = keras.utils.multi_gpu_model(model, gpus=nb_gpus)
     else:
-        save_callback = keras.callbacks.ModelCheckpoint(save_filename, save_weights_only=True)
+        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
 
     # configure loss
     loss = vxm.losses.NCC(blur_level=args.blurs[-1]).loss

@@ -10,43 +10,31 @@ See our [learning method to automatically build atlases](http://voxelmorph.mit.e
 
 # Instructions
 
-## Setup
-It might be useful to have each folder inside the `ext` folder on your python path. 
-assuming voxelmorph is setup at `/path/to/voxelmorph/`:
-
-```
-export PYTHONPATH=$PYTHONPATH:/path/to/voxelmorph/ext/neuron/:/path/to/voxelmorph/ext/pynd-lib/:/path/to/voxelmorph/ext/pytools-lib/
-```
-
-If you would like to train/test your own model, you will likely need to write some of the data loading code in 'datagenerator.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format. 
-
-
 ## Training
-These instructions are for the MICCAI2018 variant using `train_miccai2018.py`.  
-If you'd like to run the CVPR version (no diffeomorphism or uncertainty measures, and using CC/MSE as a loss function) use `train.py`
+If you would like to train your own model, you will likely need to write some of the data loading code in 'voxelmorph/generators.py' for your own datasets and data formats. There are several hard-coded elements related to data preprocessing and format.
 
-1. Change the top parameters in `train_miccai2018.py` to the location of your image files.
-2. Run `train_miccai2018.py` with options described in the main function at the bottom of the file. Example:  
+The following training script uses the MICCAI2018 network by default and trains scan-to-scan registration. Scan-to-atlas registration can be enabled by providing an atlas image with the `--atlas atlas.npz` commandline flag. If you'd like to train using the original CVPR network (no diffeomorphism), use the `--int-steps 0` flag to specify no flow intergration steps.
 ```
-train_miccai2018.py /my/path/to/data --gpu 0 --model_dir /my/path/to/save/models 
+python scripts/train.py /path/to/data --model-dir /path/to/models/output --gpu 0
 ```
 
-In our experiments, `/my/path/to/data` contains one `npz` file for each subject saved in the variable `vol_data`.
-
-We provide a T1 brain atlas used in our papers at `data/atlas_norm.npz`.
+In our experiments, `/path/to/data` contains one `npz` file for each subject saved in the variable `vol`. We provide a T1 brain atlas used in our papers at `data/atlas.npz`.
 
 ## Testing (measuring Dice scores)
-1. Put test filenames in data/test_examples.txt, and anatomical labels in data/test_labels.mat.
-2. Run `python test_miccai2018.py [gpu-id] [model_dir] [iter-num]`
-
+To compute dice overlap between an atlas segmentation and warped test scan segmentations, run:
+```
+python scripts/test.py --atlas data/atlas.npz --scans data/test_scan.npz --labels data/labels.npz --model models/model.h5 --gpu 0
+```
+Where the atlas and test scan files include 'vol' and 'seg' parameters and labels.npz contains a list of anatomical labels to include in the dice score.
 
 ## Registration
 If you simply want to register two images:
 1. Choose the appropriate model, or train your own.
-2. Use `register.py`. For example, Let's say we have a model trained to register subject (moving) to atlas (fixed). One could run:
+2. Use the `register.py` script. For example, Let's say we have a model trained to register a subject (moving) to an atlas (fixed). One could run:
 ```
-python register.py --gpu 0 /path/to/test_vol.nii.gz /path/to/atlas_norm.nii.gz --out_img /path/to/out.nii.gz --model_file ../models/cvpr2018_vm2_cc.h5 
+python scripts/register.py moving.nii.gz atlas.nii.gz warped.nii.gz --model models/model.h5 --gpu 0
 ```
+
 ## Parameter choices
 
 ### CVPR version
@@ -72,7 +60,7 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
   * For the atlas formation model:  
 
     **Learning Conditional Deformable Templates with Convolutional Networks**  
-  [Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
+  [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)
   NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
 
 
@@ -110,14 +98,14 @@ We encourage users to download and process their own data. See [a list of medica
 We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738): 
 
   *  **Learning Conditional Deformable Templates with Convolutional Networks**  
-  [Adrian V. Dalca](http://adalca.mit.edu), Marianne Rakic, [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
+  [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)
   NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
 
-To experiment with this method, please use `train_img_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
+To experiment with this method, please use `train_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
 
-We've also provided an unconditional atlas in `/data/uncond_atlas_creation_k.npy`. 
+We've also provided an unconditional atlas in `data/generated_uncond_atlas.npz.npy`. 
 
-Models in h5 format weights are provided for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
+Models in h5 format weights are provided for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/.h5).
 
 **Explore the atlases [interactively here](http://voxelmorph.mit.edu/atlas_creation/)** with tipiX!
 
@@ -125,7 +113,6 @@ Models in h5 format weights are provided for [unconditional atlas here](http://p
 # Unified Segmentation
 
 We recently published a method on deep learning methods for unsupervised segmentation that makes use of voxelmorph infrastructure. See the [unified seg README for more information](unified_seg/README.md).
-
 
 
 # Significant Updates
@@ -136,7 +123,6 @@ We recently published a method on deep learning methods for unsupervised segment
 2018-10-12: Significant overhaul of code, especially training scripts and new model files.  
 2018-09-15: Added MICCAI2018 support and py3 transition  
 2018-05-14: Initial Repository for CVPR version, py2.7
-
 
 
 # Contact:

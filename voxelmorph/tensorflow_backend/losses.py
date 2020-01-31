@@ -84,9 +84,18 @@ class MSE:
         return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
 
 
-class BinaryDice:
+class MS:
     """
-    N-D dice for binary segmentation
+    Mean square of the predicted output.
+    """
+
+    def loss(self, _, y_pred):
+        return K.mean(K.square(y_pred))
+
+
+class Dice:
+    """
+    N-D dice for segmentation
     """
 
     def loss(self, y_true, y_pred):
@@ -94,7 +103,7 @@ class BinaryDice:
         vol_axes = list(range(1, ndims+1))
 
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
-        bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
+        bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 50)
         dice = tf.reduce_mean(top/bottom)
         return -dice
 
