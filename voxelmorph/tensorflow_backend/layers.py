@@ -4,26 +4,28 @@ import keras.backend as K
 from keras.layers import Layer
 
 
-class ResizeTransform(Layer):
-    """ 
-    Resize a transform, which involves resizing the vector field *and* rescaling it.
-    """
 
+class RescaleTransform(Layer):
+    """ 
+    Rescales a transform, which involves resizing the vector field *and* rescaling it.
+    """
     def __init__(self, zoom_factor, interp_method='linear', **kwargs):
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
-        super(ResizeTransform, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def build(self, input_shape):
+
         if isinstance(input_shape[0], (list, tuple)) and len(input_shape) > 1:
-            raise Exception('ResizeTransform must be called on a list of length 1.')
+            raise Exception('RescaleTransform must be called on a list of length 1.')
 
         if isinstance(input_shape[0], (list, tuple)):
             input_shape = input_shape[0]
 
-        super(ResizeTransform, self).build(input_shape)  # Be sure to call this somewhere!
+        super().build(input_shape)  # Be sure to call this somewhere!
 
     def call(self, inputs):
+
         # check shapes
         if isinstance(inputs, (list, tuple)):
             assert len(inputs) == 1, "inputs has to be len 1. found: %d" % len(inputs)
@@ -31,9 +33,14 @@ class ResizeTransform(Layer):
         else:
             trf = inputs
 
-        # multiply first to save memory (multiply Tensor in smaller space)
-        trf = trf * self.zoom_factor
-        return ne.utils.resize(trf, self.zoom_factor, self.interp_method)
+        if self.zoom_factor < 1:
+            # resize
+            trf = ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
+            return Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
+        else:
+            # multiply first to save memory (multiply in smaller space)
+            trf = Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
+            return  ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
 
     def compute_output_shape(self, input_shape):
         return input_shape
@@ -59,14 +66,14 @@ class LocalParamWithInput(Layer):
         self.initializer = initializer
         self.biasmult = mult
         print('LocalParamWithInput: Consider using neuron.layers.LocalParam()')
-        super(LocalParamWithInput, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def build(self, input_shape):
         self.kernel = self.add_weight(name='kernel', 
                                       shape=self.shape,  # input_shape[1:]
                                       initializer=self.initializer,
                                       trainable=True)
-        super(LocalParamWithInput, self).build(input_shape)  # Be sure to call this somewhere!
+        super().build(input_shape)  # Be sure to call this somewhere!
 
     def call(self, x):
         # want the x variable for it's keras properties and the batch.

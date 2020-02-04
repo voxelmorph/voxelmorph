@@ -64,7 +64,7 @@ class VxmDense(LoadableModel):
 
         # optionally resize for integration
         if int_steps > 0 and int_downsize > 1:
-            flow = trf_resize(flow, int_downsize, name='resize')
+            flow = layers.RescaleTransform(flow, 1 / int_downsize, name='resize')
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
@@ -79,9 +79,9 @@ class VxmDense(LoadableModel):
 
             # resize to final resolution
             if int_downsize > 1:
-                pos_flow = trf_resize(pos_flow, 1 / int_downsize, name='diffflow')
+                pos_flow = layers.RescaleTransform(pos_flow, int_downsize, name='diffflow')
                 if bidir:
-                    neg_flow = trf_resize(neg_flow, 1 / int_downsize, name='neg_diffflow')
+                    neg_flow = layers.RescaleTransform(neg_flow, int_downsize, name='neg_diffflow')
 
         # warp image with flow field
         y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
@@ -134,7 +134,7 @@ class SupervisedVxmDense(LoadableModel):
         seg_src = Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
-        seg_flow = trf_resize(vxm_model.pos_flow, seg_downsize, name='seg_resize')
+        seg_flow = layers.RescaleTransform(vxm_model.pos_flow, 1 / seg_downsize, name='seg_resize')
         y_seg = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
 
         # initialize the keras model
@@ -481,19 +481,6 @@ class ConditionalTemplateCreation(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
 
-def trf_resize(trf, vel_resize, name='flow'):
-    """
-    Resizes a transform by a given factor.
-    """
-    if vel_resize > 1:
-        trf = ne.layers.Resize(1 / vel_resize, name=name+'_tmp')(trf)
-        return ne.layers.RescaleValues(1 / vel_resize, name=name)(trf)
-    else:
-        # multiply first to save memory (multiply in smaller space)
-        trf = ne.layers.RescaleValues(1 / vel_resize, name=name+'_tmp')(trf)
-        return  ne.layers.Resize(1 / vel_resize, name=name)(trf)
-
-
 def transform(
         inshape,
         interp_method='linear',
@@ -518,7 +505,7 @@ def transform(
 
     if int_steps > 0:
         trf = ne.layers.VecInt(method=int_method, name='trf-int', int_steps=int_steps, **kwargs)(trf_input)
-        trf = trf_resize(trf, vel_resize, name='flow')  # TODO change to ResizeTransform
+        trf = layers.RescaleTransform(trf, 1 / vel_resize, name='flow')
     else:
         trf = trf_input
 
