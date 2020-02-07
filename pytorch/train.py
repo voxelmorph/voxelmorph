@@ -41,7 +41,7 @@ def train(gpu,
     :param atlas_file: atlas filename. So far we support npz file with a 'vol' variable
     :param lr: learning rate
     :param n_iter: number of training iterations
-    :param data_loss: data_loss: 'mse' or 'ncc
+    :param data_loss: data_loss: 'mse' or 'ncc' or 'mind'
     :param model: either vm1 or vm2 (based on CVPR 2018 paper)
     :param reg_param: the smoothness/reconstruction tradeoff parameter (lambda in CVPR paper)
     :param batch_size: Optional, default of 1. can be larger, depends on GPU memory and volume size
@@ -75,7 +75,12 @@ def train(gpu,
     # Set optimizer and losses
     opt = Adam(model.parameters(), lr=lr)
 
-    sim_loss_fn = losses.ncc_loss if data_loss == "ncc" else losses.mse_loss
+    if data_loss == "ncc":
+        sim_loss_fn = losses.ncc_loss
+    elif data_loss == "mind":
+        sim_loss_fn = losses.mind_loss
+    else:
+        sim_loss_fn = losses.mse_loss
     grad_loss_fn = losses.gradient_loss
 
     # data generator
@@ -152,7 +157,7 @@ if __name__ == "__main__":
                         type=str,
                         dest="data_loss",
                         default='ncc',
-                        help="data_loss: mse of ncc")
+                        help="data_loss: mse or ncc or mind")
 
     parser.add_argument("--model",
                         type=str,
