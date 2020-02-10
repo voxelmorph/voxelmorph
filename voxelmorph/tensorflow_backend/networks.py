@@ -64,7 +64,7 @@ class VxmDense(LoadableModel):
 
         # optionally resize for integration
         if int_steps > 0 and int_downsize > 1:
-            flow = layers.RescaleTransform(flow, 1 / int_downsize, name='resize')
+            flow = layers.RescaleTransform(1 / int_downsize, name='resize')(flow)
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
@@ -79,9 +79,9 @@ class VxmDense(LoadableModel):
 
             # resize to final resolution
             if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(pos_flow, int_downsize, name='diffflow')
+                pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
                 if bidir:
-                    neg_flow = layers.RescaleTransform(neg_flow, int_downsize, name='neg_diffflow')
+                    neg_flow = layers.RescaleTransform(int_downsize, name='neg_diffflow')(neg_flow)
 
         # warp image with flow field
         y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
@@ -134,7 +134,7 @@ class SupervisedVxmDense(LoadableModel):
         seg_src = Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
-        seg_flow = layers.RescaleTransform(vxm_model.pos_flow, 1 / seg_downsize, name='seg_resize')
+        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.pos_flow)
         y_seg = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
 
         # initialize the keras model
@@ -505,7 +505,7 @@ def transform(
 
     if int_steps > 0:
         trf = ne.layers.VecInt(method=int_method, name='trf-int', int_steps=int_steps, **kwargs)(trf_input)
-        trf = layers.RescaleTransform(trf, 1 / vel_resize, name='flow')
+        trf = layers.RescaleTransform(1 / vel_resize, name='flow')(trf)
     else:
         trf = trf_input
 

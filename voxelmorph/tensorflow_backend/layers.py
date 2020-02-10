@@ -4,6 +4,23 @@ import keras.backend as K
 from keras.layers import Layer
 
 
+class Rescale(Layer):
+    """ 
+    Rescales a layer by some factor.
+    """
+    def __init__(self, scale_factor, **kwargs):
+        self.scale_factor = scale_factor
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        super().build(input_shape)
+
+    def call(self, x):
+        return x * self.scale_factor
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
 
 class RescaleTransform(Layer):
     """ 
@@ -22,7 +39,7 @@ class RescaleTransform(Layer):
         if isinstance(input_shape[0], (list, tuple)):
             input_shape = input_shape[0]
 
-        super().build(input_shape)  # Be sure to call this somewhere!
+        super().build(input_shape)
 
     def call(self, inputs):
 
@@ -43,7 +60,9 @@ class RescaleTransform(Layer):
             return  ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
 
     def compute_output_shape(self, input_shape):
-        return input_shape
+        output_shape = [int(dim * self.zoom_factor) for dim in input_shape[1:-1]]
+        output_shape = [input_shape[0]] + output_shape + [input_shape[-1]]
+        return tuple(output_shape)
 
 
 class LocalParamWithInput(Layer):
