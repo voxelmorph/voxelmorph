@@ -1,5 +1,5 @@
 """
-Instance specific optimization
+Instance-specific optimization
 """
 
 import os
@@ -23,9 +23,9 @@ parser.add_argument('--multichannel', action='store_true', help='specify that da
 
 # training parameters
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-parser.add_argument('--epochs', type=int, default=50, help='number of training epochs (default: 50)')
+parser.add_argument('--epochs', type=int, default=1, help='number of training epochs (default: 1)')
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--lr', type=float, default=0.1, help='learning rate (default: 0.1)')
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
