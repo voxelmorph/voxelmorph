@@ -84,9 +84,9 @@ class VxmDense(LoadableModel):
                     neg_flow = layers.RescaleTransform(int_downsize, name='neg_diffflow')(neg_flow)
 
         # warp image with flow field
-        y_source = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
+        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
         if bidir:
-            y_target = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
+            y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
 
         # initialize the keras model
         outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]
@@ -135,7 +135,7 @@ class SupervisedVxmDense(LoadableModel):
 
         # configure warped seg output layer
         seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.pos_flow)
-        y_seg = ne.layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+        y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
 
         # initialize the keras model
         inputs = vxm_model.inputs + [seg_src]
@@ -190,11 +190,11 @@ class VxmAffine(LoadableModel):
             self.affines.append(affine)
  
             # spatial transform using affine matrix
-            y_source = ne.layers.SpatialTransformer()([source_blur, affine])
+            y_source = layers.SpatialTransformer()([source_blur, affine])
 
             # provide new input for next scale
             if len(blurs) > 1:
-                scale_source = ne.layers.SpatialTransformer()([scale_source, affine])
+                scale_source = layers.SpatialTransformer()([scale_source, affine])
 
         # initialize the keras model
         super().__init__(name='affine_net', inputs=[source, target], outputs=[y_source])
@@ -509,7 +509,7 @@ def transform(
 
     # note the nearest neighbour interpolation method
     # use xy indexing when Guha's original code switched x and y dimensions
-    nn_output = ne.layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
+    nn_output = layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
     nn_spatial_output = nn_output([scan_input, trf])
     return Model([scan_input, trf_input], nn_spatial_output)
 
@@ -527,7 +527,7 @@ def transform_affine(inshape):
     """
     source = Input((*inshape, 1))
     affine = Input((12,))
-    aligned = ne.layers.SpatialTransformer()([source, affine])
+    aligned = layers.SpatialTransformer()([source, affine])
     return Model([source, affine], aligned)
 
 

@@ -4,6 +4,11 @@ import keras.backend as K
 from keras.layers import Layer
 
 
+# make the following neuron layers directly available from vxm
+SpatialTransformer = ne.layers.SpatialTransformer
+LocalParam = ne.layers.LocalParam
+
+
 class Rescale(Layer):
     """ 
     Rescales a layer by some factor.
@@ -81,7 +86,7 @@ class LocalParamWithInput(Layer):
     """
 
     def __init__(self, shape, initializer='RandomNormal', mult=1.0, **kwargs):
-        self.shape=shape
+        self.shape = shape
         self.initializer = initializer
         self.biasmult = mult
         print('LocalParamWithInput: Consider using neuron.layers.LocalParam()')
