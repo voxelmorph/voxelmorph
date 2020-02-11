@@ -104,7 +104,7 @@ class SpatialTransformer(Layer):
         # it's a 2D Tensor and shape == [N+1, N+1]. 
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
         self.is_affine = len(trf_shape) == 1 or \
-                         (len(trf_shape) == 2 and all([f == (self.ndims+1) for f in trf_shape]))
+                         (len(trf_shape) == 2 and all([trf_shape[0] == self.ndims, trf_shape[1] == self.ndims+1]))
 
         # check sizes
         if self.is_affine and len(trf_shape) == 1:
