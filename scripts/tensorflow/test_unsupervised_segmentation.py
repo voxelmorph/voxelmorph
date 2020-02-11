@@ -99,7 +99,7 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
     return funcs
 
 # device handling
-if args.gpu:
+if args.gpu and (args.gpu != '-1'):
     device = '/gpu:' + args.gpu
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     config = tf.ConfigProto()

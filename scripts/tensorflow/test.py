@@ -37,7 +37,7 @@ atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
 inshape = atlas_seg.shape
 
 # device handling
-if args.gpu:
+if args.gpu and (args.gpu != '-1'):
     device = '/gpu:' + args.gpu
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     config = tf.ConfigProto()

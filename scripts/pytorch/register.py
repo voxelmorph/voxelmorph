@@ -31,7 +31,7 @@ parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is
 args = parser.parse_args()
 
 # device handling
-if args.gpu:
+if args.gpu and (args.gpu != '-1'):
     device = 'cuda'
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 else:

@@ -36,7 +36,7 @@ args = parser.parse_args()
 assert (args.model or args.affine_model), 'must provide at least a warp or affine model'
 
 # device handling
-if args.gpu:
+if args.gpu and (args.gpu != '-1'):
     device = '/gpu:' + args.gpu
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     config = tf.ConfigProto()

@@ -30,7 +30,7 @@ moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=
 deform, deform_affine = vxm.utils.load_volfile(args.warp, add_batch_axis=True, ret_affine=add_feat_axis)
 
 # device handling
-if args.gpu:
+if args.gpu and (args.gpu != '-1'):
     device = '/gpu:' + args.gpu
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     config = tf.ConfigProto()
