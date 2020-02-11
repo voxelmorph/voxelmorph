@@ -29,6 +29,7 @@ parser.add_argument('--model', help='run nonlinear registration - must specify k
 parser.add_argument('--affine-model', help='run intitial affine registration - must specify keras model file')
 parser.add_argument('--save-warp', help='output warp filename')
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 args = parser.parse_args()
 
 # sanity check on the input
@@ -47,20 +48,21 @@ else:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 # load moving and fixed images
-moving = vxm.utils.load_volfile(args.moving)
-fixed, fixed_affine = vxm.utils.load_volfile(args.fixed, ret_affine=True)
+add_feat_axis = not args.multichannel
+moving = vxm.utils.load_volfile(args.moving, add_feat_axis=add_feat_axis)
+fixed, fixed_affine = vxm.utils.load_volfile(args.fixed, add_feat_axis=add_feat_axis, ret_affine=True)
 
 if args.affine_model:
 
     # pad inputs to a standard size
-    padshape = (256, 256, 256)
+    padshape = [256 for _ in moving.shape[:-1]] + [moving.shape[-1]]
     moving_padded, _ = vxm.utils.pad(moving.squeeze(), padshape)
     fixed_padded, cropping = vxm.utils.pad(fixed.squeeze(), padshape)
 
     # scale image sizes by some factor
     resize = 0.25
-    moving_resized = vxm.utils.resize(moving_padded, resize)[np.newaxis, ..., np.newaxis]
-    fixed_resized = vxm.utils.resize(fixed_padded, resize)[np.newaxis, ..., np.newaxis]
+    moving_resized = vxm.utils.resize(moving_padded, resize)[np.newaxis]
+    fixed_resized = vxm.utils.resize(fixed_padded, resize)[np.newaxis]
 
     with tf.device(device):
         # load the affine model, predict the transform(s), and merge
@@ -69,9 +71,9 @@ if args.affine_model:
         affine = vxm.utils.affine_merge(affines, resize)
 
         # apply the transform and crop back to the target space
-        moving = moving_padded[np.newaxis, ..., np.newaxis]
+        moving = moving_padded[np.newaxis]
         affine_transformer = vxm.networks.transform_affine(moving_padded.shape)
-        aligned = affine_transformer.predict([moving, affine])[0, ..., 0]
+        aligned = affine_transformer.predict([moving, affine])[0, ...]
         moved = aligned[cropping]
 
         # set as 'moving' for the following nonlinear registration
@@ -79,8 +81,8 @@ if args.affine_model:
 
 if args.model:
 
-    moving = moving[np.newaxis, ..., np.newaxis]
-    fixed = fixed[np.newaxis, ..., np.newaxis]
+    moving = moving[np.newaxis]
+    fixed = fixed[np.newaxis]
 
     with tf.device(device):
         # load model and predict

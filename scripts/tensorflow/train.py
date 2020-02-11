@@ -59,7 +59,7 @@ random.shuffle(train_vol_names)  # shuffle volume list
 assert len(train_vol_names) > 0, 'Could not find any training data'
 
 # no need to append an extra feature axis if data is multichannel
-add_feat_axis = args.multichannel is None
+add_feat_axis = not args.multichannel
 
 if args.atlas:
     # scan-to-atlas generator

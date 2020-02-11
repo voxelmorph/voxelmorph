@@ -52,7 +52,7 @@ model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
 # no need to append an extra feature axis if data is multichannel
-add_feat_axis = args.multichannel is None
+add_feat_axis = not args.multichannel
 
 # prepare the initial weights for the atlas "layer"
 if args.atlas:

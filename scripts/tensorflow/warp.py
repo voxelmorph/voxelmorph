@@ -21,11 +21,13 @@ parser.add_argument('warp', help='warp image filename')
 parser.add_argument('moved', help='registered image output filename')
 parser.add_argument('--interp', default='linear', help='interpolation method linear/nearest (default: linear)')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 args = parser.parse_args()
 
 # load moving image and deformation field
-moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=True)
-deform, deform_affine = vxm.utils.load_volfile(args.warp, add_batch_axis=True, ret_affine=True)
+add_feat_axis = not args.multichannel
+moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
+deform, deform_affine = vxm.utils.load_volfile(args.warp, add_batch_axis=True, ret_affine=add_feat_axis)
 
 # device handling
 if args.gpu:

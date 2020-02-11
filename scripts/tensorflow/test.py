@@ -24,13 +24,15 @@ parser.add_argument('--atlas', required=True, help='atlas npz file')
 parser.add_argument('--scans', nargs='+', required=True, help='test scan npz files')
 parser.add_argument('--labels', required=True, help='label lookup file in npz format')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 args = parser.parse_args()
 
 # corresponding seg labels
 labels = np.load(args.labels)['labels']
 
 # load atlas volume and seg
-atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+add_feat_axis = not args.multichannel
+atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
 atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
 inshape = atlas_seg.shape
 
@@ -54,8 +56,8 @@ with tf.device(device):
 for i, scan in enumerate(args.scans):
 
     # load scan
-    moving_vol = vxm.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=True)
-    moving_seg = vxm.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=True)
+    moving_vol = vxm.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    moving_seg = vxm.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=add_feat_axis)
 
     # predict transform
     with tf.device(device):
