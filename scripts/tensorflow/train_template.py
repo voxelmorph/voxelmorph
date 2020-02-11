@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('datadir', help='base data directory')
 parser.add_argument('--atlas', help='atlas filename')
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
@@ -50,17 +51,20 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
+# no need to append an extra feature axis if data is multichannel
+add_feat_axis = args.multichannel is None
+
 # prepare the initial weights for the atlas "layer"
 if args.atlas:
     # load atlas from file
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
     print('creating input atlas by averaging scans')
     atlas = 0
     atlas_scans = train_vol_names[:100]
     for scan in atlas_scans:
-        atlas += vxm.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=True)
+        atlas += vxm.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
     atlas /= len(atlas_scans)
 
 # save input atlas for the record
@@ -68,6 +72,7 @@ vxm.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz
 
 # get atlas shape (might differ from image input shape)
 atlas_shape = atlas.shape[1:-1]
+nfeats = atlas.shape[-1]
 
 # tensorflow gpu handling
 device = '/gpu:' + args.gpu
@@ -86,7 +91,7 @@ enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 # configure generator
-generator = vxm.generators.template_creation(train_vol_names, atlas, bidir=True, batch_size=args.batch_size)
+generator = vxm.generators.template_creation(train_vol_names, atlas, bidir=True, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
 
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
@@ -95,7 +100,13 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # build model
-    model = vxm.networks.TemplateCreation(atlas_shape, enc_nf, dec_nf)
+    model = vxm.networks.TemplateCreation(
+        atlas_shape,
+        enc_nf=enc_nf,
+        dec_nf=dec_nf,
+        src_feats=nfeats,
+        trg_feats=nfeats
+    )
 
     # set initial atlas weights
     model.atlas_layer.set_weights([atlas[0, ...]])

@@ -25,6 +25,7 @@ parser.add_argument('datadir', help='base data directory')
 parser.add_argument('--pheno-csv', required=True, help='cvs file defining training data attributes')
 parser.add_argument('--atlas', help='atlas filename')
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
@@ -61,17 +62,20 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
+# no need to append an extra feature axis if data is multichannel
+add_feat_axis = args.multichannel is None
+
 # prepare the initial weights for the atlas "layer"
 if args.atlas:
     # load atlas from file
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
     print('creating input atlas by averaging scans')
     atlas = 0
     atlas_scans = train_vol_names[:100]
     for scan in atlas_scans:
-        atlas += vxm.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=True)
+        atlas += vxm.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
     atlas /= len(atlas_scans)
 
 # save input atlas for the record
@@ -79,10 +83,11 @@ vxm.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz
 
 # get atlas shape
 inshape = atlas.shape[1:-1]
+nfeats = atlas.shape[-1]
 pheno_shape = list(train_vol_attributes.values())[0].shape
 
 # configure generator
-generator = vxm.generators.conditional_template_creation(train_vol_names, atlas, train_vol_attributes, batch_size=args.batch_size)
+generator = vxm.generators.conditional_template_creation(train_vol_names, atlas, train_vol_attributes, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
 
 # tensorflow gpu handling
 device = '/gpu:' + args.gpu
@@ -113,7 +118,9 @@ with tf.device(device):
         dec_nf=dec_nf,
         conv_nb_features=4,
         conv_nb_levels=0,
-        extra_conv_layers=3
+        extra_conv_layers=3,
+        src_feats=nfeats,
+        trg_feats=nfeats
     )
 
     # load initial weights (if provided)

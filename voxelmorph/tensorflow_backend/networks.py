@@ -375,7 +375,6 @@ class ConditionalTemplateCreation(LoadableModel):
         pheno_input_shape,
         enc_nf,
         dec_nf,
-        atlas_feats=1,
         conv_image_shape=None,
         conv_size=3,
         conv_nb_levels=5,
@@ -393,7 +392,6 @@ class ConditionalTemplateCreation(LoadableModel):
             pheno_input_shape: Pheno data input shape. e.g. (2)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
-            atlas_feats: Number of features in the atlas. Default is 1.
             conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
             conv_nb_levels: Number of levels in atlas generator unet. Default is 5.
@@ -408,7 +406,7 @@ class ConditionalTemplateCreation(LoadableModel):
         """
 
         # warp model
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, src_feats=atlas_feats, **kwargs)
+        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
 
         if not use_stack:
             outputs = vxm_model.outputs + [vxm_model.pos_flow, vxm_model.neg_flow]

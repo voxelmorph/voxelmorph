@@ -26,6 +26,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('datadir', help='base data directory')
 parser.add_argument('--atlas', help='atlas filename')
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
@@ -57,16 +58,21 @@ train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
 random.shuffle(train_vol_names)  # shuffle volume list
 assert len(train_vol_names) > 0, 'Could not find any training data'
 
+# no need to append an extra feature axis if data is multichannel
+add_feat_axis = args.multichannel is None
+
 if args.atlas:
     # scan-to-atlas generator
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir)
+    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=args.bidir)
+    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
-# extract shape from sampled input
-inshape = next(generator)[0][0].shape[1:-1]
+# extract shape and number of features from sampled input
+sample_shape = next(generator)[0][0].shape
+inshape = sample_shape[1:-1]
+nfeats = sample_shape[-1]
 
 # prepare model folder
 model_dir = args.model_dir
@@ -101,7 +107,9 @@ with tf.device(device):
         bidir=args.bidir,
         use_probs=args.use_probs,
         int_steps=args.int_steps,
-        int_downsize=args.int_downsize
+        int_downsize=args.int_downsize,
+        src_feats=nfeats,
+        trg_feats=nfeats
     )
 
     # load initial weights (if provided)
