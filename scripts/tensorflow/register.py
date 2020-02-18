@@ -56,8 +56,8 @@ if args.affine_model:
 
     # pad inputs to a standard size
     padshape = [256 for _ in moving.shape[:-1]] + [moving.shape[-1]]
-    moving_padded, _ = vxm.utils.pad(moving.squeeze(), padshape)
-    fixed_padded, cropping = vxm.utils.pad(fixed.squeeze(), padshape)
+    moving_padded, _ = vxm.utils.pad(moving, padshape)
+    fixed_padded, cropping = vxm.utils.pad(fixed, padshape)
 
     # scale image sizes by some factor
     resize = 0.25
@@ -72,7 +72,7 @@ if args.affine_model:
 
         # apply the transform and crop back to the target space
         moving = moving_padded[np.newaxis]
-        affine_transformer = vxm.networks.transform_affine(moving_padded.shape)
+        affine_transformer = vxm.networks.transform_affine(moving_padded.shape[:-1])
         aligned = affine_transformer.predict([moving, affine])[0, ...]
         moved = aligned[cropping]
 

@@ -29,7 +29,8 @@ def load_volfile(filename, np_var='vol', add_batch_axis=False, add_feat_axis=Fal
     """
     if filename.endswith(('.nii', '.nii.gz', '.mgz')):
         import nibabel as nib
-        vol = nib.load(filename).get_data()
+        img = nib.load(filename)
+        vol = img.get_data()
         affine = img.affine
     elif filename.endswith('.npz'):
         npz = np.load(filename)
@@ -41,14 +42,14 @@ def load_volfile(filename, np_var='vol', add_batch_axis=False, add_feat_axis=Fal
     if pad_shape:
         vol, _ = pad(vol, pad_shape)
 
+    if add_feat_axis:
+        vol = vol[..., np.newaxis]
+
     if resize_factor != 1:
         vol = resize(vol, resize_factor)
 
     if add_batch_axis:
         vol = vol[np.newaxis, ...]
-
-    if add_feat_axis:
-        vol = vol[..., np.newaxis]
 
     return (vol, affine) if ret_affine else vol
 
@@ -64,7 +65,7 @@ def save_volfile(array, filename, affine=None):
     """
     if filename.endswith(('.nii', '.nii.gz')):
         import nibabel as nib
-        if affine is None:
+        if affine is None and array.ndim >= 3:
             # use LIA transform as default affine
             affine = np.array([[-1,  0,  0,  0],
                                [ 0,  0,  1,  0],
@@ -129,9 +130,13 @@ def pad(array, shape):
 
 def resize(array, factor):
     """
-    Resizes an array by a given factor. 
+    Resizes an array by a given factor. This expects the input array to include a feature dimension.
     """
-    return array if factor == 1 else scipy.ndimage.interpolation.zoom(array, [factor] * array.ndim, order=0)
+    if factor == 1:
+        return array
+    else:
+        dim_factors = [factor for _ in array.shape[:-1]] + [1]
+        return scipy.ndimage.interpolation.zoom(array, dim_factors, order=0)
 
 
 def dice(array1, array2, labels):
