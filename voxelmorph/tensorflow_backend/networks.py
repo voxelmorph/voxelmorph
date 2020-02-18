@@ -375,6 +375,7 @@ class ConditionalTemplateCreation(LoadableModel):
         pheno_input_shape,
         enc_nf,
         dec_nf,
+        src_feats=1,
         conv_image_shape=None,
         conv_size=3,
         conv_nb_levels=5,
@@ -392,6 +393,7 @@ class ConditionalTemplateCreation(LoadableModel):
             pheno_input_shape: Pheno data input shape. e.g. (2)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            src_feats: Number of source (atlas) features. Default is 1.
             conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
             conv_nb_levels: Number of levels in atlas generator unet. Default is 5.
@@ -406,7 +408,7 @@ class ConditionalTemplateCreation(LoadableModel):
         """
 
         # warp model
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
+        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, src_feats=src_feats, **kwargs)
 
         if not use_stack:
             outputs = vxm_model.outputs + [vxm_model.pos_flow, vxm_model.neg_flow]
@@ -433,12 +435,12 @@ class ConditionalTemplateCreation(LoadableModel):
             last = Conv(conv_nb_features, kernel_size=conv_size, padding='same', name='atlas_extra_conv_%d' % n)(last)
 
         # final convolution to get atlas features
-        atlas_gen = Conv(atlas_feats, kernel_size=3, padding='same', name='atlas_gen',
+        atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
                          kernel_initializer=RandomNormal(mean=0.0, stddev=1e-7),
                          bias_initializer=RandomNormal(mean=0.0, stddev=1e-7))(last)
 
         # atlas input layer
-        atlas_input = KL.Input([*inshape, atlas_feats], name='atlas_input')
+        atlas_input = KL.Input([*inshape, src_feats], name='atlas_input')
 
         if templcondsi:
             atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
