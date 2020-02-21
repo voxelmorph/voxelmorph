@@ -99,6 +99,7 @@ else:
 if nb_gpus > 1:
     # use multiple GPUs via DataParallel
     model = torch.nn.DataParallel(model)
+    model.save = model.module.save
 
 # prepare the model for training and send to device
 model.train()
