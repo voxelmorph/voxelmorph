@@ -75,7 +75,7 @@ os.makedirs(model_dir, exist_ok=True)
 # device handling
 gpus = args.gpu.split(',')
 nb_gpus = len(gpus)
-device = f'cuda:{gpus[0]}'
+device = f'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 assert args.batch_size >= nb_gpus, 'Batch size (%d) should be no less than the number of gpus (%d)' % (args.batch_size, nb_gpus)
 
