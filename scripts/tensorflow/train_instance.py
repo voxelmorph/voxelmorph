@@ -55,17 +55,8 @@ with tf.device(device):
     warp_predictor = vxm.networks.VxmDense.load(args.model).get_predictor_model()
     _, orig_warp = warp_predictor.predict([moving, fixed])
 
-    # build instance network
-    source = keras.layers.Input(shape=moving.shape[1:])
-    target = keras.layers.Input(shape=moving.shape[1:])
-    nullwarp = keras.layers.Input(shape=orig_warp.shape[1:])  # this is basically ignored by LocalParamWithInput
-    flow_layer = vxm.layers.LocalParamWithInput(shape=orig_warp.shape[1:])
-    flow = flow_layer(nullwarp)
-    y = vxm.layers.SpatialTransformer()([source, flow])
-    model = keras.Model([source, target, nullwarp], [y, flow])
-
-    # initialize weights with original predicted warp
-    flow_layer.set_weights(orig_warp)
+    # initialize instance network
+    model = vxm.networks.InstanceTrainer(moving.shape[1:], orig_warp)
 
     # prepare image loss
     if args.image_loss == 'ncc':

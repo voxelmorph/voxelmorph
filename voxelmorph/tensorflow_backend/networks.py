@@ -207,6 +207,26 @@ class VxmAffine(LoadableModel):
         return keras.Model(self.inputs, self.affines)
 
 
+class InstanceTrainer:
+    """
+    VoxelMorph network to perform instance-specific optimization.
+    """
+
+    def __init__(self, inshape, warp):
+        source = keras.layers.Input(shape=inshape)
+        target = keras.layers.Input(shape=inshape)
+        nullwarp = keras.layers.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
+        flow_layer = vxm.layers.LocalParamWithInput(shape=warp.shape[1:])
+        flow = flow_layer(nullwarp)
+        y = vxm.layers.SpatialTransformer()([source, flow])
+
+        # initialize the keras model
+        super().__init__(name='instance_net', inputs=[source, target, nullwarp], outputs=[y, flow])
+
+        # initialize weights with original predicted warp
+        flow_layer.set_weights(warp)
+
+
 class ProbAtlasSegmentation(LoadableModel):
     """
     VoxelMorph network to segment images by warping a probabilistic atlas.
