@@ -62,7 +62,7 @@ else:
     train_labels = np.load(args.labels)['labels']
 
 # generator (scan-to-scan unless the atlas cmd argument was provided)
-generator = vxm.generators.supervised(train_vol_names, labels=train_labels, atlas_file=args.atlas)
+generator = vxm.generators.semisupervised(train_vol_names, labels=train_labels, atlas_file=args.atlas)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -89,7 +89,7 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # build the model
-    model = vxm.networks.SupervisedVxmDense(
+    model = vxm.networks.SemiSupervisedVxmDense(
         inshape=inshape,
         enc_nf=enc_nf,
         dec_nf=dec_nf,

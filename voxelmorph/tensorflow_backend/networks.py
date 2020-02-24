@@ -107,9 +107,9 @@ class VxmDense(LoadableModel):
         return keras.Model(self.inputs, [self.y_source, self.pos_flow])
 
 
-class SupervisedVxmDense(LoadableModel):
+class SemiSupervisedVxmDense(LoadableModel):
     """
-    VoxelMorph network for (supervised) nonlinear registration between two images.
+    VoxelMorph network for (semi-supervised) nonlinear registration between two images.
     """
 
     @store_config_args

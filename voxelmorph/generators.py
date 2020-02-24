@@ -81,7 +81,7 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, **
     Generator for scan-to-atlas registration.
 
     TODO: This could be merged into scan_to_scan() by adding an optional atlas
-    argument like in supervised().
+    argument like in semisupervised().
 
     Parameters:
         vol_names: List of volume files to load.
@@ -104,9 +104,9 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, **
         yield (invols, outvols)
 
 
-def supervised(vol_names, labels, atlas_file=None, downsize=2):
+def semisupervised(vol_names, labels, atlas_file=None, downsize=2):
     """
-    Generator for supervised registration training using ground truth segmentations.
+    Generator for semi-supervised registration training using ground truth segmentations.
     Scan-to-atlas training can be enabled by providing the atlas_file argument. It's
     expected that vol_names and atlas_file are npz files with both 'vol' and 'seg' arrays.
 
