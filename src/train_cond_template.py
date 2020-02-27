@@ -550,10 +550,10 @@ if __name__ == "__main__":
                         dest="smooth_pen_layer", default='diffflow',
                         help="smooth_pen_layer")
     parser.add_argument("--data_loss", type=str,
-                        dest="data_loss", default='mse',
+                        dest="data_loss", default='ncc',
                         help="data_loss: mse of ncc")
     parser.add_argument("--lambda", type=float,
-                        dest="reg_param", default=0.01,  # recommend 1.0 for ncc, 0.01 for mse
+                        dest="reg_param", default=1.00,  # recommend 1.0 for ncc, 0.01 for mse
                         help="regularization parameter")
     parser.add_argument("--ncc_win", type=float,
                         dest="ncc_win", default=9, 
