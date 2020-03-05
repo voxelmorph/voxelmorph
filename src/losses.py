@@ -339,7 +339,7 @@ def mutualInformation(bin_centers,
     """
     mutual information for image-image pairs.
 
-    Author: Courtney Guo
+    Author: Courtney Guo. See thesis https://dspace.mit.edu/handle/1721.1/123142
     """
     print("vxm:mutual information loss is experimental.", file=sts.stderr)
     
@@ -360,7 +360,7 @@ def globalMutualInformation(bin_centers,
 
     This function assumes that y_true and y_pred are both (batch_size x height x width x depth x nb_chanels)
 
-    Author: Courtney Guo
+    Author: Courtney Guo. See thesis at https://dspace.mit.edu/handle/1721.1/123142
     """
     print("vxm:mutual information loss is experimental.", file=sts.stderr)
 
@@ -438,7 +438,7 @@ def localMutualInformation(bin_centers,
 
     This function assumes that y_true and y_pred are both (batch_sizexheightxwidthxdepthxchan)
 
-    Author: Courtney Guo        
+    Author: Courtney Guo. See thesis at https://dspace.mit.edu/handle/1721.1/123142
     """
     print("vxm:mutual information loss is experimental.", file=sts.stderr)
 
