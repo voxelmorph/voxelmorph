@@ -2,13 +2,13 @@ import numpy as np
 import neuron as ne
 import tensorflow as tf
 
-import keras
-import keras.backend as K
-import keras.layers as KL
-from keras.models import Model, Sequential
-from keras.layers import Layer, Conv3D, Activation, Input, UpSampling3D
-from keras.layers import concatenate, LeakyReLU, Reshape, Lambda
-from keras.initializers import RandomNormal, Constant
+from tensorflow import keras as keras
+import tensorflow.keras.backend as K
+import tensorflow.keras.layers as KL
+from tensorflow.keras.models import Model, Sequential
+from tensorflow.keras.layers import Layer, Conv3D, Activation, Input, UpSampling3D
+from tensorflow.keras.layers import concatenate, LeakyReLU, Reshape, Lambda
+from tensorflow.keras.initializers import RandomNormal, Constant
 
 from .. import utils
 from . import layers
@@ -104,7 +104,7 @@ class VxmDense(LoadableModel):
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        return keras.Model(self.inputs, [self.y_source, self.pos_flow])
+        return tensorflow.keras.Model(self.inputs, [self.y_source, self.pos_flow])
 
 
 class SemiSupervisedVxmDense(LoadableModel):
@@ -204,7 +204,7 @@ class VxmAffine(LoadableModel):
         Extracts a predictor model from the VxmAffine that directly outputs the
         computed affines instead of the transformed source image.
         """
-        return keras.Model(self.inputs, self.affines)
+        return tensorflow.keras.Model(self.inputs, self.affines)
 
 
 class InstanceTrainer:
@@ -213,9 +213,9 @@ class InstanceTrainer:
     """
 
     def __init__(self, inshape, warp):
-        source = keras.layers.Input(shape=inshape)
-        target = keras.layers.Input(shape=inshape)
-        nullwarp = keras.layers.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
+        source = tensorflow.keras.layers.Input(shape=inshape)
+        target = tensorflow.keras.layers.Input(shape=inshape)
+        nullwarp = tensorflow.keras.layers.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
         flow_layer = vxm.layers.LocalParamWithInput(shape=warp.shape[1:])
         flow = flow_layer(nullwarp)
         y = vxm.layers.SpatialTransformer()([source, flow])
@@ -293,8 +293,8 @@ class ProbAtlasSegmentation(LoadableModel):
         stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
         
         # pool to get 'final' stat
-        stat_mu = keras.layers.GlobalMaxPooling3D()(stat_mu_vol)
-        stat_logssq = keras.layers.GlobalMaxPooling3D()(stat_logssq_vol)
+        stat_mu = tensorflow.keras.layers.GlobalMaxPooling3D()(stat_mu_vol)
+        stat_logssq = tensorflow.keras.layers.GlobalMaxPooling3D()(stat_logssq_vol)
 
         # combine mu with initialization
         if init_mu is not None: 
@@ -336,7 +336,7 @@ class ProbAtlasSegmentation(LoadableModel):
         outputs the gaussian stats and warp field.
         """
         outputs = [self.uloglhood, self.stat_mu, self.stat_logssq, self.outputs[-1]]
-        return keras.Model(self.inputs, outputs)
+        return tensorflow.keras.Model(self.inputs, outputs)
 
 
 class TemplateCreation(LoadableModel):
@@ -361,7 +361,7 @@ class TemplateCreation(LoadableModel):
         # pre-warp (atlas) model
         atlas = layers.LocalParamWithInput(name='atlas', shape=[*inshape, 1], mult=1.0,
                                    initializer=RandomNormal(mean=0.0, stddev=1e-7))(vxm_model.inputs[0])
-        prewarp_model = keras.Model(vxm_model.inputs[0], atlas)
+        prewarp_model = tensorflow.keras.Model(vxm_model.inputs[0], atlas)
 
         # stack models
         stacked = ne.utils.stack_models([prewarp_model, vxm_model], [[0]])
@@ -441,7 +441,7 @@ class ConditionalTemplateCreation(LoadableModel):
         pheno_input = KL.Input(pheno_input_shape, name='pheno_input')
         pheno_dense = KL.Dense(np.prod(conv_image_shape), activation='elu')(pheno_input)
         pheno_reshaped = KL.Reshape(conv_image_shape)(pheno_dense)
-        pheno_init_model = keras.models.Model(pheno_input, pheno_reshaped)
+        pheno_init_model = tensorflow.keras.models.Model(pheno_input, pheno_reshaped)
 
         # build model to decode reshaped pheno
         pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
@@ -477,7 +477,7 @@ class ConditionalTemplateCreation(LoadableModel):
             atlas = KL.Add(name='atlas')([atlas_input, atlas_gen])
 
         # build complete pheno to atlas model
-        pheno_model = keras.models.Model([pheno_decoder_model.input, atlas_input], atlas)
+        pheno_model = tensorflow.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas)
 
         # stacked input list
         inputs = pheno_model.inputs + [vxm_model.inputs[1]]

@@ -1,7 +1,8 @@
 import neuron as ne
 import tensorflow as tf
-import keras.backend as K
-from keras.layers import Layer
+from tensorflow import keras as keras
+import tensorflow.keras.backend as K
+from tensorflow.keras.layers import Layer
 
 
 # make the following neuron layers directly available from vxm
