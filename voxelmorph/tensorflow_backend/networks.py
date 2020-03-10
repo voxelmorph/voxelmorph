@@ -2,7 +2,7 @@ import numpy as np
 import neuron as ne
 import tensorflow as tf
 
-from tensorflow import keras as keras
+from tensorflow import keras
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 from tensorflow.keras.models import Model, Sequential

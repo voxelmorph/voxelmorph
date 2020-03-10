@@ -1,4 +1,4 @@
-from tensorflow import keras 
+import tensorflow as tf
 import h5py
 import json
 import inspect
@@ -36,7 +36,7 @@ def store_config_args(func):
     return wrapper
 
 
-class LoadableModel(keras.Model):
+class LoadableModel(tf.keras.Model):
     """
     Base class for easy keras model loading without having to manually
     specify the architecture configuration at load time.
