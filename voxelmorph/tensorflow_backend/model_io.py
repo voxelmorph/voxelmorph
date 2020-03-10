@@ -16,6 +16,11 @@ def store_config_args(func):
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
+
+        # run the constructor first to avoid any issues with
+        # the keras Model class not being initialized yet
+        retval = func(self, *args, **kwargs)
+
         self.config = {}
 
         # first save the default values
@@ -32,7 +37,7 @@ def store_config_args(func):
             for attr, val in kwargs.items():
                 self.config[attr] = val
 
-        return func(self, *args, **kwargs)
+        return retval
     return wrapper
 
 
@@ -49,19 +54,13 @@ class LoadableModel(tf.keras.Model):
     is decorated with the @store_config_args utility.
     """
 
-    # this constructor just functions as a check to make sure that every
-    # LoadableModel subclass has provided an internal config parameter
-    # either manually or via store_config_args
-    def __init__(self, *args, **kwargs):
-        if not hasattr(self, 'config'):
-            raise RuntimeError('models that inherit from LoadableModel must decorate the constructor with @store_config_args')
-        super().__init__(*args, **kwargs)
-
     def get_config(self):
         """
         Returns the internal config params used to initialize the model.
         Loadable keras models expect this function to be defined.
         """
+        if not hasattr(self, 'config'):
+            raise RuntimeError('models that inherit from LoadableModel must decorate the constructor with @store_config_args')
         return self.config
 
     @classmethod
