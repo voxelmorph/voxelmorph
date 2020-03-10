@@ -21,13 +21,15 @@ import sys
 # third party
 import numpy as np
 import tensorflow as tf
-from keras import backend as K
-import keras.initializers
-from keras.legacy import interfaces
-from keras.layers import Layer, InputLayer, Input
+from tensorflow import keras
+from tensorflow.keras import backend as K
+import tensorflow.keras.initializers
+from tensorflow.keras.layers import Layer, InputLayer, Input
 from tensorflow.python.keras.engine import base_layer
-from keras.engine.topology import Node
+
 from tensorflow.python.keras import backend
+from tensorflow.python import roll as _roll
+# from tensorflow.python.keras.engine.base_layer import Node
 
 # local
 from .utils import transform, resize, integrate_vec, affine_to_shift
@@ -238,7 +240,7 @@ class SpatialTransformer(Layer):
         # it's a 2D Tensor and shape == [N+1, N+1]. 
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
         self.is_affine = len(trf_shape) == 1 or \
-                         (len(trf_shape) == 2 and all([f == (self.ndims+1) for f in trf_shape]))
+                         (len(trf_shape) == 2 and all([trf_shape[0] == self.ndims, trf_shape[1] == self.ndims+1]))
 
         # check sizes
         if self.is_affine and len(trf_shape) == 1:
@@ -356,7 +358,8 @@ class VecInt(Layer):
 
         # necessary for multi_gpu models...
         loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
-        loc_shift._keras_shape = inputs[0]._keras_shape
+        if hasattr(inputs[0], '_keras_shape'):
+            loc_shift._keras_shape = inputs[0]._keras_shape
         
         # prepare location shift
         if self.indexing == 'xy':  # shift the first two dimensions
@@ -369,7 +372,8 @@ class VecInt(Layer):
 
         # map transform across batch
         out = tf.map_fn(self._single_int, [loc_shift] + inputs[1:], dtype=tf.float32)
-        out._keras_shape = inputs[0]._keras_shape
+        if hasattr(inputs[0], '_keras_shape'):
+            out._keras_shape = inputs[0]._keras_shape
         return out
 
     def _single_int(self, inputs):
@@ -639,7 +643,8 @@ class LocallyConnected3D(Layer):
         `rows` and `cols` values might have changed due to padding.
     """
 
-    @interfaces.legacy_conv3d_support
+    # from tensorflow.keras.legacy import interfaces
+    # @interfaces.legacy_conv3d_support
     def __init__(self, filters,
                  kernel_size,
                  strides=(1, 1, 1),
@@ -849,7 +854,7 @@ class LocallyConnected3D(Layer):
         return output
 
 
-class LocalCrossLinear(keras.layers.Layer):
+class LocalCrossLinear(tensorflow.keras.layers.Layer):
     """ 
     Local cross mult layer
 
@@ -942,6 +947,7 @@ class LocalCrossLinearTrf(keras.layers.Layer):
                  mult_regularizer=None,
                  bias_regularizer=None,
                  use_bias=True,
+                 trf_mult=1,
                  **kwargs):
         
         self.output_features = output_features
@@ -950,6 +956,7 @@ class LocalCrossLinearTrf(keras.layers.Layer):
         self.mult_regularizer = mult_regularizer
         self.bias_regularizer = bias_regularizer
         self.use_bias = use_bias
+        self.trf_mult = trf_mult
         self.interp_method = 'linear'
         
         super(LocalCrossLinearTrf, self).__init__(**kwargs)
@@ -1012,7 +1019,7 @@ class LocalCrossLinearTrf(keras.layers.Layer):
         for j in range(self.output_features):
             new_vols[j] = tf.zeros(vol_shape[:-1], dtype=tf.float32)
             for i in range(nb_input_dims):
-                trf_vol = transform(vol[..., i], self.trf[..., i, j, :], interp_method=self.interp_method)
+                trf_vol = transform(vol[..., i], self.trf[..., i, j, :] * self.trf_mult, interp_method=self.interp_method)
                 trf_vol = tf.reshape(trf_vol, vol_shape[:-1])
                 new_vols[j] += trf_vol * self.mult[..., i, j]
 
@@ -1085,7 +1092,7 @@ class LocalParamLayer(Layer):
         self.is_placeholder = False
 
         # create new node
-        Node(self,
+        tensorflow.python.keras.engine.base_layer.node_module.Node(self,
             inbound_layers=[],
             node_indices=[],
             tensor_indices=[],
@@ -1420,7 +1427,6 @@ class ComplexToChannels(Layer):
         return tuple(i_s)
 
 
-
 class ChannelsToComplex(Layer):
 
     def __init__(self, **kwargs):
@@ -1438,6 +1444,103 @@ class ChannelsToComplex(Layer):
         i_s = list(input_shape)
         i_s[-1] = i_s[-1] // 2
         return tuple(i_s)
+
+
+class FFTShift(Layer):
+    """
+    fftshift for keras tensors (so only inner dimensions get shifted)
+
+    modified from
+    https://gist.github.com/Gurpreetsingh9465/f76cc9e53107c29fd76515d64c294d3f
+
+    Shift the zero-frequency component to the center of the spectrum.
+    This function swaps half-spaces for all axes listed (defaults to all).
+    Note that ``y[0]`` is the Nyquist component only if ``len(x)`` is even.
+    Parameters
+    ----------
+    x : array_like, Tensor
+        Input array.
+    axes : int or shape tuple, optional
+        Axes over which to shift.  Default is None, which shifts all axes.
+    Returns
+    -------
+    y : Tensor.
+    """
+
+    def __init__(self, axes=None, **kwargs):
+        self.axes = axes
+        super(FFTShift, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # some input checking
+        self.ndims = len(input_shape) - 2
+        assert self.ndims in [1, 2, 3], 'only 1D, 2D or 3D supported'
+
+        # super
+        super(FFTShift, self).build(input_shape)
+
+    def call(self, x):
+        axes = self.axes
+        if axes is None:
+            axes = tuple(range(K.ndim(x)))
+            shift = [0] + [dim // 2 for dim in x.shape] + [0]
+        elif isinstance(axes, int):
+            shift = x.shape[axes] // 2
+        else:
+            shift = [x.shape[ax] // 2 for ax in axes]
+
+        return _roll(x, shift, axes)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+
+class IFFTShift(Layer):
+    """
+    ifftshift for keras tensors (so only inner dimensions get shifted)
+
+    modified from
+    https://gist.github.com/Gurpreetsingh9465/f76cc9e53107c29fd76515d64c294d3f
+
+    The inverse of `fftshift`. Although identical for even-length `x`, the
+    functions differ by one sample for odd-length `x`.
+    Parameters
+    ----------
+    x : array_like, Tensor.
+    axes : int or shape tuple, optional
+        Axes over which to calculate.  Defaults to None, which shifts all axes.
+    Returns
+    -------
+    y : Tensor.
+    """
+
+    def __init__(self, axes=None, **kwargs):
+        self.axes = axes
+        super(IFFTShift, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        # some input checking
+        self.ndims = len(input_shape) - 2
+        assert self.ndims in [1, 2, 3], 'only 1D, 2D or 3D supported'
+
+        # super
+        super(IFFTShift, self).build(input_shape)
+
+    def call(self, x):
+        axes = self.axes
+        if axes is None:
+            axes = tuple(range(K.ndim(x)))
+            shift = [0] + [-(dim // 2) for dim in x.shape.as_list()[1:-1]] + [0]
+        elif isinstance(axes, int):
+            shift = -(x.shape[axes] // 2)
+        else:
+            shift = [-(x.shape[ax] // 2) for ax in axes]
+
+        return _roll(x, shift, axes)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
 
 
 

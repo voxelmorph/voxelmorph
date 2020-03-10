@@ -9,9 +9,8 @@ import zipfile
 import numpy as np
 import nibabel as nib
 import scipy
-import keras
-from keras.utils import np_utils 
-from keras.models import Model
+from tensorflow.python.keras.utils import np_utils 
+from tensorflow.keras.models import Model
 
 # local packages
 import pynd.ndutils as nd
@@ -24,7 +23,6 @@ reload(pl)
 
 # other neuron (this project) packages
 from . import dataproc as nrn_proc
-from . import models as nrn_models
 
 
 class Vol(object):

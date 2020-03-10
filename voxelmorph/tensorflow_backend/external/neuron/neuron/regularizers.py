@@ -17,7 +17,7 @@ License: GPLv3
 """
 
 import tensorflow as tf
-import keras.backend as K
+import tensorflow.keras.backend as K
 
 from .utils import soft_delta
 
