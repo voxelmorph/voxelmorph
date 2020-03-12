@@ -7,7 +7,6 @@ import argparse
 import numpy as np
 import voxelmorph as vxm
 import tensorflow as tf
-import keras
 
 
 # parse the commandline
@@ -71,7 +70,7 @@ with tf.device(device):
 
     # train
     zeros = np.zeros(orig_warp.shape)
-    model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
     model.fit(
         [moving, fixed, orig_warp],
         [fixed, zeros],

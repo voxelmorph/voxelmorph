@@ -8,7 +8,6 @@ import random
 import argparse
 import glob
 import numpy as np
-import keras
 import tensorflow as tf
 import voxelmorph as vxm
 
@@ -118,11 +117,11 @@ with tf.device(device):
     nb_gpus = len(args.gpu.split(','))
     if nb_gpus > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
     else:
-        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
-    model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
     # save starting weights
     model.save(save_filename.format(epoch=args.initial_epoch))
