@@ -21,24 +21,36 @@ def store_config_args(func):
         # the keras Model class not being initialized yet
         retval = func(self, *args, **kwargs)
 
-        self.config = {}
+        params = {}
 
         # first save the default values
         if defaults:
             for attr, val in zip(reversed(attrs), reversed(defaults)):
-                self.config[attr] = val
+                params[attr] = val
 
         # next handle positional args
         for attr, val in zip(attrs[1:], args):
-            self.config[attr] = val
+            params[attr] = val
 
         # lastly handle keyword args
         if kwargs:
             for attr, val in kwargs.items():
-                self.config[attr] = val
+                params[attr] = val
+
+        self.config = ModelConfig(params)
 
         return retval
     return wrapper
+
+
+class ModelConfig:
+    """
+    A seperate class to contain the model config so that tensorflow
+    doesn't try to wrap it when making checkpoints.
+    """
+
+    def __init__(self, params):
+        self.params = params
 
 
 class LoadableModel(tf.keras.Model):
@@ -61,7 +73,7 @@ class LoadableModel(tf.keras.Model):
         """
         if not hasattr(self, 'config'):
             raise RuntimeError('models that inherit from LoadableModel must decorate the constructor with @store_config_args')
-        return self.config
+        return self.config.params
 
     @classmethod
     def from_config(cls, config, custom_objects=None):

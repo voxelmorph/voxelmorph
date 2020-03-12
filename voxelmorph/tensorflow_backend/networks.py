@@ -3,6 +3,7 @@ import neuron as ne
 import tensorflow as tf
 
 from tensorflow import keras
+import tensorflow
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 from tensorflow.keras.models import Model, Sequential
@@ -177,7 +178,7 @@ class VxmAffine(LoadableModel):
         target = Input(shape=[*inshape, 1])
 
         # build net with multi-scales
-        self.affines = []
+        affines = []
         scale_source = source
         for blur in blurs:
             # set input and blur using gaussian kernel  
@@ -187,7 +188,7 @@ class VxmAffine(LoadableModel):
 
             # apply base net to affine
             affine = basenet(x_in)
-            self.affines.append(affine)
+            affines.append(affine)
  
             # spatial transform using affine matrix
             y_source = layers.SpatialTransformer()([source_blur, affine])
@@ -198,6 +199,9 @@ class VxmAffine(LoadableModel):
 
         # initialize the keras model
         super().__init__(name='affine_net', inputs=[source, target], outputs=[y_source])
+
+        # cache affines
+        self.affines = affines
 
     def get_predictor_model(self):
         """
