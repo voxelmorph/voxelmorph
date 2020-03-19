@@ -514,6 +514,85 @@ class ConditionalTemplateCreation(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
 
+class HyperparameterTuning(LoadableModel):
+    """
+    VoxelMorph network to tune hyperparameter weights.
+    """
+    @store_config_args
+    def __init__(self,
+        inshape,
+        enc_nf,
+        dec_nf,
+        nb_hyperparams=1,
+        src_feats=1,
+        conv_image_shape=None,
+        conv_size=3,
+        conv_nb_levels=0,
+        conv_nb_features=8,
+        extra_conv_layers=3,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_hyperparams: Number of hyperparameters to train. Default is 1.
+            src_feats: Number of source features. Default is 1.
+            conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
+            conv_size: Atlas generator convolutional kernel size. Default is 3.
+            conv_nb_levels: Number of levels in atlas generator unet. Default is 5.
+            conv_nb_features: Number of features in atlas generator convolutions. Default is 8.
+            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        if conv_image_shape is None:
+            conv_image_shape = (*inshape, conv_nb_features)
+
+        # build initial dense param to image shape model
+        param_input = KL.Input([nb_hyperparams], name='param_input')
+        param_dense = KL.Dense(np.prod(conv_image_shape), activation='elu')(param_input)
+        param_reshaped = KL.Reshape(conv_image_shape)(param_dense)
+        param_init_model = tf.keras.models.Model(param_input, param_reshaped)
+
+        # build model to decode reshaped param
+        param_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
+                                                 nb_labels=conv_nb_features, final_pred_activation='linear',
+                                                 input_model=param_init_model, name='param_decoder')
+
+        # add extra convolutions
+        Conv = getattr(KL, 'Conv%dD' % len(inshape))
+        last = param_decoder_model.output
+        for n in range(extra_conv_layers):
+            last = Conv(conv_nb_features, kernel_size=conv_size, padding='same', name='atlas_extra_conv_%d' % n)(last)
+
+        # final convolution to get to final features
+        param_vol = Conv(conv_nb_features, kernel_size=3, padding='same', name='param_vol',
+                         kernel_initializer=RandomNormal(mean=0.0, stddev=1e-7),
+                         bias_initializer=RandomNormal(mean=0.0, stddev=1e-7))(last)
+
+        # build complete hyperparam model
+        hyperparam_model = tf.keras.models.Model(param_input, param_vol)
+
+        # warp model
+        vxm_model = VxmDense(inshape, enc_nf, dec_nf, input_model=hyperparam_model, **kwargs)
+
+        # initialize the keras model
+        super().__init__(inputs=vxm_model.inputs, outputs=vxm_model.outputs)
+
+        # cache pointers to layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.param_input = param_input
+        self.references.vxm_model = vxm_model
+
+    def get_predictor_model(self):
+        """
+        Extracts a predictor model from the VxmDense that directly outputs the warped image and 
+        final diffeomorphic warp field (instead of the non-integrated flow field used for training).
+        """
+        return tf.keras.Model(self.inputs, [self.references.vxm_model.y_source, self.references.vxm_model.pos_flow])
+
+
 def transform(
         inshape,
         interp_method='linear',
