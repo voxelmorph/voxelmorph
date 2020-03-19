@@ -77,7 +77,7 @@ def interpn(vol, loc, interp_method='linear'):
     # flatten and float location Tensors
     loc = tf.cast(loc, 'float32')
     
-    if isinstance(vol.shape, (tf.Dimension, tf.TensorShape)):
+    if isinstance(vol.shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = vol.shape.as_list()
     else:
         volshape = vol.shape
@@ -209,7 +209,7 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
         allow affine_matrix to be a vector of size nb_dims * (nb_dims + 1)
     """
 
-    if isinstance(volshape, (tf.Dimension, tf.TensorShape)):
+    if isinstance(volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = volshape.as_list()
     
     if affine_matrix.dtype != 'float32':
@@ -276,7 +276,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij'):
     """
 
     # parse shapes
-    if isinstance(loc_shift.shape, (tf.Dimension, tf.TensorShape)):
+    if isinstance(loc_shift.shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = loc_shift.shape[:-1].as_list()
     else:
         volshape = loc_shift.shape[:-1]

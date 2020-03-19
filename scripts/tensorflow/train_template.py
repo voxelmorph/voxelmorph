@@ -108,7 +108,7 @@ with tf.device(device):
     )
 
     # set initial atlas weights
-    model.atlas_layer.set_weights([atlas[0, ...]])
+    model.references.atlas_layer.set_weights([atlas[0, ...]])
 
     # load initial weights (if provided)
     if args.load_weights:
@@ -123,7 +123,7 @@ with tf.device(device):
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
     # make sure the warped target is compared to the generated atlas and not the input atlas
-    neg_loss_func = lambda _, y_pred: image_loss_func(model.atlas_tensor, y_pred)
+    neg_loss_func = lambda _, y_pred: image_loss_func(model.references.atlas_tensor, y_pred)
 
     losses = [image_loss_func, neg_loss_func, vxm.losses.MS().loss, vxm.losses.Grad('l2').loss]
     weights = [args.image_loss_weight, 1 - args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight]

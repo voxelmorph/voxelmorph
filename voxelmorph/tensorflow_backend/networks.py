@@ -94,18 +94,19 @@ class VxmDense(LoadableModel):
         super().__init__(name='vxm_dense', inputs=[source, target], outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
-        self.unet_model = unet_model
-        self.y_source = y_source
-        self.y_target = y_target if bidir else None
-        self.pos_flow = pos_flow
-        self.neg_flow = neg_flow if bidir else None
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.unet_model = unet_model
+        self.references.y_source = y_source
+        self.references.y_target = y_target if bidir else None
+        self.references.pos_flow = pos_flow
+        self.references.neg_flow = neg_flow if bidir else None
 
     def get_predictor_model(self):
         """
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        return tensorflow.keras.Model(self.inputs, [self.y_source, self.pos_flow])
+        return tensorflow.keras.Model(self.inputs, [self.references.y_source, self.references.pos_flow])
 
 
 class SemiSupervisedVxmDense(LoadableModel):
@@ -201,14 +202,15 @@ class VxmAffine(LoadableModel):
         super().__init__(name='affine_net', inputs=[source, target], outputs=[y_source])
 
         # cache affines
-        self.affines = affines
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affines = affines
 
     def get_predictor_model(self):
         """
         Extracts a predictor model from the VxmAffine that directly outputs the
         computed affines instead of the transformed source image.
         """
-        return tensorflow.keras.Model(self.inputs, self.affines)
+        return tensorflow.keras.Model(self.inputs, self.references.affines)
 
 
 class InstanceTrainer:
@@ -329,17 +331,23 @@ class ProbAtlasSegmentation(LoadableModel):
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
-        self.vxm_model = vxm_model
-        self.uloglhood = uloglhood
-        self.stat_mu = stat_mu
-        self.stat_logssq = stat_logssq
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.vxm_model = vxm_model
+        self.references.uloglhood = uloglhood
+        self.references.stat_mu = stat_mu
+        self.references.stat_logssq = stat_logssq
 
     def get_predictor_model(self):
         """
         Extracts a predictor model from the ProbAtlasSegmentation model that directly
         outputs the gaussian stats and warp field.
         """
-        outputs = [self.uloglhood, self.stat_mu, self.stat_logssq, self.outputs[-1]]
+        outputs = [
+            self.references.uloglhood,
+            self.references.stat_mu,
+            self.references.stat_logssq,
+            self.outputs[-1]
+        ]
         return tensorflow.keras.Model(self.inputs, outputs)
 
 
@@ -384,8 +392,9 @@ class TemplateCreation(LoadableModel):
         super().__init__(inputs=vxm_model.inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
-        self.atlas_layer = stacked.get_layer('atlas')
-        self.atlas_tensor = self.atlas_layer.get_output_at(-1)
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.atlas_layer = stacked.get_layer('atlas')
+        self.references.atlas_tensor = self.references.atlas_layer.get_output_at(-1)
 
 
 class ConditionalTemplateCreation(LoadableModel):

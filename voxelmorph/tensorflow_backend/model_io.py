@@ -95,3 +95,21 @@ class LoadableModel(tf.keras.Model):
         model = cls(**config)
         model.load_weights(path, by_name=by_name)
         return model
+
+    class ReferenceContainer:
+        """
+        When subclassing keras Models, you can't just set some member reference a specific
+        layer by doing something like:
+
+        self.layer = layer
+
+        because that will automatically re-add the layer weights into the model, even if they
+        already exist. It's a pretty annoying feature, but I'm sure there's a valid reason for it.
+        A workaround is to configure a ReferenceContainer that wraps all layer pointers:
+
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.layer = layer
+        """
+
+        def __init__(self):
+            pass
