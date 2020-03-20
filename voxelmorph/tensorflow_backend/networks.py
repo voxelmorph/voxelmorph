@@ -22,7 +22,7 @@ class VxmDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False, src_feats=1, trg_feats=1):
+    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False, src_feats=1, trg_feats=1, input_model=None):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -35,6 +35,7 @@ class VxmDense(LoadableModel):
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
+            input_model: Model to concat with unet input layer.
         """
 
         # ensure correct dimensionality
@@ -42,8 +43,8 @@ class VxmDense(LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # build core unet model and grab inputs
-        unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats, trg_feats=trg_feats)
-        source, target = unet_model.inputs
+        unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats, trg_feats=trg_feats, input_model=input_model)
+        source, target = unet_model.inputs[:2]
 
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
@@ -91,7 +92,7 @@ class VxmDense(LoadableModel):
 
         # initialize the keras model
         outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]
-        super().__init__(name='vxm_dense', inputs=[source, target], outputs=outputs)
+        super().__init__(name='vxm_dense', inputs=unet_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
@@ -669,7 +670,7 @@ def upsample_block(x, connection):
     return concatenate([upsampled, connection])
 
 
-def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1):
+def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, input_model=None):
     """ 
     Constructs a simple unet architecture.
 
@@ -679,14 +680,22 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1):
         dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
         src_feats: Number of source image features. Default is 1.
         trg_feats: Number of target image features. Default is 1.
+        input_model: Model to concat with input layer.
     """
 
     # configure inputs
-    source = Input(shape=(*inshape, src_feats))
-    target = Input(shape=(*inshape, trg_feats))
+    concat = [
+        Input(shape=(*inshape, src_feats)),
+        Input(shape=(*inshape, trg_feats))
+    ]
+    inputs = concat.copy()
+
+    if input_model is not None:
+        concat += input_model.outputs
+        inputs += input_model.inputs
 
     # configure encoder (down-sampling path)
-    enc_layers = [concatenate([source, target])]
+    enc_layers = [concatenate(concat)]
     for nf in enc_nf:
         enc_layers.append(conv_block(enc_layers[-1], nf, strides=2))
 
@@ -700,7 +709,7 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1):
     for i, nf in enumerate(dec_nf[len(enc_nf):]):
         x = conv_block(x, nf, strides=1)
 
-    return Model(inputs=[source, target], outputs=[x])
+    return Model(inputs=inputs, outputs=[x])
 
 
 def gaussian_blur(tensor, level, ndims):
