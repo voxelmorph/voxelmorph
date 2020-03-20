@@ -14,6 +14,7 @@ class Rescale(Layer):
     """ 
     Rescales a layer by some factor.
     """
+
     def __init__(self, scale_factor, **kwargs):
         self.scale_factor = scale_factor
         super().__init__(**kwargs)
@@ -32,6 +33,7 @@ class RescaleTransform(Layer):
     """ 
     Rescales a transform, which involves resizing the vector field *and* rescaling it.
     """
+
     def __init__(self, zoom_factor, interp_method='linear', **kwargs):
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
@@ -63,12 +65,48 @@ class RescaleTransform(Layer):
         else:
             # multiply first to save memory (multiply in smaller space)
             trf = Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
-            return  ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
+            return ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
 
     def compute_output_shape(self, input_shape):
         output_shape = [int(dim * self.zoom_factor) for dim in input_shape[1:-1]]
         output_shape = [input_shape[0]] + output_shape + [input_shape[-1]]
         return tuple(output_shape)
+
+
+class ComposeTransform(Layer):
+    """ 
+    Composes two dense deformations specified by their displacements.
+
+    We have two fields:
+
+    A --> B (so field is in space of B)
+    B --> C (so field is in the space of C)
+    
+    This layer composes a new warp field:
+
+    A --> C (so field is in the space of C)
+    """
+
+    def build(self, input_shape):
+
+        if len(input_shape) != 2:
+            raise Exception('ComposeTransform must be called on a input list of length 2.')
+
+        super().build(input_shape)
+
+    def call(self, inputs):
+        """
+        Parameters
+            inputs: list with two dense deformations
+        """
+        assert len(inputs) == 2, "inputs has to be len 2, found: %d" % len(inputs)
+        return tf.map_fn(self._single_compose, inputs, dtype=tf.float32)
+
+    def _single_compose(self, inputs):
+        return ne.utils.compose(inputs[0], inputs[1])
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
 
 
 class LocalParamWithInput(Layer):
