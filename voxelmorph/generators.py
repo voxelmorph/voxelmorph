@@ -205,3 +205,18 @@ def conditional_template_creation(vol_names, atlas, attributes, batch_size=1, np
         invols  = [pheno, atlas, vols]
         outvols = [vols, zeros, zeros, zeros]
         yield (invols, outvols)
+
+
+def hypertuning(base_gen, batch_size=1, nb_params=1):
+    """
+    Generates random input values between 0 and 1 for hyperparameter tuning.
+
+    Parameters:
+        base_gen: Base generator function to build off of.
+        batch_size: Training batch size. Default is 1.
+        nb_params: Number of hypertuning parameters. Default is 1.
+    """
+    while True:
+        invols, outvols = next(base_gen)
+        rand = np.random.random((batch_size, nb_params))
+        yield (invols + [rand], outvols)

@@ -528,7 +528,7 @@ class HyperparameterTuning(LoadableModel):
         src_feats=1,
         conv_image_shape=None,
         conv_size=3,
-        conv_nb_levels=0,
+        conv_nb_levels=2,
         conv_nb_features=8,
         extra_conv_layers=3,
         **kwargs):
@@ -539,16 +539,17 @@ class HyperparameterTuning(LoadableModel):
             dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
             nb_hyperparams: Number of hyperparameters to train. Default is 1.
             src_feats: Number of source features. Default is 1.
-            conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
+            conv_image_shape: Intermediate phenotype image shape. Default is half of inshape.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
-            conv_nb_levels: Number of levels in atlas generator unet. Default is 5.
+            conv_nb_levels: Number of levels in atlas generator unet. Default is 2.
             conv_nb_features: Number of features in atlas generator convolutions. Default is 8.
             extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
+        # by default, use 2x downsampled input image shape as initial param image
         if conv_image_shape is None:
-            conv_image_shape = (*inshape, conv_nb_features)
+            conv_image_shape = (*(np.array(inshape) / 2.0).astype(int), 1)
 
         # build initial dense param to image shape model
         param_input = KL.Input([nb_hyperparams], name='param_input')
@@ -591,7 +592,8 @@ class HyperparameterTuning(LoadableModel):
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        return tf.keras.Model(self.inputs, [self.references.vxm_model.y_source, self.references.vxm_model.pos_flow])
+        vxm_model_refs = self.references.vxm_model.references
+        return tf.keras.Model(self.inputs, [vxm_model_refs.y_source, vxm_model_refs.pos_flow])
 
 
 def transform(

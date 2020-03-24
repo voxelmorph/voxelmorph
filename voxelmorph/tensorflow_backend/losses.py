@@ -369,3 +369,16 @@ class NMI:
         y_pred = K.clip(y_pred, 0, self.max_clip)
         y_true = K.clip(y_true, 0, self.max_clip)
         return -self.mi(y_true, y_pred)
+
+
+class LossTuner:
+    """
+    Simple utility to apply a tuning weight to a loss tensor.
+    """
+
+    def __init__(self, loss_func, weight_tensor):
+        self.weight = weight_tensor
+        self.loss_func = loss_func
+
+    def loss(self, y_true, y_pred):
+        return self.weight * self.loss_func(y_true, y_pred)
