@@ -110,42 +110,6 @@ class VxmDense(LoadableModel):
         return tensorflow.keras.Model(self.inputs, [self.references.y_source, self.references.pos_flow])
 
 
-class SemiSupervisedVxmDense(LoadableModel):
-    """
-    VoxelMorph network for (semi-supervised) nonlinear registration between two images.
-    """
-
-    @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, nb_labels, int_steps=7, int_downsize=2, seg_downsize=2):
-        """
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
-            nb_labels: Number of labels used for ground truth segmentations.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
-                is not downsampled when this value is 1.
-            seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
-        """
-
-        # configure base voxelmorph network
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, int_steps=int_steps, int_downsize=int_downsize)
-
-        # configure downsampled seg input layer
-        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
-        seg_src = Input(shape=(*inshape_downsized, nb_labels))
-
-        # configure warped seg output layer
-        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.pos_flow)
-        y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
-
-        # initialize the keras model
-        inputs = vxm_model.inputs + [seg_src]
-        outputs = vxm_model.outputs + [y_seg]
-        super().__init__(inputs=inputs, outputs=outputs)
-
-
 class VxmAffine(LoadableModel):
     """
     VoxelMorph network for linear (affine) registration between two images.
@@ -321,7 +285,7 @@ class ProbAtlasSegmentation(LoadableModel):
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
         def logsum(prob_ll, atl):
-            # safe computation using the log sum exp trick (note: this does not normalize p)
+            # safe computation using the log sum exp trick (NOTE: this does not normalize p)
             # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
             logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
@@ -594,6 +558,106 @@ class HyperparameterTuning(LoadableModel):
         """
         vxm_model_refs = self.references.vxm_model.references
         return tf.keras.Model(self.inputs, [vxm_model_refs.y_source, vxm_model_refs.pos_flow])
+
+
+class VxmDenseSegSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for (semi-supervised) nonlinear registration between two images.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, enc_nf, dec_nf, nb_labels, int_steps=7, int_downsize=2, seg_downsize=2):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_labels: Number of labels used for ground truth segmentations.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+            seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
+        """
+
+        # configure base voxelmorph network
+        vxm_model = VxmDense(inshape, enc_nf, dec_nf, int_steps=int_steps, int_downsize=int_downsize)
+
+        # configure downsampled seg input layer
+        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
+        seg_src = Input(shape=(*inshape_downsized, nb_labels))
+
+        # configure warped seg output layer
+        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.pos_flow)
+        y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+
+        # initialize the keras model
+        inputs = vxm_model.inputs + [seg_src]
+        outputs = vxm_model.outputs + [y_seg]
+        super().__init__(inputs=inputs, outputs=outputs)
+
+
+class VxmDenseSurfaceSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
+    """
+
+    @store_config_args
+    def __init__(self,
+        inshape,
+        enc_nf,
+        dec_nf,
+        nb_surface_points,
+        nb_labels_sample,
+        sdt_vol_resize=1,
+        surf_bidir=True,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_surface_points: Number of surface points to warp.
+            nb_labels_sample: Number of labels to sample.
+            sdt_vol_resize: Resize factor of distance transform. Default is 1.
+            surf_bidir: Train with bidirectional surface warping. Default is True.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
+        surface_points_shape = [nb_surface_points, len(inshape) + 1]
+        single_pt_trf = lambda x: point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
+
+        # vm model
+        dense = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
+
+        # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
+        atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
+
+        # warp atlas surface
+        # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
+        warped_atl_surf_pts = Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, dense.references.pos_flow])
+
+        # get value of dt_input *at* warped_atlas_surface
+        subj_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
+        subj_dt_value = Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+
+        if surf_bidir:
+            # go the other way and warp subject to atlas
+            subj_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='subj_surface_input')
+            warped_subj_surf_pts = Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, dense.references.neg_flow])
+
+            atl_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
+            atl_dt_value = Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+
+            inputs  = [*dense.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
+            outputs = [*dense.outputs, subj_dt_value, atl_dt_value]
+
+        else:
+            inputs  = [*dense.inputs, subj_dt_input, atl_surf_input]
+            outputs = [*dense.outputs, subj_dt_value]
+
+        # initialize the keras model
+        super().__init__(inputs=inputs, outputs=outputs)
 
 
 def transform(

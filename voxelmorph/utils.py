@@ -1,8 +1,11 @@
 import os
 import numpy as np
+import numpy as np
 import scipy
 import csv
 import functools
+
+from skimage import measure
 
 
 def get_backend():
@@ -177,3 +180,165 @@ def affine_merge(transforms, resize):
     matrix = functools.reduce(np.matmul, matrices)
     matrix[:, -1] *= (1 / resize)
     return affine_matrix_to_vec(matrix)
+
+
+def extract_largest_vol(bw, connectivity=1):
+    """
+    Extracts the binary (boolean) image with just the largest component.
+    TODO: This might be less than efficiently implemented.
+    """
+    lab = measure.label(bw.astype('int'), connectivity=connectivity)
+    regions = measure.regionprops(lab, cache=False)
+    areas = [f.area for f in regions]
+    ai = np.argsort(areas)[::-1]
+    bw = lab == ai[0] + 1
+    return bw
+
+
+def clean_seg(x, std=1):
+    """
+    Cleans a segmentation image.
+    """
+
+    # take out islands, fill in holes, and gaussian blur
+    bw = extract_largest_vol(x)
+    bw = 1 - extract_largest_vol(1 - bw)
+    gadt = scipy.ndimage.gaussian_filter(bw.astype('float'), std)
+
+    # figure out the proper threshold to maintain the total volume
+    sgadt = np.sort(gadt.flatten())[::-1]
+    thr = sgadt[np.ceil(bw.sum()).astype(int)]
+    clean_bw = gadt > thr
+
+    assert np.isclose(bw.sum(), clean_bw.sum(), atol=5), 'cleaning segmentation failed'
+    return clean_bw.astype(float)
+
+
+def clean_seg_batch(X_label, std=1):
+    """
+    Cleans batches of segmentation images.
+    """
+    if not X_label.dtype == 'float':
+        X_label = X_label.astype('float')
+
+    data = np.zeros(X_label.shape)
+    for xi, x in enumerate(X_label):
+        data[xi,...,0] = _clean_seg(x[...,0], std)
+
+    return data
+
+
+def filter_labels(atlas_vol, labels):
+    """
+    Filters given volumes to only include given labels, all other voxels are set to 0.
+    """
+    mask = np.zeros(atlas_vol.shape, 'bool')
+    for label in labels:
+        mask = np.logical_or(mask, atlas_vol == label)
+    return atlas_vol * mask
+
+
+def dist_trf(bwvol):
+    """
+    Computes positive distance transform from positive entries in a logical image.
+    """
+    revbwvol = np.logical_not(bwvol)
+    return scipy.ndimage.morphology.distance_transform_edt(revbwvol)
+
+
+def signed_dist_trf(bwvol):
+    """
+    Computes the signed distance transform from the surface between the binary
+    elements of an image
+    NOTE: The distance transform on either side of the surface will be +/- 1,
+    so there are no voxels for which the distance should be 0.
+    NOTE: Currently the function uses bwdist twice. If there is a quick way to
+    compute the surface, bwdist could be used only once.
+    """
+
+    # get the positive transform (outside the positive island)
+    posdst = dist_trf(bwvol)
+
+    # get the negative transform (distance inside the island)
+    notbwvol = np.logical_not(bwvol)
+    negdst = dist_trf(notbwvol)
+
+    # combine the positive and negative map
+    return posdst * notbwvol - negdst * bwvol
+
+
+def vol_to_sdt(X_label, sdt=True, sdt_vol_resize=1):
+    """
+    Computes the signed distance transform from a volume.
+    """
+
+    X_dt = signed_dist_trf(X_label)
+    
+    if not (sdt_vol_resize == 1):
+        if not isinstance(sdt_vol_resize, (list, tuple)):
+            sdt_vol_resize = [sdt_vol_resize] * X_dt.ndim
+        if any([f != 1 for f in sdt_vol_resize]):
+            X_dt = scipy.ndimage.interpolation.zoom(X_dt, sdt_vol_resize, order=1, mode='reflect')
+    
+    if not sdt:
+        X_dt = np.abs(X_dt)
+    
+    return X_dt
+
+
+def vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=1):
+    """
+    Computes the signed distance transforms from volume batches.
+    """
+
+    # assume X_label is [batch_size, *vol_shape, 1]
+    assert X_label.shape[-1] == 1, 'implemented assuming size is [batch_size, *vol_shape, 1]'
+    X_lst = [f[...,0] for f in X_label] # get rows
+    X_dt_lst =  [_vol_to_dt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
+    X_dt = np.stack(X_dt_lst, 0)[..., np.newaxis]
+    return X_dt
+
+
+def get_surface_pts_per_label(total_nb_surface_pts, layer_edge_ratios):
+    """
+    Gets the number of surface points per label, given the total number of surface points.
+    """
+    nb_surface_pts_sel = np.round(np.array(layer_edge_ratios) * total_nb_surface_pts).astype('int')
+    nb_surface_pts_sel[-1] = total_nb_surface_pts - int(np.sum(nb_surface_pts_sel[:-1]))
+    return nb_surface_pts_sel
+
+
+def edge_to_surface_pts(X_edges, nb_surface_pts=None):
+    """
+    Converts edges to surface points.
+    """
+
+    # assumes X_edges is NOT in keras form
+    surface_pts = np.stack(np.where(X_edges), 0).transpose()
+    
+    # random with replacements
+    if nb_surface_pts is not None:
+        chi = np.random.choice(range(surface_pts.shape[0]), size=nb_surface_pts)
+        surface_pts = surface_pts[chi,:]
+
+    return surface_pts
+
+
+def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr=0.50001, resize_fn=None):
+    """
+    Converts a signed distance transform to surface points.
+    """
+    us = [surface_pts_upsample_factor] * X_sdt.ndim
+    
+    if resize_fn is None:
+        resized_vol = scipy.ndimage.interpolation.zoom(X_sdt, us, order=1, mode='reflect')
+    else:
+        resized_vol = resize_fn(X_sdt)
+        pred_shape = np.array(X_sdt.shape)*surface_pts_upsample_factor
+        assert np.array_equal(pred_shape, resized_vol.shape), 'resizing failed'
+
+    X_edges = np.abs(resized_vol) < thr
+    sf_pts = edge_to_surface_pts(X_edges, nb_surface_pts=nb_surface_pts)
+
+    # can't just correct by surface_pts_upsample_factor because of how interpolation works...
+    return np.stack([sf_pts[..., f] *  (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)

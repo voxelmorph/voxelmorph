@@ -212,7 +212,7 @@ def hypertuning(base_gen, batch_size=1, nb_params=1):
     Generates random input values between 0 and 1 for hyperparameter tuning.
 
     Parameters:
-        base_gen: Base generator function to build off of.
+        base_gen: Base generator function to add to.
         batch_size: Training batch size. Default is 1.
         nb_params: Number of hypertuning parameters. Default is 1.
     """
@@ -220,3 +220,157 @@ def hypertuning(base_gen, batch_size=1, nb_params=1):
         invols, outvols = next(base_gen)
         rand = np.random.random((batch_size, nb_params))
         yield (invols + [rand], outvols)
+
+
+def surf_semisupervised(
+        vol_names,
+        atlas_vol,
+        atlas_seg,
+        nb_surface_pts,
+        labels=None,
+        batch_size=1,
+        surf_bidir=True,
+        surface_pts_upsample_factor=2,
+        smooth_seg_std=1,
+        nb_labels_sample=None,
+        sdt_vol_resize=1,
+        align_segs=False,
+        add_feat_axis=True
+    ):
+    """
+    Scan-to-atlas generator for semi-supervised learning using surface point clouds from segmentations.
+
+    Parameters:
+        vol_names: List of volume files to load.
+        atlas_vol: Atlas volume array.
+        atlas_seg: Atlas segmentation array.
+        nb_surface_pts: Total number surface points for all structures.
+        labels: Label list to include. If None, all labels in atlas_seg are used. Default is None.
+        batch_size: Batch size. NOTE some features only implemented for 1. Default is 1.
+        surf_bidir: Train with bidirectional surface distance. Default is True.
+        surface_pts_upsample_factor: Upsample factor for surface pointcloud. Default is 2.
+        smooth_seg_std: Segmentation smoothness sigma. Default is 1.
+        nb_labels_sample: Number of labels to sample. Default is None.
+        sdt_vol_resize: Resize factor for signed distance transform volumes. Default is 1.
+        align_segs: Whether to pass in segmentation image instead. Default is False.
+        add_feat_axis: Load volume arrays with added feature axis. Default is True.
+    """
+
+    # some input checks
+    assert nb_surface_pts > 0, 'number of surface point should be greater than 0'
+
+    # prepare some shapes
+    vol_shape = atlas_seg.shape
+    sdt_shape = [int(f * sdt_vol_resize) for f in vol_shape]
+
+    # compute labels from atlas, and the number of labels to sample.
+    if labels is not None:
+        atlas_seg = utils.filter_labels(atlas_seg, labels)
+    else:
+        labels = np.sort(np.unique(atlas_seg))[1:]
+
+    # use all labels by default
+    if nb_labels_sample is None:
+        nb_labels_sample = len(labels)
+
+    # prepare keras format atlases
+    atlas_vol_bs = np.repeat(atlas_vol[np.newaxis, ..., np.newaxis], batch_size, axis=0)
+    atlas_seg_bs = np.repeat(atlas_seg[np.newaxis, ..., np.newaxis], batch_size, axis=0)
+
+    # prepare surface extraction function
+    std_to_surf = lambda x, y: utils.sdt_to_surface_pts(x, y, surface_pts_upsample_factor=surface_pts_upsample_factor, thr=(1/surface_pts_upsample_factor + 1e-5))
+    
+    # prepare zeros, which will be used for outputs unused in cost functions
+    zero_flow = np.zeros((batch_size, *vol_shape, len(vol_shape)))
+    zero_surface_values = np.zeros((batch_size, nb_surface_pts, 1))
+
+    # precompute label edge volumes
+    atlas_sdt = [None] * len(labels) 
+    atlas_label_vols = [None] * len(labels) 
+    nb_edges = np.zeros(len(labels))
+    for li, label in enumerate(labels):  # if only one label, get surface points here
+        atlas_label_vols[li] = atlas_seg == label
+        atlas_label_vols[li] = utils.clean_seg(atlas_label_vols[li], smooth_seg_std)
+        atlas_sdt[li] = utils.vol_to_sdt(atlas_label_vols[li], sdt=True, sdt_vol_resize=sdt_vol_resize)
+        nb_edges[li] = np.sum(np.abs(atlas_sdt[li]) < 1.01)
+    layer_edge_ratios = nb_edges / np.sum(nb_edges)
+
+    # if working with all the labels passed in (i.e. no label sampling per batch), 
+    # pre-compute the atlas surface points
+    atlas_surface_pts = np.zeros((batch_size, nb_surface_pts, len(vol_shape) + 1))
+    if nb_labels_sample == len(labels):
+        nb_surface_pts_sel = utils.get_surface_pts_per_label(nb_surface_pts, layer_edge_ratios)
+        for li, label in enumerate(labels):  # if only one label, get surface points here
+            atlas_surface_pts_ = std_to_surf(atlas_sdt[li], nb_surface_pts_sel[li])[np.newaxis, ...]
+            # get the surface point stack indexes for this element
+            srf_idx = slice(int(np.sum(nb_surface_pts_sel[:li])), int(np.sum(nb_surface_pts_sel[:li+1])))
+            atlas_surface_pts[:, srf_idx, :-1] = np.repeat(atlas_surface_pts_, batch_size, 0)
+            atlas_surface_pts[:, srf_idx,  -1] = li
+
+    # generator
+    gen = volgen(vol_names, return_segs=True, batch_size=batch_size, add_feat_axis=add_feat_axis)
+    
+    assert batch_size == 1, 'only batch size 1 supported for now'
+
+    while True:
+
+        # prepare data
+        X = next(gen)
+        X_img = X[0]
+        X_seg = utils.filter_labels(X[1], labels)
+
+        # get random labels
+        sel_label_idxs = range(len(labels))  # all labels
+        if nb_labels_sample != len(labels):
+            sel_label_idxs = np.sort(np.random.choice(range(len(labels)), size=nb_labels_sample, replace=False))
+            sel_layer_edge_ratios = [layer_edge_ratios[li] for li in sel_label_idxs]
+            nb_surface_pts_sel = utils.get_surface_pts_per_label(nb_surface_pts, sel_layer_edge_ratios)
+                
+        # prepare signed distance transforms and surface point arrays
+        X_sdt_k = np.zeros((batch_size, *sdt_shape, nb_labels_sample))
+        atl_dt_k = np.zeros((batch_size, *sdt_shape, nb_labels_sample))
+        subj_surface_pts = np.zeros((batch_size, nb_surface_pts, len(vol_shape) + 1))
+        if nb_labels_sample != len(labels):
+            atlas_surface_pts = np.zeros((batch_size, nb_surface_pts, len(vol_shape) + 1))
+
+        for li, sli in enumerate(sel_label_idxs):
+            # get the surface point stack indexes for this element
+            srf_idx = slice(int(np.sum(nb_surface_pts_sel[:li])), int(np.sum(nb_surface_pts_sel[:li+1])))
+
+            # get atlas surface points for this label
+            if nb_labels_sample != len(labels):
+                atlas_surface_pts_ = std_to_surf(atlas_sdt[sli], nb_surface_pts_sel[li])[np.newaxis, ...]
+                atlas_surface_pts[:, srf_idx, :-1] = np.repeat(atlas_surface_pts_, batch_size, 0)
+                atlas_surface_pts[:, srf_idx,  -1] = sli
+
+            # compute X distance from surface
+            X_label = X_seg == labels[sli]
+            X_label = utils.clean_seg_batch(X_label, smooth_seg_std)
+            X_sdt_k[..., li] = utils.vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=sdt_vol_resize)[..., 0]
+
+            if surf_bidir:
+                atl_dt = atlas_sdt[li][np.newaxis, ...]
+                atl_dt_k[..., li] = np.repeat(atl_dt, batch_size, 0)
+                ssp_lst = [std_to_surf(f[...], nb_surface_pts_sel[li]) for f in X_sdt_k[..., li]]
+                subj_surface_pts[:, srf_idx, :-1] = np.stack(ssp_lst, 0)
+                subj_surface_pts[:, srf_idx,  -1] = li
+
+        # check if returning segmentations instead of images
+        # this is a bit hacky for basically building a segmentation-only network (no images)
+        X_ret = X_img
+        atlas_ret = atlas_vol_bs
+
+        if align_segs:
+            assert len(labels) == 1, 'align_seg generator is only implemented for single label'
+            X_ret = X_seg == labels[0]
+            atlas_ret = atlas_seg_bs == labels[0]
+
+        # finally, output
+        if surf_bidir:
+            inputs  = [X_ret, atlas_ret, X_sdt_k, atl_dt_k, subj_surface_pts, atlas_surface_pts]
+            outputs = [atlas_ret, X_ret, zero_flow, zero_surface_values, zero_surface_values]
+        else:
+            inputs  = [X_ret, atlas_ret, atlas_surface_pts, X_sdt_k]
+            outputs = [atlas_ret, X_ret, zero_flow, zero_surface_values]
+
+        yield (inputs, outputs)
