@@ -64,17 +64,21 @@ add_feat_axis = not args.multichannel
 atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol')
 atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
 
+# get labels and number of labels to sample
+labels = args.labels if args.labels is not None else np.sort(np.unique(atlas_seg))[1:]
+num_labels = args.num_labels if args.num_labels is not None else len(labels)
+
 # scan-to-atlas sdt generator
 generator = vxm.generators.surf_semisupervised(
     train_vol_names,
     atlas_vol,
     atlas_seg,
     nb_surface_pts=args.surf_points,
-    labels=args.labels,
+    labels=labels,
     batch_size=args.batch_size,
     surf_bidir=args.surf_bidir,
     smooth_seg_std=args.smooth_seg,
-    nb_labels_sample=args.num_labels,
+    nb_labels_sample=num_labels,
     sdt_vol_resize=args.sdt_resize,
     align_segs=args.align_segs,
     add_feat_axis=add_feat_axis
@@ -115,7 +119,7 @@ with tf.device(device):
         enc_nf=enc_nf,
         dec_nf=dec_nf,
         nb_surface_points=args.surf_points,
-        nb_labels_sample=args.num_labels,
+        nb_labels_sample=num_labels,
         sdt_vol_resize=args.sdt_resize,
         surf_bidir=args.surf_bidir,
         use_probs=args.use_probs,

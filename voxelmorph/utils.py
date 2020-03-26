@@ -223,7 +223,7 @@ def clean_seg_batch(X_label, std=1):
 
     data = np.zeros(X_label.shape)
     for xi, x in enumerate(X_label):
-        data[xi,...,0] = _clean_seg(x[...,0], std)
+        data[xi,...,0] = clean_seg(x[...,0], std)
 
     return data
 
@@ -294,7 +294,7 @@ def vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=1):
     # assume X_label is [batch_size, *vol_shape, 1]
     assert X_label.shape[-1] == 1, 'implemented assuming size is [batch_size, *vol_shape, 1]'
     X_lst = [f[...,0] for f in X_label] # get rows
-    X_dt_lst =  [_vol_to_dt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
+    X_dt_lst =  [vol_to_sdt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
     X_dt = np.stack(X_dt_lst, 0)[..., np.newaxis]
     return X_dt
 

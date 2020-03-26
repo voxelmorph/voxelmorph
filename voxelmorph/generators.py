@@ -370,7 +370,7 @@ def surf_semisupervised(
             inputs  = [X_ret, atlas_ret, X_sdt_k, atl_dt_k, subj_surface_pts, atlas_surface_pts]
             outputs = [atlas_ret, X_ret, zero_flow, zero_surface_values, zero_surface_values]
         else:
-            inputs  = [X_ret, atlas_ret, atlas_surface_pts, X_sdt_k]
+            inputs  = [X_ret, atlas_ret, X_sdt_k, atlas_surface_pts]
             outputs = [atlas_ret, X_ret, zero_flow, zero_surface_values]
 
         yield (inputs, outputs)

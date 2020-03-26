@@ -241,8 +241,8 @@ class ProbAtlasSegmentation(LoadableModel):
         # important to note that we're warping the atlas to the image in this case and
         # we'll swap the input order later
         atlas, image = vxm_model.inputs
-        warped_atlas = vxm_model.y_source if warp_atlas else atlas
-        flow = vxm_model.pos_flow
+        warped_atlas = vxm_model.references.y_source if warp_atlas else atlas
+        flow = vxm_model.references.pos_flow
 
         # compute stat using the warped atlas (or not)
         if stat_post_warp:
@@ -250,7 +250,7 @@ class ProbAtlasSegmentation(LoadableModel):
             combined = concatenate([warped_atlas, image])
         else:
             # use last convolution in the unet before the flow convolution
-            combined = vxm_model.unet_model.layers[-2].output
+            combined = vxm_model.references.unet_model.layers[-2].output
 
         # convolve into nlabel-stat volume
         conv = conv_block(combined, stat_nb_feats)
@@ -409,7 +409,7 @@ class ConditionalTemplateCreation(LoadableModel):
         vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, src_feats=src_feats, **kwargs)
 
         if not use_stack:
-            outputs = vxm_model.outputs + [vxm_model.pos_flow, vxm_model.neg_flow]
+            outputs = vxm_model.outputs + [vxm_model.references.pos_flow, vxm_model.references.neg_flow]
             vxm_model = Model(inputs=vxm_model.inputs, outputs=outputs)
 
         if conv_image_shape is None:
@@ -587,7 +587,7 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         seg_src = Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
-        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.pos_flow)
+        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.pos_flow)
         y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
 
         # initialize the keras model
@@ -792,6 +792,57 @@ def gaussian_blur(tensor, level, ndims):
         return tensor
     else:
         raise ValueError('Gaussian blur level must not be less than 1')
+
+
+def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute_val=True):
+    """
+    Extracts value at given point.
+    """
+    
+    # vol is batch_size, *vol_shape, nb_feats
+    # loc_pts is batch_size, nb_surface_pts, D or D+1
+    vol, loc_pts = x
+
+    fn = lambda y: ne.utils.interpn(y[0], y[1])
+    z = tf.map_fn(fn, [vol, loc_pts], dtype=tf.float32)
+
+    if force_post_absolute_val:
+        z = K.abs(z)
+    return z
+
+
+def point_spatial_transformer(x, single=False, sdt_vol_resize=1):
+    """
+    Transforms surface points with a given deformation.
+    Note that the displacement field that moves image A to image B will be "in the space of B".
+    That is, `trf(p)` tells you "how to move data from A to get to location `p` in B". 
+    Therefore, that same displacement field will warp *landmarks* in B to A easily 
+    (that is, for any landmark `L(p)`, it can easily find the appropriate `trf(L(p))` via interpolation.
+    """
+
+    # surface_points is a N x D or a N x (D+1) Tensor
+    # trf is a *volshape x D Tensor
+    surface_points, trf = x
+    trf = trf * sdt_vol_resize
+    surface_pts_D = surface_points.get_shape().as_list()[-1]
+    trf_D = trf.get_shape().as_list()[-1]
+    assert surface_pts_D in [trf_D, trf_D + 1]
+
+    if surface_pts_D == trf_D + 1:
+        li_surface_pts = K.expand_dims(surface_points[..., -1], -1)
+        surface_points = surface_points[..., :-1]
+
+    # just need to interpolate.
+    # at each location determined by surface point, figure out the trf...
+    # note: if surface_points are on the grid, gather_nd should work as well
+    fn = lambda x: ne.utils.interpn(x[0], x[1])
+    diff = tf.map_fn(fn, [trf, surface_points], dtype=tf.float32)
+    ret = surface_points + diff
+
+    if surface_pts_D == trf_D + 1:
+        ret = tf.concat((ret, li_surface_pts), -1)
+
+    return ret
 
 
 # make ModelCheckpointParallel directly available from vxm
