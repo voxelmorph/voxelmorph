@@ -142,6 +142,7 @@ class VxmAffine(LoadableModel):
         if rigid:
             print('Warning: rigid registration has not been fully tested')
             basenet.add(KL.Dense(ndims * 2))
+            basenet.add(layers.EulerToAffine())
         else:
             basenet.add(KL.Dense(ndims * (ndims + 1)))
 
@@ -160,9 +161,6 @@ class VxmAffine(LoadableModel):
 
             # apply base net to affine
             affine = basenet(x_in)
-            if rigid:
-                affine = Lambda(eulers_to_affine, name='eulers_to_affine')(affine[0])
-
             affines.append(affine)
  
             # spatial transform using affine matrix
@@ -852,62 +850,6 @@ def point_spatial_transformer(x, single=False, sdt_vol_resize=1):
         ret = tf.concat((ret, li_surface_pts), -1)
 
     return ret
-
-
-def eulers_to_affine(vector):
-    """
-    Computes the corresponding (flattened) affine from a 6-element
-    vector where the first 3 values represent the x, y, z euler angles
-    (in radians) and the last 3 represent the x, y, z translation.
-
-    TODO: make this dimension-independent and convert to a keras layer
-    """
-
-    if vector.shape.as_list()[0] != 6:
-        raise NotImplementedError('Rigid registration is limited to 3D (len 6 input) for now')
-
-    # extract components of input vector
-    angle_x = vector[0]
-    angle_y = vector[1]
-    angle_z = vector[2]
-    translation = tf.expand_dims(vector[3:6], 1)
-
-    # x rotation matrix
-    cosx  = tf.math.cos(angle_x)
-    sinx  = tf.math.sin(angle_x)
-    x_rot = tf.convert_to_tensor([
-        [1,    0,     0],
-        [0, cosx, -sinx],
-        [0, sinx,  cosx]
-    ], name='x_rot')
-
-    # y rotation matrix
-    cosy  = tf.math.cos(angle_y)
-    siny  = tf.math.sin(angle_y)
-    y_rot = tf.convert_to_tensor([
-        [cosy,  0, siny],
-        [0,     1,    0],
-        [-siny, 0, cosy]
-    ], name='y_rot')
-
-    # z rotation matrix
-    cosz  = tf.math.cos(angle_z)
-    sinz  = tf.math.sin(angle_z)
-    z_rot = tf.convert_to_tensor([
-        [cosz, -sinz, 0],
-        [sinz,  cosz, 0],
-        [0,        0, 1]
-    ], name='z_rot')
-
-    # compose matrices
-    t_rot = tf.tensordot(x_rot, y_rot, 1)
-    m_rot = tf.tensordot(t_rot, z_rot, 1)
-
-    # concat the linear translation and flatten
-    matrix = tf.concat([m_rot, translation], 1)
-    affine = tf.reshape(matrix, [1, 12])
-
-    return affine
 
 
 # make ModelCheckpointParallel directly available from vxm
