@@ -164,11 +164,11 @@ class VxmAffine(LoadableModel):
             affines.append(affine)
  
             # spatial transform using affine matrix
-            y_source = layers.SpatialTransformer()([source_blur, affine])
+            y_source = layers.SpatialTransformer(add_identity=(not rigid))([source_blur, affine])
 
             # provide new input for next scale
             if len(blurs) > 1:
-                scale_source = layers.SpatialTransformer()([scale_source, affine])
+                scale_source = layers.SpatialTransformer(add_identity=(not rigid))([scale_source, affine])
 
         # initialize the keras model
         super().__init__(name='affine_net', inputs=[source, target], outputs=[y_source])
