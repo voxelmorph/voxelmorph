@@ -176,6 +176,7 @@ class VxmAffine(LoadableModel):
         # cache affines
         self.references = LoadableModel.ReferenceContainer()
         self.references.affines = affines
+        self.references.rigid = rigid
 
     def get_predictor_model(self):
         """
@@ -183,6 +184,16 @@ class VxmAffine(LoadableModel):
         computed affines instead of the transformed source image.
         """
         return tensorflow.keras.Model(self.inputs, self.references.affines)
+
+    def get_affine_transformer(self, inshape):
+        """
+        Builds the appropriate affine transformer network that applies an
+        affine registration matrix to an image.
+        """
+        source = Input(shape=(*inshape, 1))
+        affine = Input(shape=[12])
+        aligned = layers.SpatialTransformer(add_identity=(not self.references.rigid))([source, affine])
+        return Model([source, affine], aligned)
 
 
 class InstanceTrainer:
@@ -707,16 +718,6 @@ def transform_nn(inshape, **kwargs):
     Simple transform model for nearest-neighbor based transformation.
     """
     return transform(inshape, interp_method='nearest', **kwargs)
-
-
-def transform_affine(inshape):
-    """
-    Transformer network that applies an affine registration matrix to an image.
-    """
-    source = Input((*inshape, 1))
-    affine = Input((12,))
-    aligned = layers.SpatialTransformer()([source, affine])
-    return Model([source, affine], aligned)
 
 
 def conv_block(x, nfeat, strides=1):

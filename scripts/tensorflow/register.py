@@ -65,13 +65,14 @@ if args.affine_model:
 
     with tf.device(device):
         # load the affine model, predict the transform(s), and merge
-        affine_predictor = vxm.networks.VxmAffine.load(args.affine_model).get_predictor_model()
+        affine_net = vxm.networks.VxmAffine.load(args.affine_model)
+        affine_predictor = affine_net.get_predictor_model()
         affines = affine_predictor.predict([moving_resized, fixed_resized])
         affine = vxm.utils.affine_merge(affines, resize)
 
         # apply the transform and crop back to the target space
         moving = moving_padded[np.newaxis]
-        affine_transformer = vxm.networks.transform_affine(moving_padded.shape[:-1])
+        affine_transformer = affine_net.get_affine_transformer(moving_padded.shape[:-1])
         aligned = affine_transformer.predict([moving, affine])[0, ...]
         moved = aligned[cropping]
 
