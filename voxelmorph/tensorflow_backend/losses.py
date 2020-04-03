@@ -146,6 +146,25 @@ class Grad:
         return tf.add_n(df) / len(df)
 
 
+class TukeysBiweight:
+    """
+    Tukey's Biweight loss for limited outlier contribution.
+    """
+
+    def __init__(self, c=1):
+        self.csq = c * c  # error threshold
+
+    def loss(self, y_true, y_pred):
+        error_sq = (y_true - y_pred) ** 2
+        ind_below = tf.where(error_sq <= self.csq)
+        ind_above = tf.where(error_sq > self.csq)
+        rho1 = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below) / self.csq)) ** 3)
+        rho2 = self.csq / 2
+        w_below = tf.cast(tf.size(ind_below), tf.float32)
+        w_above = tf.cast(tf.size(ind_above), tf.float32)
+        return (w_below * tf.reduce_mean(rho1) + w_above * rho2) / (w_below + w_above)
+
+
 class KL:
     """
     Kullback–Leibler divergence for probabilistic flows.
