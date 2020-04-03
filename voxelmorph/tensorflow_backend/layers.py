@@ -149,41 +149,41 @@ class LocalParamWithInput(Layer):
         return (input_shape[0], *self.shape)
 
 
-class EulerToAffine(Layer):
+class AffineTransformationsToMatrix(Layer):
     """
-    Computes the corresponding (flattened) affine from a 6-element
-    vector where the first 3 values represent the x, y, z euler angles
-    (in radians) and the last 3 represent the x, y, z translation.
+    Computes the corresponding (flattened) affine from a vector of transform
+    components. The components are in the order of (translation, rotation), so the
+    input must a 1D array of length (ndim * 2).
 
-    TODO: make this dimension-independent
+    TODO: right now only supports 4x4 transforms - make this dimension-independent
+    TODO: allow for scaling and shear components
     """
 
-    def build(self, input_shape):
+    def __init__(self, ndims, **kwargs):
+        self.ndims = ndims
 
-        if input_shape[1] != 6:
-            raise NotImplementedError('Rigid registration is limited to 3D (len 6 input) for now')
+        if ndims != 3:
+            raise NotImplementedError('rigid registration is limited to 3D for now')
 
-        super().build(input_shape)
+        super().__init__(**kwargs)
 
     def compute_output_shape(self, input_shape):
-        output_shape = input_shape
-        output_shape[1] = 12
-        return output_shape
+        return (input_shape[0], self.ndims * (self.ndims + 1))
 
     def call(self, vector):
         """
         Parameters
-            vector: tensor of ndim euler angles and ndim translations.
+            vector: tensor of affine components
         """
-        return tf.map_fn(self._single_euler_to_affine, vector, dtype=tf.float32)
+        return tf.map_fn(self._single_conversion, vector, dtype=tf.float32)
 
-    def _single_euler_to_affine(self, vector):
+    def _single_conversion(self, vector):
 
         # extract components of input vector
-        angle_x = vector[0]
-        angle_y = vector[1]
-        angle_z = vector[2]
-        translation = tf.expand_dims(vector[3:6], 1)
+        translation = vector[:3]
+        angle_x = vector[3]
+        angle_y = vector[4]
+        angle_z = vector[5]
 
         # x rotation matrix
         cosx  = tf.math.cos(angle_x)
@@ -216,8 +216,12 @@ class EulerToAffine(Layer):
         t_rot = tf.tensordot(x_rot, y_rot, 1)
         m_rot = tf.tensordot(t_rot, z_rot, 1)
 
-        # concat the linear translation and flatten
-        matrix = tf.concat([m_rot, translation], 1)
-        affine = tf.reshape(matrix, [12])
+        # we want to encode shift transforms, so remove identity
+        m_rot -= tf.eye(self.ndims)
 
+        # concat the linear translation
+        matrix = tf.concat([m_rot, tf.expand_dims(translation, 1)], 1)
+
+        # flatten
+        affine = tf.reshape(matrix, [12])
         return affine

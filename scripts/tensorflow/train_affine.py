@@ -37,6 +37,7 @@ parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (defau
 parser.add_argument('--prob-same', type=float, default=0.3, help='likelihood that source/target training images will be the same (default: 0.3)')
 
 # network architecture parameters
+parser.add_argument('--rigid', action='store_true', help='force rigid registration')
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
 parser.add_argument('--blurs', type=float, nargs='+', default=[1], help='levels of gaussian blur kernel for each scale (default: 1)')
 parser.add_argument('--padding', type=int, nargs='+', default=[256, 256, 256], help='padded image target shape (default: 256 256 256')
@@ -91,7 +92,8 @@ with tf.device(device):
     model = vxm.networks.VxmAffine(
         inshape,
         enc_nf=enc_nf,
-        blurs=args.blurs
+        blurs=args.blurs,
+        rigid=args.rigid
     )
 
     # load initial weights (if provided)

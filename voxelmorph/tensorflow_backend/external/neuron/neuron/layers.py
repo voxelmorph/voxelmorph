@@ -194,7 +194,6 @@ class SpatialTransformer(Layer):
                  interp_method='linear',
                  indexing='ij',
                  single_transform=False,
-                 add_identity=True,
                  **kwargs):
         """
         Parameters: 
@@ -208,7 +207,6 @@ class SpatialTransformer(Layer):
         self.ndims = None
         self.inshape = None
         self.single_transform = single_transform
-        self.add_identity = add_identity
 
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
@@ -295,9 +293,8 @@ class SpatialTransformer(Layer):
         if len(trf.shape) == 1:  # go from vector to matrix
             trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
 
-        if self.add_identity:
-            # note this is unnecessarily extra graph since at every batch entry we have a tf.eye graph
-            trf += tf.eye(self.ndims+1)[:self.ndims,:]  # add identity, hence affine is a shift from identitiy
+        # note this is unnecessarily extra graph since at every batch entry we have a tf.eye graph
+        trf += tf.eye(self.ndims+1)[:self.ndims,:]  # add identity, hence affine is a shift from identitiy
 
         return affine_to_shift(trf, volshape, shift_center=True)
 
