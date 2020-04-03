@@ -85,6 +85,26 @@ class MSE:
         return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
 
 
+class Biweight:
+    """
+    Tukey-Biweight
+    """
+
+    def __init__(self, c=1):
+        self.c = c
+        self.csq = c*c
+
+    def loss(self, y_true, y_pred):
+        xsq = (y_true - y_pred)**2
+        ind1 = tf.where(xsq <= self.csq)
+        ind2 = tf.where(xsq > self.csq)
+        rho1 = (self.csq/2) * (1 - (1 - (tf.gather_nd(xsq,ind1)/self.csq))**3)
+        rho2 = self.csq/2 
+        w1 = tf.cast(tf.size(ind1),tf.float32)
+        w2 = tf.cast(tf.size(ind2),tf.float32)
+        return (w1*tf.reduce_mean(rho1) + w2*rho2) / (w1 + w2)
+
+
 class MS:
     """
     Mean square of the predicted output.
