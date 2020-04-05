@@ -98,18 +98,18 @@ class TukeyBiweight:
     treated as outliers and automatically discounted)
     """
 
-    def __init__(self, c=.25):
+    def __init__(self, c=.5):
         self.c = c
         self.csq = c*c
 
     def loss(self, y_true, y_pred):
-        xsq = (y_true - y_pred)**2
-        ind = tf.where(xsq <= self.csq)
-        rho1 = (self.csq/2) * (1 - (1 - (tf.gather_nd(xsq,ind)/self.csq))**3)
-        rho2 = self.csq/2 
-        w1 = tf.cast(tf.shape(ind)[0],tf.float32)
-        w2 = tf.cast(tf.reduce_prod(tf.shape(y_pred)),tf.float32) - w1
-        return (w1*tf.reduce_mean(rho1) + w2*rho2) / (w1 + w2)
+        error_sq = (y_true - y_pred)**2
+        ind_below = tf.where(error_sq <= self.csq)
+        rho_below = (self.csq/2) * (1 - (1 - (tf.gather_nd(error_sq,ind_below)/self.csq))**3)
+        rho_above = self.csq/2 
+        w_below = tf.cast(tf.shape(ind_below)[0],tf.float32)
+        w_above = tf.cast(tf.reduce_prod(tf.shape(y_pred)),tf.float32) - w_below
+        return (w_below*tf.reduce_mean(rho_below) + w_above*rho_above) / (w_below + w_above)
 
 
 class MS:
@@ -172,24 +172,6 @@ class Grad:
             df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
         return tf.add_n(df) / len(df)
 
-
-class TukeysBiweight:
-    """
-    Tukey's Biweight loss for limited outlier contribution.
-    """
-
-    def __init__(self, c=1):
-        self.csq = c * c  # error threshold
-
-    def loss(self, y_true, y_pred):
-        error_sq = (y_true - y_pred) ** 2
-        ind_below = tf.where(error_sq <= self.csq)
-        ind_above = tf.where(error_sq > self.csq)
-        rho1 = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below) / self.csq)) ** 3)
-        rho2 = self.csq / 2
-        w_below = tf.cast(tf.size(ind_below), tf.float32)
-        w_above = tf.cast(tf.size(ind_above), tf.float32)
-        return (w_below * tf.reduce_mean(rho1) + w_above * rho2) / (w_below + w_above)
 
 
 class KL:
