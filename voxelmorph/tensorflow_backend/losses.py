@@ -84,24 +84,31 @@ class MSE:
     def loss(self, y_true, y_pred):
         return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
 
+import pdb as gdb
 
-class Biweight:
+class TukeyBiweight:
     """
     Tukey-Biweight
+    See: DOI: 10.1016/j.neuroimage.2010.07.020
+    Reuter, Rosas and Fischl, 2010. Highly accurate inverse consistent registration: 
+    a robust approach.  NeuroImage, 53(4):1181-96.
+
+    the single parameter C (default 0.25) represents the threshold above which
+    voxel differences are cropped and have no further effect (that is, they are
+    treated as outliers and automatically discounted)
     """
 
-    def __init__(self, c=1):
+    def __init__(self, c=.25):
         self.c = c
         self.csq = c*c
 
     def loss(self, y_true, y_pred):
         xsq = (y_true - y_pred)**2
-        ind1 = tf.where(xsq <= self.csq)
-        ind2 = tf.where(xsq > self.csq)
-        rho1 = (self.csq/2) * (1 - (1 - (tf.gather_nd(xsq,ind1)/self.csq))**3)
+        ind = tf.where(xsq <= self.csq)
+        rho1 = (self.csq/2) * (1 - (1 - (tf.gather_nd(xsq,ind)/self.csq))**3)
         rho2 = self.csq/2 
-        w1 = tf.cast(tf.size(ind1),tf.float32)
-        w2 = tf.cast(tf.size(ind2),tf.float32)
+        w1 = tf.cast(tf.shape(ind)[0],tf.float32)
+        w2 = tf.cast(tf.reduce_prod(tf.shape(y_pred)),tf.float32) - w1
         return (w1*tf.reduce_mean(rho1) + w2*rho2) / (w1 + w2)
 
 
