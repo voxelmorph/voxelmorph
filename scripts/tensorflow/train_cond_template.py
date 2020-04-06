@@ -134,7 +134,7 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    losses  = [image_loss_func, vxm.losses.MS().loss, vxm.losses.Grad('l2').loss, vxm.losses.MS().loss]
+    losses  = [image_loss_func, vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss, vxm.losses.MSE().loss]
     weights = [args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight, args.deform_loss_weight]
 
     # multi-gpu support

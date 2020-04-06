@@ -125,7 +125,7 @@ with tf.device(device):
     # make sure the warped target is compared to the generated atlas and not the input atlas
     neg_loss_func = lambda _, y_pred: image_loss_func(model.references.atlas_tensor, y_pred)
 
-    losses = [image_loss_func, neg_loss_func, vxm.losses.MS().loss, vxm.losses.Grad('l2').loss]
+    losses = [image_loss_func, neg_loss_func, vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss]
     weights = [args.image_loss_weight, 1 - args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight]
 
     # multi-gpu support

@@ -155,7 +155,7 @@ with tf.device(device):
 
     # prepare sdt loss
     nb_dst_outputs = 2 if args.surf_bidir else 1
-    losses  += [vxm.losses.MS().loss] * nb_dst_outputs
+    losses  += [vxm.losses.MSE().loss] * nb_dst_outputs
     weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
 
     # multi-gpu support
