@@ -116,13 +116,14 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, blurs=[1], rigid=False):
+    def __init__(self, inshape, enc_nf, bidir=False, rigid=False, blurs=[1]):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            blurs: List of gaussian blur kernel levels for inputs. Default is [1].
+            bidir: Enable bidirectional cost function. Default is False.
             rigid: Require rigid registration (not fully tested). Default is False.
+            blurs: List of gaussian blur kernel levels for inputs. Default is [1].
         """
 
         # ensure correct dimensionality
@@ -170,8 +171,16 @@ class VxmAffine(LoadableModel):
             if len(blurs) > 1:
                 scale_source = layers.SpatialTransformer()([scale_source, affine])
 
+        # invert affine for bidirectional training
+        if bidir:
+            inv_affine = layers.InvertAffine()(affine)
+            y_target = layers.SpatialTransformer()([target_blur, inv_affine])
+            outputs = [y_source, y_target]
+        else:
+            outputs = [y_source]
+
         # initialize the keras model
-        super().__init__(name='affine_net', inputs=[source, target], outputs=[y_source])
+        super().__init__(name='affine_net', inputs=[source, target], outputs=outputs)
 
         # cache affines
         self.references = LoadableModel.ReferenceContainer()

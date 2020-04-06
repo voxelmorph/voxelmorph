@@ -1,3 +1,4 @@
+import numpy as np
 import neuron as ne
 import tensorflow as tf
 from tensorflow import keras as keras
@@ -147,6 +148,55 @@ class LocalParamWithInput(Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.shape)
+
+
+class InvertAffine(Layer):
+    """
+    Inverts an affine transform. The transform must represent
+    the shift between images (not over the indentity).
+    """
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def build(self, input_shape):
+
+        shape = input_shape[1:]
+
+        if len(shape) == 1:
+            # if vector, just compute ndims since length = N * (N + 1)
+            self.ndims = int((np.sqrt(4 * shape[0] + 1) - 1) / 2)
+        elif len(shape) == 2:
+            self.ndims = shape[0]
+        else:
+            raise ValueError('InvertAffine input must be 1D or 2D - got %dD' % len(shape))
+
+        super().build(input_shape)
+
+    def call(self, trf):
+        """
+        Parameters
+            trf: affine transform either as a matrix with shape (N, N + 1)
+            or a flattened vector with shape (N * (N + 1))
+        """
+        return tf.map_fn(self._single_invert, trf, dtype=tf.float32)
+
+    def _single_invert(self, trf):
+
+        # go from vector to matrix if needed
+        flattened = len(trf.shape) == 1
+        if flattened:
+            trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
+
+        # make square matrix, add identity, and invert
+        padded = tf.concat([trf, tf.zeros((1, self.ndims + 1))], axis=0)
+        padded += tf.eye(self.ndims + 1)
+        inverse = tf.linalg.inv(padded)[:self.ndims, :]
+
+        # make sure output shape matches input
+        if flattened:
+            inverse = tf.reshape(inverse, [self.ndims * (self.ndims + 1)])
+        return inverse
 
 
 class AffineTransformationsToMatrix(Layer):
