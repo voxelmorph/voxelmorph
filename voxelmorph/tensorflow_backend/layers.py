@@ -76,7 +76,8 @@ class RescaleTransform(Layer):
 
 class ComposeTransform(Layer):
     """ 
-    Composes two dense deformations specified by their displacements.
+    Composes two dense deformations specified by their displacements. An affine transform
+    can also be provided.
 
     We have two fields:
 
@@ -93,6 +94,21 @@ class ComposeTransform(Layer):
         if len(input_shape) != 2:
             raise Exception('ComposeTransform must be called on a input list of length 2.')
 
+        # figure out if any affines were provided
+        self.input_1_is_affine = self._is_affine(input_shape[0][1:])
+        self.input_2_is_affine = self._is_affine(input_shape[1][1:])
+
+        if self.input_1_is_affine and self.input_2_is_affine:
+            raise ValueError('ComposeTransform cannot compose two affine transforms, at least one must be dense')
+
+        # extract shape information from the dense transform
+        if self.input_1_is_affine:
+            self.ndims = input_shape[1][-1]
+            self.volshape = input_shape[1][1:-1]
+        else:
+            self.ndims = input_shape[0][-1]
+            self.volshape = input_shape[0][1:-1]
+
         super().build(input_shape)
 
     def call(self, inputs):
@@ -100,14 +116,27 @@ class ComposeTransform(Layer):
         Parameters
             inputs: list with two dense deformations
         """
-        assert len(inputs) == 2, "inputs has to be len 2, found: %d" % len(inputs)
-        return tf.map_fn(self._single_compose, inputs, dtype=tf.float32)
+        assert len(inputs) == 2, 'inputs has to be len 2, found: %d' % len(inputs)
+
+        input_1 = inputs[0]
+        input_2 = inputs[1]
+
+        # convert to dense if necessary
+        if self.input_1_is_affine:
+            input_1 = AffineToDense(self.volshape)(input_1)
+        elif self.input_2_is_affine:
+            input_2 = AffineToDense(self.volshape)(input_2)
+
+        return tf.map_fn(self._single_compose, [input_1, input_2], dtype=tf.float32)
 
     def _single_compose(self, inputs):
         return ne.utils.compose(inputs[0], inputs[1])
 
+    def _is_affine(self, shape):
+        return len(shape) == 1 or (len(shape) == 2 and shape[0] + 1 == shape[1])
+
     def compute_output_shape(self, input_shape):
-        return input_shape
+        return (input_shape[0], *self.volshape, self.ndims)
 
 
 class LocalParamWithInput(Layer):
@@ -148,6 +177,52 @@ class LocalParamWithInput(Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.shape)
+
+
+class AffineToDense(Layer):
+    """
+    Converts an affine transform to a dense shift transform. The affine must represent
+    the shift between images (not over the indentity).
+    """
+
+    def __init__(self, volshape, **kwargs):
+        self.volshape = volshape
+        self.ndims = len(volshape)
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+
+        shape = input_shape[1:]
+
+        if len(shape) == 1:
+            ex = self.ndims * (self.ndims + 1)
+            if shape[0] != ex:
+                raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
+
+        if len(shape) == 2 and (shape[0] != self.ndims or shape[1] != self.ndims + 1):
+            raise ValueError('Expected affine matrix of shape %s but got %s' % (str((self.ndims, self.ndims + 1)), str(shape)))
+
+        super().build(input_shape)
+
+    def call(self, trf):
+        """
+        Parameters
+            trf: affine transform either as a matrix with shape (N, N + 1)
+            or a flattened vector with shape (N * (N + 1))
+        """
+
+        return tf.map_fn(self._single_aff_to_shift, trf, dtype=tf.float32)
+
+    def _single_aff_to_shift(self, trf):
+        # go from vector to matrix
+        if len(trf.shape) == 1:
+            trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
+
+        trf += tf.eye(self.ndims + 1)[:self.ndims, :]  # add identity, hence affine is a shift from identitiy
+        return ne.utils.affine_to_shift(trf, self.volshape, shift_center=True)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], *self.volshape, self.ndims)
 
 
 class InvertAffine(Layer):
