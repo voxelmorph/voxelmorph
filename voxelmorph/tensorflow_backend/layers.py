@@ -165,9 +165,9 @@ class InvertAffine(Layer):
 
         if len(shape) == 1:
             # if vector, just compute ndims since length = N * (N + 1)
-            self.ndims = int((np.sqrt(4 * shape[0] + 1) - 1) / 2)
+            self.ndims = int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
         elif len(shape) == 2:
-            self.ndims = shape[0]
+            self.ndims = int(shape[0])
         else:
             raise ValueError('InvertAffine input must be 1D or 2D - got %dD' % len(shape))
 
@@ -188,10 +188,14 @@ class InvertAffine(Layer):
         if flattened:
             trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
 
-        # make square matrix, add identity, and invert
+        # make square matrix and add identity
         padded = tf.concat([trf, tf.zeros((1, self.ndims + 1))], axis=0)
         padded += tf.eye(self.ndims + 1)
-        inverse = tf.linalg.inv(padded)[:self.ndims, :]
+
+        # invert, remove identity, and crop last row
+        inverse = tf.linalg.inv(padded)
+        inverse -= tf.eye(self.ndims + 1)
+        inverse = inverse[:self.ndims, :]
 
         # make sure output shape matches input
         if flattened:
