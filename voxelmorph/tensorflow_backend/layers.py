@@ -182,7 +182,7 @@ class LocalParamWithInput(Layer):
 class AffineToDense(Layer):
     """
     Converts an affine transform to a dense shift transform. The affine must represent
-    the shift between images (not over the indentity).
+    the shift between images (not over the identity).
     """
 
     def __init__(self, volshape, **kwargs):
@@ -228,7 +228,7 @@ class AffineToDense(Layer):
 class InvertAffine(Layer):
     """
     Inverts an affine transform. The transform must represent
-    the shift between images (not over the indentity).
+    the shift between images (not over the identity).
     """
 
     def compute_output_shape(self, input_shape):
