@@ -50,7 +50,7 @@ else:
 with tf.device(device):
     # load warp model and build nearest-neighbor transfer model
     warp_predictor = vxm.networks.VxmDense.load(args.model).get_predictor_model()
-    transform_model = vxm.networks.transform(inshape, interp_method='nearest')
+    transform_model = vxm.networks.Transform(inshape, interp_method='nearest')
 
 for i, scan in enumerate(args.scans):
 

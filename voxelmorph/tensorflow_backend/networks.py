@@ -205,11 +205,49 @@ class VxmAffine(LoadableModel):
         return Model([source, affine], aligned)
 
 
-class InstanceTrainer:
+class VxmCombined(LoadableModel):
+    """
+    VoxelMorph network to perform combined affine and nonlinear registration.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, enc_nf, dec_nf, rigid=False, **kwargs):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            rigid: Require rigid registration (not fully tested). Default is False.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        # affine component
+        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)
+        affine_pred_model = affine_model.get_predictor_model()
+
+        # dense component
+        dense_model = VxmDense(inshape, enc_nf, dec_nf, **kwargs)
+        dense_model_outputs = dense_model([affine_model.outputs[0], affine_model.inputs[1]])
+
+        # combine models
+        composed = layers.ComposeTransform()([affine_pred_model.outputs[0], dense_model_outputs[1]])
+        output_image = layers.SpatialTransformer()([affine_model.inputs[0], composed])
+
+        # initialize the keras model
+        super().__init__(inputs=affine_model.inputs, outputs=[output_image, dense_model_outputs[1]])
+
+        # cache pointers to layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affine_model = affine_model
+        self.references.dense_model = dense_model
+
+
+class InstanceTrainer(LoadableModel):
     """
     VoxelMorph network to perform instance-specific optimization.
     """
 
+    @store_config_args
     def __init__(self, inshape, warp):
         source = tensorflow.keras.layers.Input(shape=inshape)
         target = tensorflow.keras.layers.Input(shape=inshape)
@@ -606,6 +644,34 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
 
+class Transform(Model):
+    """
+    Simple transform model to apply dense or affine transforms.
+    """
+
+    def __init__(self, inshape, affine=False, interp_method='linear', nb_feats=1):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            affine: Enable affine transform. Default is False.
+            interp_method: Interpolation method. Can be 'linear' or 'nearest'. Default is 'linear'.
+            nb_feats: Number of source image features. Default is 1.
+        """
+
+        # configure inputs
+        ndims = len(inshape)
+        scan_input = Input((*inshape, nb_feats), name='scan_input')
+
+        if affine:
+            trf_input = Input((12), name='trf_input')
+        else:
+            trf_input = Input((*inshape, ndims), name='trf_input')
+
+        # transform and initialize the keras model
+        y_source = layers.SpatialTransformer(interp_method=interp_method)([scan_input, trf_input])
+        super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
+
+
 def transform(
         inshape,
         interp_method='linear',
@@ -622,6 +688,9 @@ def transform(
     NOTE: This is essentially a wrapper for neuron.utils.transform.
     TODO: Have a new 'Transform' layer that is specific to VoxelMorph that can be a deformation or something else.
     """
+
+    print('WARNING: vxm.networks.transform() will be DEPRECATED soon - use vxm.networks.Transform() instead')
+
     ndims = len(inshape)
 
     # nn warp model
@@ -634,18 +703,9 @@ def transform(
     else:
         trf = trf_input
 
-    # note the nearest neighbour interpolation method
-    # use xy indexing when Guha's original code switched x and y dimensions
     nn_output = layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
     nn_spatial_output = nn_output([scan_input, trf])
     return Model([scan_input, trf_input], nn_spatial_output)
-
-
-def transform_nn(inshape, **kwargs):
-    """
-    Simple transform model for nearest-neighbor based transformation.
-    """
-    return transform(inshape, interp_method='nearest', **kwargs)
 
 
 def conv_block(x, nfeat, strides=1):
