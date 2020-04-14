@@ -14,6 +14,7 @@ from tensorflow.keras.initializers import RandomNormal, Constant
 from .. import utils
 from . import layers
 from .model_io import LoadableModel, store_config_args
+import SynthSeg.labels_to_image_model as ss
 
 
 class VxmDense(LoadableModel):
@@ -240,6 +241,71 @@ class VxmCombined(LoadableModel):
         self.references = LoadableModel.ReferenceContainer()
         self.references.affine_model = affine_model
         self.references.dense_model = dense_model
+
+
+class VxmSynthetic(LoadableModel):
+    """
+    VoxelMorph network for registering segmentations.
+    """
+    @store_config_args
+    def __init__(self, inshape, all_labels, hot_labels, enc_nf, dec_nf, int_steps=5, int_downsize=2):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            all_labels: List of all labels included in training segmentations.
+            hot_labels: List of labels to output as one-hot maps.
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+        """
+        # ensure correct dimensionality
+        ndims = len(inshape)
+        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # brain generation
+        arg = [inshape, inshape, all_labels, hot_labels]
+        key = {'apply_affine_trans':False, 'apply_nonlin_trans':True,
+            'nonlin_shape_factor':0.0625, 'bias_shape_factor':0.025}
+        bg_model1, self.warp_shape, self.bias_shape = ss.labels_to_image_model(*arg, **key, id=0)
+        bg_model2, _, _ = ss.labels_to_image_model(*arg, **key, id=1)
+        image1, labels1, *_ = bg_model1.outputs
+        image2, labels2, *_ = bg_model2.outputs
+
+        # build core unet model and grab inputs
+        inputs = [*bg_model1.inputs, *bg_model2.inputs] # Dummy.
+        unet_model = unet(inshape, enc_nf, dec_nf, src_layer=image1, trg_layer=image2, inputs=inputs)
+
+        # transform unet output into a velocity field
+        Conv = getattr(KL, 'Conv%dD' % ndims)
+        flow = Conv(ndims, kernel_size=3, padding='same',
+            kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
+
+        # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
+        if int_steps > 0:
+            if int_downsize > 1:
+                flow = layers.RescaleTransform(1 / int_downsize, name='downsize')(flow)
+            flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)
+            # resize to final resolution
+            if int_downsize > 1:
+                flow = layers.RescaleTransform(int_downsize, name='upsize')(flow)
+
+        # One-hot encoding.
+        f = lambda x: tf.one_hot(x[..., 0], len(hot_labels), dtype='float32')
+        one_hot1 = KL.Lambda(f)(labels1)
+        one_hot2 = KL.Lambda(f)(labels2)
+
+        # Transformation.
+        pred = layers.SpatialTransformer(interp_method='linear', name='transformer')([one_hot1, flow])
+        concat = KL.Concatenate(axis=-1, name='concat')([one_hot2, pred])
+
+        # initialize the keras model
+        super().__init__(name='vxm_synth', inputs=inputs, outputs=[concat, flow])
+
+        # cache pointers to layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.unet_model = unet_model
 
 
 class InstanceTrainer(LoadableModel):
@@ -732,7 +798,8 @@ def upsample_block(x, connection):
     return concatenate([upsampled, connection])
 
 
-def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, input_model=None):
+def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
+    trg_layer=None, inputs=None, input_model=None):
     """ 
     Constructs a simple unet architecture.
 
@@ -742,15 +809,20 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, input_model=None):
         dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
         src_feats: Number of source image features. Default is 1.
         trg_feats: Number of target image features. Default is 1.
+        src_layer: Source layer. Default is a new input layer.
+        trg_layer: Target layer. Default is a new input layer.
+        inputs: Inputs to model. Default is the concatenated source and target.
         input_model: Model to concat with input layer.
     """
 
     # configure inputs
-    concat = [
-        Input(shape=(*inshape, src_feats)),
+    if src_layer is None:
+        Input(shape=(*inshape, src_feats))
+    if trg_layer is None:
         Input(shape=(*inshape, trg_feats))
-    ]
-    inputs = concat.copy()
+    concat = [src_layer, trg_layer]
+    if inputs is None:
+        inputs = concat.copy()
 
     if input_model is not None:
         concat += input_model.outputs
