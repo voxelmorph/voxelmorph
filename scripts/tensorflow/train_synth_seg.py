@@ -115,7 +115,7 @@ def data_loss(_, arg):
     depth = int(shape[-1] / 2)
     true = arg[..., :depth]
     pred = arg[..., depth:]
-    return 1 - vxm.losses.Dice().loss(true, pred)
+    return 1 + vxm.losses.Dice().loss(true, pred)
 losses  = [data_loss, vxm.losses.Grad('l2').loss]
 weights = [1, args.reg_param]
 
