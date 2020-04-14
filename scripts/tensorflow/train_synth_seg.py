@@ -110,7 +110,12 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 if args.load_weights:
     model.load_weights(args.load_weights)
 
-data_loss = lambda t, p: 1 - vxm.losses.Dice().loss(t, p)
+def data_loss(_, arg):
+    shape = arg.shape.as_list()
+    depth = int(shape[-1] / 2)
+    true = arg[..., :depth]
+    pred = arg[..., depth:]
+    return 1 - vxm.losses.Dice().loss(true, pred)
 losses  = [data_loss, vxm.losses.Grad('l2').loss]
 weights = [1, args.reg_param]
 
