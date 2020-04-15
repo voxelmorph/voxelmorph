@@ -41,10 +41,11 @@ parser.add_argument('--load-weights', help='optional weights file to initialize 
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.0001)')
 parser.add_argument('--verbose', type=int, default=1, help='verbosity level (default: 1)')
+parser.add_argument('--save-freq', type=int, default=10, help='number of epochs between model saves (default: 10)')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 32 64 64 64)')
-parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder filters (default: 32 64 64 64 64 32)')
+parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder filters (default: 64 64 64 64 64 32)')
 parser.add_argument('--int-steps', type=int, default=5, help='number of integration steps (default: 5)')
 parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample factor for integration (default: 2)')
 
@@ -121,10 +122,10 @@ weights = [1, args.reg_param]
 
 # multi-gpu support and callbacks
 if nb_gpus > 1:
-    save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
+    save_callback = vxm.networks.ModelCheckpointParallel(save_filename, period=args.save_freq)
     model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
 else:
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=args.save_freq)
 callbacks = [save_callback]
 if log_dir:
     log_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir, write_graph=False)
