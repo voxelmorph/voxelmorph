@@ -672,42 +672,6 @@ class Transform(Model):
         super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
 
 
-def transform(
-        inshape,
-        interp_method='linear',
-        indexing='ij',
-        nb_feats=1,
-        int_steps=0,
-        int_method='ss',
-        vel_resize=1,
-        **kwargs  # kwargs are for VecInt
-    ):
-    """
-    Simple transform model.
-
-    NOTE: This is essentially a wrapper for neuron.utils.transform.
-    TODO: Have a new 'Transform' layer that is specific to VoxelMorph that can be a deformation or something else.
-    """
-
-    print('WARNING: vxm.networks.transform() will be DEPRECATED soon - use vxm.networks.Transform() instead')
-
-    ndims = len(inshape)
-
-    # nn warp model
-    scan_input = Input((*inshape, nb_feats), name='scan_input')
-    trf_input = Input((*[int(f*vel_resize) for f in inshape], ndims) , name='trf_input')
-
-    if int_steps > 0:
-        trf = ne.layers.VecInt(method=int_method, name='trf-int', int_steps=int_steps, **kwargs)(trf_input)
-        trf = layers.RescaleTransform(1 / vel_resize, name='flow')(trf)
-    else:
-        trf = trf_input
-
-    nn_output = layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
-    nn_spatial_output = nn_output([scan_input, trf])
-    return Model([scan_input, trf_input], nn_spatial_output)
-
-
 def conv_block(x, nfeat, strides=1):
     """
     Specific convolutional block followed by leakyrelu for unet.
