@@ -5,8 +5,6 @@ segmentations.
 """
 
 import sys
-sys.path.append('/homes/9/mu40/l/git/voxelmorph')
-
 import os
 import random
 import argparse
@@ -22,13 +20,13 @@ import voxelmorph.tensorflow_backend.external.SynthSeg.SynthSeg.utils as su
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('--data-dir', default='/autofs/cluster/freesurfer/subjects/test/mu40-crazy/data/training/buckner', help='base data directory')
-parser.add_argument('--model-dir', default='/autofs/cluster/freesurfer/subjects/test/mu40-crazy/model', help='model output directory (default: models)')
-parser.add_argument('--log-dir', default='/autofs/cluster/freesurfer/subjects/test/mu40-crazy/log', help='TensorBoard log directory (default: None)')
+parser.add_argument('--data-dir', default='data', help='base data directory')
+parser.add_argument('--model-dir', default='model', help='model output directory (default: models)')
+parser.add_argument('--log-dir', default='log', help='TensorBoard log directory (default: None)')
 parser.add_argument('--sub-dir', default=None, help='sub-directory for logging and saving model weights (default: None)')
 
 # generation parameters
-parser.add_argument('--labels', default='/autofs/cluster/freesurfer/subjects/test/mu40-crazy/fs_labels.npy', help='labels whose overlap to optimize (default: all)')
+parser.add_argument('--labels', default=None, help='labels whose overlap to optimize (default: all)')
 parser.add_argument('--same-subj', action='store_true', help='generate image and label-map pairs from the same segmentation')
 parser.add_argument('--vel-std', type=float, default=6, help='standard deviation of velocity field (default: 6)')
 
