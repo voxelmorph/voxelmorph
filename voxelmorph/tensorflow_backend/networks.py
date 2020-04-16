@@ -205,36 +205,45 @@ class VxmAffine(LoadableModel):
         return Model([source, affine], aligned)
 
 
-class VxmCombined(LoadableModel):
+class VxmAffineDense(LoadableModel):
     """
     VoxelMorph network to perform combined affine and nonlinear registration.
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, rigid=False, **kwargs):
+    def __init__(self, inshape, enc_nf, dec_nf, enc_nf_affine = None, rigid=False, **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
-            rigid: Require rigid registration (not fully tested). Default is False.
+            enc_nf_affine: List of affine encoder filters. e.g. [16, 32, 32, 32].
+                            Default=None (and will use enc_nf in this case)
+            rigid:  Force affine transform to be 6 parameter rigid 
+                    (not fully tested). Default is False (so full 12 parameter affine).
             kwargs: Forwarded to the internal VxmDense model.
         """
+
+        if enc_nf_affine is None:
+            enc_nf_affine = enc_nf 
 
         # affine component
         affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)
         affine_pred_model = affine_model.get_predictor_model()
 
-        # dense component
+        # build a dense model that takes the affine transformed src as input
         dense_model = VxmDense(inshape, enc_nf, dec_nf, **kwargs)
         dense_model_outputs = dense_model([affine_model.outputs[0], affine_model.inputs[1]])
+        dense_warp = dense_model_outputs[1]
 
-        # combine models
-        composed = layers.ComposeTransform()([affine_pred_model.outputs[0], dense_model_outputs[1]])
+        # build a single transform that applies both affine and dense to src
+        # and apply it to the input (src) volume so that there is only 1 interpolation
+        # and output it as the combined model output (plus the dense warp)
+        composed = layers.ComposeTransform()([affine_pred_model.outputs[0], dense_warp])
         output_image = layers.SpatialTransformer()([affine_model.inputs[0], composed])
 
         # initialize the keras model
-        super().__init__(inputs=affine_model.inputs, outputs=[output_image, dense_model_outputs[1]])
+        super().__init__(inputs=affine_model.inputs, outputs=[output_image, dense_warp])
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
