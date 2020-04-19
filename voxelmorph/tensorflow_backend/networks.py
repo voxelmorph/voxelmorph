@@ -817,9 +817,9 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
 
     # configure inputs
     if src_layer is None:
-        Input(shape=(*inshape, src_feats))
+        src_layer = Input(shape=(*inshape, src_feats))
     if trg_layer is None:
-        Input(shape=(*inshape, trg_feats))
+        trg_layer = Input(shape=(*inshape, trg_feats))
     concat = [src_layer, trg_layer]
     if inputs is None:
         inputs = concat.copy()
