@@ -211,7 +211,7 @@ class VxmAffineDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, enc_nf_affine = None, rigid=False, **kwargs):
+    def __init__(self, inshape, enc_nf, dec_nf, enc_nf_affine = None, rigid=False, affine_bidir=False,affine_blurs=[1],**kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -222,13 +222,15 @@ class VxmAffineDense(LoadableModel):
             rigid:  Force affine transform to be 6 parameter rigid 
                     (not fully tested). Default is False (so full 12 parameter affine).
             kwargs: Forwarded to the internal VxmDense model.
+            affine__bidir - whether the affine transform is bidirectional (default=False)
+            affine_blurs - list of blurring levels for affine transform (default=[1])
         """
 
         if enc_nf_affine is None:
             enc_nf_affine = enc_nf 
 
         # affine component
-        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)
+        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid, bidir=affine_bidir, blurs=affine_blurs)
         affine_pred_model = affine_model.get_predictor_model()
 
         # build a dense model that takes the affine transformed src as input
