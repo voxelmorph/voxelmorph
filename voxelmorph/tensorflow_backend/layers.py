@@ -291,7 +291,7 @@ class AffineTransformationsToMatrix(Layer):
     def __init__(self, ndims, **kwargs):
         self.ndims = ndims
 
-        if ndims != 3:
+        if ndims != 3 and ndims != 2:
             raise NotImplementedError('rigid registration is limited to 3D for now')
 
         super().__init__(**kwargs)
@@ -308,42 +308,55 @@ class AffineTransformationsToMatrix(Layer):
 
     def _single_conversion(self, vector):
 
-        # extract components of input vector
-        translation = vector[:3]
-        angle_x = vector[3]
-        angle_y = vector[4]
-        angle_z = vector[5]
+        if self.ndims == 3:
+            # extract components of input vector
+            translation = vector[:3]
+            angle_x = vector[3]
+            angle_y = vector[4]
+            angle_z = vector[5]
 
-        # x rotation matrix
-        cosx  = tf.math.cos(angle_x)
-        sinx  = tf.math.sin(angle_x)
-        x_rot = tf.convert_to_tensor([
-            [1,    0,     0],
-            [0, cosx, -sinx],
-            [0, sinx,  cosx]
-        ], name='x_rot')
+            # x rotation matrix
+            cosx  = tf.math.cos(angle_x)
+            sinx  = tf.math.sin(angle_x)
+            x_rot = tf.convert_to_tensor([
+                [1,    0,     0],
+                [0, cosx, -sinx],
+                [0, sinx,  cosx]
+            ], name='x_rot')
 
-        # y rotation matrix
-        cosy  = tf.math.cos(angle_y)
-        siny  = tf.math.sin(angle_y)
-        y_rot = tf.convert_to_tensor([
-            [cosy,  0, siny],
-            [0,     1,    0],
-            [-siny, 0, cosy]
-        ], name='y_rot')
+            # y rotation matrix
+            cosy  = tf.math.cos(angle_y)
+            siny  = tf.math.sin(angle_y)
+            y_rot = tf.convert_to_tensor([
+                [cosy,  0, siny],
+                [0,     1,    0],
+                [-siny, 0, cosy]
+            ], name='y_rot')
+            
+            # z rotation matrix
+            cosz  = tf.math.cos(angle_z)
+            sinz  = tf.math.sin(angle_z)
+            z_rot = tf.convert_to_tensor([
+                [cosz, -sinz, 0],
+                [sinz,  cosz, 0],
+                [0,        0, 1]
+            ], name='z_rot')
+            # compose matrices
+            t_rot = tf.tensordot(x_rot, y_rot, 1)
+            m_rot = tf.tensordot(t_rot, z_rot, 1)
 
-        # z rotation matrix
-        cosz  = tf.math.cos(angle_z)
-        sinz  = tf.math.sin(angle_z)
-        z_rot = tf.convert_to_tensor([
-            [cosz, -sinz, 0],
-            [sinz,  cosz, 0],
-            [0,        0, 1]
-        ], name='z_rot')
+        elif self.ndims == 2:
+            # extract components of input vector
+            translation = vector[:2]
+            angle = vector[2]
 
-        # compose matrices
-        t_rot = tf.tensordot(x_rot, y_rot, 1)
-        m_rot = tf.tensordot(t_rot, z_rot, 1)
+            #  rotation matrix
+            cosz  = tf.math.cos(angle)
+            sinz  = tf.math.sin(angle)
+            m_rot = tf.convert_to_tensor([
+                [cosz, -sinz],
+                [sinz,  cosz]
+            ], name='rot')
 
         # we want to encode shift transforms, so remove identity
         m_rot -= tf.eye(self.ndims)
@@ -352,5 +365,8 @@ class AffineTransformationsToMatrix(Layer):
         matrix = tf.concat([m_rot, tf.expand_dims(translation, 1)], 1)
 
         # flatten
-        affine = tf.reshape(matrix, [12])
+        if self.ndims == 3:
+            affine = tf.reshape(matrix, [12])
+        else:
+            affine = tf.reshape(matrix, [6])
         return affine
