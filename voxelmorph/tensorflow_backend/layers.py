@@ -288,9 +288,9 @@ class AffineTransformationsToMatrix(Layer):
     TODO: allow for scaling and shear components
     """
 
-    def __init__(self, ndims, **kwargs):
+    def __init__(self, ndims, scale=False, **kwargs):
         self.ndims = ndims
-
+        self.scale = scale
         if ndims != 3 and ndims != 2:
             raise NotImplementedError('rigid registration is limited to 3D for now')
 
@@ -344,6 +344,15 @@ class AffineTransformationsToMatrix(Layer):
             # compose matrices
             t_rot = tf.tensordot(x_rot, y_rot, 1)
             m_rot = tf.tensordot(t_rot, z_rot, 1)
+            if self.scale == True:
+                scale = vector[6]
+            else:
+                scale = 1
+            m_scale = tf.convert_to_tensor([
+                [scale, 0,  0],
+                [0,  scale, 0],
+                [0,  0,     scale]
+                ], name='scale')
 
         elif self.ndims == 2:
             # extract components of input vector
@@ -357,11 +366,22 @@ class AffineTransformationsToMatrix(Layer):
                 [cosz, -sinz],
                 [sinz,  cosz]
             ], name='rot')
+            if self.scale == True:
+                scale = vector[3]
+            else:
+                scale = 1
+
+            m_scale = tf.convert_to_tensor([
+                [scale, 0],
+                [0,  scale]
+                ], name='scale')
 
         # we want to encode shift transforms, so remove identity
         m_rot -= tf.eye(self.ndims)
 
         # concat the linear translation
+
+        m_rot = tf.tensordot(m_rot, m_scale, 1)
         matrix = tf.concat([m_rot, tf.expand_dims(translation, 1)], 1)
 
         # flatten

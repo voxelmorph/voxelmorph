@@ -116,13 +116,13 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, bidir=False, rigid=False, blurs=[1]):
+    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1]):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             bidir: Enable bidirectional cost function. Default is False.
-            rigid: Require rigid registration (not fully tested). Default is False.
+            transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
         """
 
@@ -140,10 +140,13 @@ class VxmAffine(LoadableModel):
         # dense layer to affine matrix
         basenet.add(KL.Flatten())
 
-        if rigid:
+        if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
             basenet.add(KL.Dense(ndims * 2))
             basenet.add(layers.AffineTransformationsToMatrix(ndims))
+        elif transform_type == 'rigid+scale':
+            basenet.add(KL.Dense(ndims * 2+1))
+            basenet.add(layers.AffineTransformationsToMatrix(ndims,scale=True))
         else:
             basenet.add(KL.Dense(ndims * (ndims + 1)))
 
@@ -185,7 +188,7 @@ class VxmAffine(LoadableModel):
         # cache affines
         self.references = LoadableModel.ReferenceContainer()
         self.references.affines = affines
-        self.references.rigid = rigid
+        self.references.transform_type = transform_type
 
     def get_predictor_model(self):
         """
@@ -211,7 +214,7 @@ class VxmAffineDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, enc_nf_affine = None, rigid=False, affine_bidir=False,affine_blurs=[1],**kwargs):
+    def __init__(self, inshape, enc_nf, dec_nf, enc_nf_affine = None, transform_type='affine', affine_bidir=False,affine_blurs=[1],**kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -219,8 +222,8 @@ class VxmAffineDense(LoadableModel):
             dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
             enc_nf_affine: List of affine encoder filters. e.g. [16, 32, 32, 32].
                             Default=None (and will use enc_nf in this case)
-            rigid:  Force affine transform to be 6 parameter rigid 
-                    (not fully tested). Default is False (so full 12 parameter affine).
+            transform_type:  See VxmAffine for types. Default='affine'
+
             kwargs: Forwarded to the internal VxmDense model.
             affine__bidir - whether the affine transform is bidirectional (default=False)
             affine_blurs - list of blurring levels for affine transform (default=[1])
@@ -230,7 +233,7 @@ class VxmAffineDense(LoadableModel):
             enc_nf_affine = enc_nf 
 
         # affine component
-        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid, bidir=affine_bidir, blurs=affine_blurs)
+        affine_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs)
         affine_pred_model = affine_model.get_predictor_model()
 
         # build a dense model that takes the affine transformed src as input
@@ -589,6 +592,56 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         inputs = vxm_model.inputs + [seg_src]
         outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
+
+class VxmAffineSegSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for (semi-supervised) nonlinear registration between two images.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, enc_nf, nb_labels, int_downsize=2, seg_downsize=2, transform_type='affine', blurs=[1], bidir=False):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            nb_labels: Number of labels used for ground truth segmentations.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+            seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
+           for remaining parameters see VxmAffine
+        """
+
+        # configure base voxelmorph network
+        vxm_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=bidir, blurs=blurs)
+
+
+        # configure downsampled seg input layer
+        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
+        seg_src = Input(shape=(*inshape_downsized, nb_labels))
+
+        # configure warped seg output layer
+        if seg_downsize > 1:  # this fails, not sure why (BRF)
+            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[0])
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+        else:
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[0]])
+
+
+        # initialize the keras model
+        inputs = vxm_model.inputs + [seg_src]
+        outputs = vxm_model.outputs + [y_seg]
+        super().__init__(inputs=inputs, outputs=outputs)
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affines = vxm_model.references.affines
+        self.references.affine_model = vxm_model
+
+    def get_predictor_model(self):
+        """
+        Extracts a predictor model from the VxmDense that directly outputs the warped image and 
+        final diffeomorphic warp field (instead of the non-integrated flow field used for training).
+        """
+        self.referencesaffine_model.get_predictor_model()
 
 
 class VxmDenseSurfaceSemiSupervised(LoadableModel):
