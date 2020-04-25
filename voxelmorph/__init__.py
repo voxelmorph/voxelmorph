@@ -9,13 +9,13 @@ backend = utils.get_backend()
 if backend == 'pytorch':
     # the pytorch backend can be enabled by setting the VXM_BACKEND
     # environment var to "pytorch"
-    from . import pytorch_backend
-    from .pytorch_backend import layers
-    from .pytorch_backend import networks
-    from .pytorch_backend import losses
+    from . import torch
+    from .torch import layers
+    from .torch import networks
+    from .torch import losses
 else:
     # tensorflow is default backend
-    from . import tensorflow_backend
-    from .tensorflow_backend import layers
-    from .tensorflow_backend import networks
-    from .tensorflow_backend import losses
+    from . import tf
+    from .tf import layers
+    from .tf import networks
+    from .tf import losses
