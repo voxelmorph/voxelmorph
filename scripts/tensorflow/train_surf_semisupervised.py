@@ -1,12 +1,6 @@
 """
-Example script to train a VoxelMorph model.
-
-For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
-are normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this script slightly
-to accommodate your own data. All images should be appropriately cropped and scaled to values between 0 and 1.
-
-If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed. Otherwise,
-registration will be scan-to-scan.
+Example script for training semi-supervised nonlinear registration aided by
+surface point clouds generated from segmentations.
 """
 
 import os
@@ -23,9 +17,11 @@ parser = argparse.ArgumentParser()
 
 # data organization parameters
 parser.add_argument('datadir', help='base data directory')
-parser.add_argument('--atlas', help='atlas filename')
+parser.add_argument('--atlas', required=True, help='atlas filename')
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
 parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
+parser.add_argument('--smooth-seg', type=float, default=0.1, help='segmentation smoothness sigma (default: 0.1)')
+parser.add_argument('--labels', type=int, nargs='+', default=None, help='labels to include - by default all labels in the atlas seg are used')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
@@ -42,11 +38,16 @@ parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder fi
 parser.add_argument('--int-steps', type=int, default=7, help='number of integration steps (default: 7)')
 parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample factor for integration (default: 2)')
 parser.add_argument('--use-probs', action='store_true', help='enable probabilities')
-parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
+parser.add_argument('--surf-points', type=int, default=5000, help='number of surface points to warp (default: 5000)')
+parser.add_argument('--surf-bidir', action='store_true', help='enable surface-based bidirectional cost function')
+parser.add_argument('--sdt-resize', type=float, default=1.0, help='resize factor for distance transform (default: 1.0)')
+parser.add_argument('--num-labels', type=float, help='number of labels to sample (default: all)')
+parser.add_argument('--align-segs', action='store_true', help='only align segmentations')
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient or KL loss (default: 0.01)')
+parser.add_argument('--dt-sigma', type=float, default=1.0, help='surface noise parameter (default: 1.0)')
 parser.add_argument('--kl-lambda', type=float, default=10, help='prior lambda regularization for KL loss (default: 10)')
 parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
                     help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')
@@ -60,18 +61,32 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
 
-if args.atlas:
-    # scan-to-atlas generator
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
-else:
-    # scan-to-scan generator
-    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol')
+atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
 
-# extract shape and number of features from sampled input
-sample_shape = next(generator)[0][0].shape
-inshape = sample_shape[1:-1]
-nfeats = sample_shape[-1]
+# get labels and number of labels to sample
+labels = args.labels if args.labels is not None else np.sort(np.unique(atlas_seg))[1:]
+num_labels = args.num_labels if args.num_labels is not None else len(labels)
+
+# scan-to-atlas sdt generator
+generator = vxm.generators.surf_semisupervised(
+    train_vol_names,
+    atlas_vol,
+    atlas_seg,
+    nb_surface_pts=args.surf_points,
+    labels=labels,
+    batch_size=args.batch_size,
+    surf_bidir=args.surf_bidir,
+    smooth_seg_std=args.smooth_seg,
+    nb_labels_sample=num_labels,
+    sdt_vol_resize=args.sdt_resize,
+    align_segs=args.align_segs,
+    add_feat_axis=add_feat_axis
+)
+
+# extract shape and number of features from atlas
+inshape = atlas_seg.shape
+nfeats = 1 if not args.multichannel else atlas_vol[-1]
 
 # prepare model folder
 model_dir = args.model_dir
@@ -99,11 +114,14 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # build the model
-    model = vxm.networks.VxmDense(
+    model = vxm.networks.VxmDenseSurfaceSemiSupervised(
         inshape=inshape,
         enc_nf=enc_nf,
         dec_nf=dec_nf,
-        bidir=args.bidir,
+        nb_surface_points=args.surf_points,
+        nb_labels_sample=num_labels,
+        sdt_vol_resize=args.sdt_resize,
+        surf_bidir=args.surf_bidir,
         use_probs=args.use_probs,
         int_steps=args.int_steps,
         int_downsize=args.int_downsize,
@@ -123,13 +141,9 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # need two image loss functions if bidirectional
-    if args.bidir:
-        losses  = [image_loss_func, image_loss_func]
-        weights = [0.5, 0.5]
-    else:
-        losses  = [image_loss_func]
-        weights = [1]
+    # base dense network is bidirectional
+    losses  = [image_loss_func, image_loss_func]
+    weights = [0.5, 0.5]
 
     # prepare deformation loss
     if args.use_probs:
@@ -137,8 +151,12 @@ with tf.device(device):
         losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
     else:
         losses += [vxm.losses.Grad('l2').loss]
-
     weights += [args.lambda_weight]
+
+    # prepare sdt loss
+    nb_dst_outputs = 2 if args.surf_bidir else 1
+    losses  += [vxm.losses.MSE().loss] * nb_dst_outputs
+    weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
 
     # multi-gpu support
     if nb_gpus > 1:

@@ -14,7 +14,6 @@ import random
 import argparse
 import glob
 import numpy as np
-import keras
 import tensorflow as tf
 import voxelmorph as vxm
 
@@ -38,7 +37,9 @@ parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (defau
 parser.add_argument('--prob-same', type=float, default=0.3, help='likelihood that source/target training images will be the same (default: 0.3)')
 
 # network architecture parameters
+parser.add_argument('--rigid', action='store_true', help='force rigid registration')
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
+parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
 parser.add_argument('--blurs', type=float, nargs='+', default=[1], help='levels of gaussian blur kernel for each scale (default: 1)')
 parser.add_argument('--padding', type=int, nargs='+', default=[256, 256, 256], help='padded image target shape (default: 256 256 256')
 parser.add_argument('--resize', type=float, default=0.25, help='after-padding image resize factor (default: 0.25)')
@@ -51,7 +52,7 @@ train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
 random.shuffle(train_vol_names)  # shuffle volume list
 assert len(train_vol_names) > 0, 'Could not find any training data'
 
-generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.padding, resize_factor=args.resize)
+generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.padding, resize_factor=args.resize, bidir=args.bidir)
 
 if args.atlas:
     # scan-to-atlas generator
@@ -92,6 +93,8 @@ with tf.device(device):
     model = vxm.networks.VxmAffine(
         inshape,
         enc_nf=enc_nf,
+        bidir=args.bidir,
+        rigid=args.rigid,
         blurs=args.blurs
     )
 
@@ -102,13 +105,23 @@ with tf.device(device):
     # multi-gpu support
     if nb_gpus > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
     else:
-        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
     # configure loss
-    loss = vxm.losses.NCC(blur_level=args.blurs[-1]).loss
-    model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=loss)
+    image_loss_func = vxm.losses.NCC(blur_level=args.blurs[-1]).loss
+
+    # need two image loss functions if bidirectional
+    if args.bidir:
+        losses  = [image_loss_func, image_loss_func]
+        weights = [0.5, 0.5]
+    else:
+        losses  = [image_loss_func]
+        weights = [1]
+
+    # compile model
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
     # save starting weights
     model.save(save_filename.format(epoch=args.initial_epoch))

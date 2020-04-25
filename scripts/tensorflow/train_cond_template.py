@@ -12,7 +12,6 @@ import random
 import argparse
 import glob
 import numpy as np
-import keras
 import tensorflow as tf
 import voxelmorph as vxm
 
@@ -135,17 +134,17 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    losses  = [image_loss_func, vxm.losses.MS().loss, vxm.losses.Grad('l2').loss, vxm.losses.MS().loss]
+    losses  = [image_loss_func, vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss, vxm.losses.MSE().loss]
     weights = [args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight, args.deform_loss_weight]
 
     # multi-gpu support
     if nb_gpus > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
     else:
-        save_callback = keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
-    model.compile(optimizer=keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
     # save starting weights
     model.save(save_filename.format(epoch=args.initial_epoch))

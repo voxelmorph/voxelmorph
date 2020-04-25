@@ -85,13 +85,30 @@ class MSE:
         return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
 
 
-class MS:
+class TukeyBiweight:
     """
-    Mean square of the predicted output.
+    Tukey-Biweight loss.
+
+    The single parameter c represents the threshold above which voxel
+    differences are cropped and have no further effect (that is, they are
+    treated as outliers and automatically discounted).
+
+    See: DOI: 10.1016/j.neuroimage.2010.07.020
+    Reuter, Rosas and Fischl, 2010. Highly accurate inverse consistent registration: 
+    a robust approach. NeuroImage, 53(4):1181-96.
     """
 
-    def loss(self, _, y_pred):
-        return K.mean(K.square(y_pred))
+    def __init__(self, c=0.5):
+        self.csq = c * c  # squared error threshold
+
+    def loss(self, y_true, y_pred):
+        error_sq = (y_true - y_pred) ** 2
+        ind_below = tf.where(error_sq <= self.csq)
+        rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+        rho_above = self.csq / 2
+        w_below = tf.cast(tf.shape(ind_below)[0], tf.float32)
+        w_above = tf.cast(tf.reduce_prod(tf.shape(y_pred)), tf.float32) - w_below
+        return (w_below * tf.reduce_mean(rho_below) + w_above * rho_above) / (w_below + w_above)
 
 
 class Dice:
@@ -144,6 +161,7 @@ class Grad:
             assert self.penalty == 'l2', 'penalty can only be l1 or l2. Got: %s' % self.penalty
             df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
         return tf.add_n(df) / len(df)
+
 
 
 class KL:
@@ -369,3 +387,16 @@ class NMI:
         y_pred = K.clip(y_pred, 0, self.max_clip)
         y_true = K.clip(y_true, 0, self.max_clip)
         return -self.mi(y_true, y_pred)
+
+
+class LossTuner:
+    """
+    Simple utility to apply a tuning weight to a loss tensor.
+    """
+
+    def __init__(self, loss_func, weight_tensor):
+        self.weight = weight_tensor
+        self.loss_func = loss_func
+
+    def loss(self, y_true, y_pred):
+        return self.weight * self.loss_func(y_true, y_pred)

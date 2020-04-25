@@ -295,6 +295,7 @@ class SpatialTransformer(Layer):
 
         # note this is unnecessarily extra graph since at every batch entry we have a tf.eye graph
         trf += tf.eye(self.ndims+1)[:self.ndims,:]  # add identity, hence affine is a shift from identitiy
+
         return affine_to_shift(trf, volshape, shift_center=True)
 
     def _single_transform(self, inputs):

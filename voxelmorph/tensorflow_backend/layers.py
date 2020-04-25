@@ -1,3 +1,4 @@
+import numpy as np
 import neuron as ne
 import tensorflow as tf
 from tensorflow import keras as keras
@@ -14,6 +15,7 @@ class Rescale(Layer):
     """ 
     Rescales a layer by some factor.
     """
+
     def __init__(self, scale_factor, **kwargs):
         self.scale_factor = scale_factor
         super().__init__(**kwargs)
@@ -32,6 +34,7 @@ class RescaleTransform(Layer):
     """ 
     Rescales a transform, which involves resizing the vector field *and* rescaling it.
     """
+
     def __init__(self, zoom_factor, interp_method='linear', **kwargs):
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
@@ -63,12 +66,77 @@ class RescaleTransform(Layer):
         else:
             # multiply first to save memory (multiply in smaller space)
             trf = Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
-            return  ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
+            return ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
 
     def compute_output_shape(self, input_shape):
         output_shape = [int(dim * self.zoom_factor) for dim in input_shape[1:-1]]
         output_shape = [input_shape[0]] + output_shape + [input_shape[-1]]
         return tuple(output_shape)
+
+
+class ComposeTransform(Layer):
+    """ 
+    Composes two dense deformations specified by their displacements. An affine transform
+    can also be provided.
+
+    We have two fields:
+
+    A --> B (so field is in space of B)
+    B --> C (so field is in the space of C)
+    
+    This layer composes a new warp field:
+
+    A --> C (so field is in the space of C)
+    """
+
+    def build(self, input_shape):
+
+        if len(input_shape) != 2:
+            raise Exception('ComposeTransform must be called on a input list of length 2.')
+
+        # figure out if any affines were provided
+        self.input_1_is_affine = self._is_affine(input_shape[0][1:])
+        self.input_2_is_affine = self._is_affine(input_shape[1][1:])
+
+        if self.input_1_is_affine and self.input_2_is_affine:
+            raise ValueError('ComposeTransform cannot compose two affine transforms, at least one must be dense')
+
+        # extract shape information from the dense transform
+        if self.input_1_is_affine:
+            self.ndims = input_shape[1][-1]
+            self.volshape = input_shape[1][1:-1]
+        else:
+            self.ndims = input_shape[0][-1]
+            self.volshape = input_shape[0][1:-1]
+
+        super().build(input_shape)
+
+    def call(self, inputs):
+        """
+        Parameters
+            inputs: list with two dense deformations
+        """
+        assert len(inputs) == 2, 'inputs has to be len 2, found: %d' % len(inputs)
+
+        input_1 = inputs[0]
+        input_2 = inputs[1]
+
+        # convert to dense if necessary
+        if self.input_1_is_affine:
+            input_1 = AffineToDense(self.volshape)(input_1)
+        elif self.input_2_is_affine:
+            input_2 = AffineToDense(self.volshape)(input_2)
+
+        return tf.map_fn(self._single_compose, [input_1, input_2], dtype=tf.float32)
+
+    def _single_compose(self, inputs):
+        return ne.utils.compose(inputs[0], inputs[1])
+
+    def _is_affine(self, shape):
+        return len(shape) == 1 or (len(shape) == 2 and shape[0] + 1 == shape[1])
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], *self.volshape, self.ndims)
 
 
 class LocalParamWithInput(Layer):
@@ -109,3 +177,216 @@ class LocalParamWithInput(Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.shape)
+
+
+class AffineToDense(Layer):
+    """
+    Converts an affine transform to a dense shift transform. The affine must represent
+    the shift between images (not over the identity).
+    """
+
+    def __init__(self, volshape, **kwargs):
+        self.volshape = volshape
+        self.ndims = len(volshape)
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+
+        shape = input_shape[1:]
+
+        if len(shape) == 1:
+            ex = self.ndims * (self.ndims + 1)
+            if shape[0] != ex:
+                raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
+
+        if len(shape) == 2 and (shape[0] != self.ndims or shape[1] != self.ndims + 1):
+            raise ValueError('Expected affine matrix of shape %s but got %s' % (str((self.ndims, self.ndims + 1)), str(shape)))
+
+        super().build(input_shape)
+
+    def call(self, trf):
+        """
+        Parameters
+            trf: affine transform either as a matrix with shape (N, N + 1)
+            or a flattened vector with shape (N * (N + 1))
+        """
+
+        return tf.map_fn(self._single_aff_to_shift, trf, dtype=tf.float32)
+
+    def _single_aff_to_shift(self, trf):
+        # go from vector to matrix
+        if len(trf.shape) == 1:
+            trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
+
+        trf += tf.eye(self.ndims + 1)[:self.ndims, :]  # add identity, hence affine is a shift from identitiy
+        return ne.utils.affine_to_shift(trf, self.volshape, shift_center=True)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], *self.volshape, self.ndims)
+
+
+class InvertAffine(Layer):
+    """
+    Inverts an affine transform. The transform must represent
+    the shift between images (not over the identity).
+    """
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+    def build(self, input_shape):
+
+        shape = input_shape[1:]
+
+        if len(shape) == 1:
+            # if vector, just compute ndims since length = N * (N + 1)
+            self.ndims = int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
+        elif len(shape) == 2:
+            self.ndims = int(shape[0])
+        else:
+            raise ValueError('InvertAffine input must be 1D or 2D - got %dD' % len(shape))
+
+        super().build(input_shape)
+
+    def call(self, trf):
+        """
+        Parameters
+            trf: affine transform either as a matrix with shape (N, N + 1)
+            or a flattened vector with shape (N * (N + 1))
+        """
+        return tf.map_fn(self._single_invert, trf, dtype=tf.float32)
+
+    def _single_invert(self, trf):
+
+        # go from vector to matrix if needed
+        flattened = len(trf.shape) == 1
+        if flattened:
+            trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
+
+        # make square matrix and add identity
+        padded = tf.concat([trf, tf.zeros((1, self.ndims + 1))], axis=0)
+        padded += tf.eye(self.ndims + 1)
+
+        # invert, remove identity, and crop last row
+        inverse = tf.linalg.inv(padded)
+        inverse -= tf.eye(self.ndims + 1)
+        inverse = inverse[:self.ndims, :]
+
+        # make sure output shape matches input
+        if flattened:
+            inverse = tf.reshape(inverse, [self.ndims * (self.ndims + 1)])
+        return inverse
+
+
+class AffineTransformationsToMatrix(Layer):
+    """
+    Computes the corresponding (flattened) affine from a vector of transform
+    components. The components are in the order of (translation, rotation), so the
+    input must a 1D array of length (ndim * 2).
+
+    TODO: right now only supports 4x4 transforms - make this dimension-independent
+    TODO: allow for scaling and shear components
+    """
+
+    def __init__(self, ndims, scale=False, **kwargs):
+        self.ndims = ndims
+        self.scale = scale
+        if ndims != 3 and ndims != 2:
+            raise NotImplementedError('rigid registration is limited to 3D for now')
+
+        super().__init__(**kwargs)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.ndims * (self.ndims + 1))
+
+    def call(self, vector):
+        """
+        Parameters
+            vector: tensor of affine components
+        """
+        return tf.map_fn(self._single_conversion, vector, dtype=tf.float32)
+
+    def _single_conversion(self, vector):
+
+        if self.ndims == 3:
+            # extract components of input vector
+            translation = vector[:3]
+            angle_x = vector[3]
+            angle_y = vector[4]
+            angle_z = vector[5]
+
+            # x rotation matrix
+            cosx  = tf.math.cos(angle_x)
+            sinx  = tf.math.sin(angle_x)
+            x_rot = tf.convert_to_tensor([
+                [1,    0,     0],
+                [0, cosx, -sinx],
+                [0, sinx,  cosx]
+            ], name='x_rot')
+
+            # y rotation matrix
+            cosy  = tf.math.cos(angle_y)
+            siny  = tf.math.sin(angle_y)
+            y_rot = tf.convert_to_tensor([
+                [cosy,  0, siny],
+                [0,     1,    0],
+                [-siny, 0, cosy]
+            ], name='y_rot')
+            
+            # z rotation matrix
+            cosz  = tf.math.cos(angle_z)
+            sinz  = tf.math.sin(angle_z)
+            z_rot = tf.convert_to_tensor([
+                [cosz, -sinz, 0],
+                [sinz,  cosz, 0],
+                [0,        0, 1]
+            ], name='z_rot')
+            # compose matrices
+            t_rot = tf.tensordot(x_rot, y_rot, 1)
+            m_rot = tf.tensordot(t_rot, z_rot, 1)
+            if self.scale == True:
+                scale = vector[6]
+            else:
+                scale = 1
+            m_scale = tf.convert_to_tensor([
+                [scale, 0,  0],
+                [0,  scale, 0],
+                [0,  0,     scale]
+                ], name='scale')
+
+        elif self.ndims == 2:
+            # extract components of input vector
+            translation = vector[:2]
+            angle = vector[2]
+
+            #  rotation matrix
+            cosz  = tf.math.cos(angle)
+            sinz  = tf.math.sin(angle)
+            m_rot = tf.convert_to_tensor([
+                [cosz, -sinz],
+                [sinz,  cosz]
+            ], name='rot')
+            if self.scale == True:
+                scale = vector[3]
+            else:
+                scale = 1
+
+            m_scale = tf.convert_to_tensor([
+                [scale, 0],
+                [0,  scale]
+                ], name='scale')
+
+        # we want to encode shift transforms, so remove identity
+        m_rot -= tf.eye(self.ndims)
+
+        # concat the linear translation
+
+        m_rot = tf.tensordot(m_rot, m_scale, 1)
+        matrix = tf.concat([m_rot, tf.expand_dims(translation, 1)], 1)
+
+        # flatten
+        if self.ndims == 3:
+            affine = tf.reshape(matrix, [12])
+        else:
+            affine = tf.reshape(matrix, [6])
+        return affine
