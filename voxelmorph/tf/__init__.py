@@ -14,6 +14,8 @@ basedir = os.path.join(os.path.dirname(__file__), 'external')
 paths = [os.path.join(basedir, package) for package in subdirs]
 sys.path = paths + sys.path
 
+import neuron
+
 from . import layers
 from . import networks
 from . import losses
