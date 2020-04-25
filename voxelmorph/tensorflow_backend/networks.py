@@ -641,7 +641,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        self.referencesaffine_model.get_predictor_model()
+        self.references.affine_model.get_predictor_model()
 
 
 class VxmDenseSurfaceSemiSupervised(LoadableModel):
@@ -706,6 +706,79 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=outputs)
+
+
+class VxmAffineSurfaceSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
+    """
+
+    @store_config_args
+    def __init__(self,
+        inshape,
+        enc_nf,
+        nb_surface_points,
+        nb_labels_sample,
+        sdt_vol_resize=1,
+        surf_bidir=True,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_surface_points: Number of surface points to warp.
+            nb_labels_sample: Number of labels to sample.
+            sdt_vol_resize: Resize factor of distance transform. Default is 1.
+            surf_bidir: Train with bidirectional surface warping. Default is True.
+            kwargs: Forwarded to the internal VxmAffine model.
+        """
+
+        sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
+        surface_points_shape = [nb_surface_points, len(inshape) + 1]
+        single_pt_trf = lambda x: point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
+
+        # vm model
+        affine_model = VxmAffine(inshape, enc_nf, **kwargs)
+        affine_tensor = affine_model.references.affines[0]
+        dense_tensor = layers.AffineToDense(inshape)(affine_tensor)
+        dense = tf.keras.models.Model(affine_model.inputs, dense_tensor)
+        inverse_affine = layers.InvertAffine()(affine_tensor)
+        pos_flow = dense_tensor
+        neg_flow = layers.AffineToDense(inshape)(inverse_affine)
+        # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
+        atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
+
+        # warp atlas surface
+        # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
+        warped_atl_surf_pts = Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, pos_flow])
+
+        # get value of dt_input *at* warped_atlas_surface
+        subj_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
+        subj_dt_value = Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+
+        if surf_bidir:
+            # go the other way and warp subject to atlas
+            subj_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='subj_surface_input')
+            warped_subj_surf_pts = Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
+
+            atl_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
+            atl_dt_value = Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+
+            inputs  = [*affine_model.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
+            outputs = [*affine_model.outputs, subj_dt_value, atl_dt_value]
+
+        else:
+            inputs  = [*affine_model.inputs, subj_dt_input, atl_surf_input]
+            outputs = [*affine_model.outputs, subj_dt_value]
+
+        # initialize the keras model
+        super().__init__(inputs=inputs, outputs=outputs)
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affine_model = affine_model
+        self.references.affines = affine_model.references.affines
+        self.references.pos_flow = pos_flow
+        self.references.neg_flow = neg_flow
 
 
 class Transform(Model):
