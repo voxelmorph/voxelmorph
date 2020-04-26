@@ -139,16 +139,16 @@ class VxmAffine(LoadableModel):
         
         # dense layer to affine matrix
         basenet.add(KL.Flatten())
-
+        dense_init = RandomNormal(mean=0.0, stddev=1e-5)
         if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
-            basenet.add(KL.Dense(ndims * 2, name='dense'))
+            basenet.add(KL.Dense(ndims * 2, name='dense', kernel_initializer=dense_init))
             basenet.add(layers.AffineTransformationsToMatrix(ndims))
         elif transform_type == 'rigid+scale':
-            basenet.add(KL.Dense(ndims * 2+1, name='dense'))
+            basenet.add(KL.Dense(ndims * 2+1, name='dense', kernel_initializer=dense_init))
             basenet.add(layers.AffineTransformationsToMatrix(ndims,scale=True))
         else:
-            basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
+            basenet.add(KL.Dense(ndims * (ndims + 1), name='dense', kernel_initializer=dense_init))
 
         # inputs
         source = Input(shape=[*inshape, 1])
