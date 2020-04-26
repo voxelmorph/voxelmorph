@@ -132,7 +132,7 @@ class VxmAffine(LoadableModel):
 
         # configure base encoder CNN
         Conv = getattr(KL, 'Conv%dD' % ndims)   
-        basenet = Sequential()
+        basenet = Sequential(name='core_model')
         for nf in enc_nf:
             basenet.add(Conv(nf, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=2))
             basenet.add(LeakyReLU(0.2))
@@ -142,13 +142,13 @@ class VxmAffine(LoadableModel):
 
         if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
-            basenet.add(KL.Dense(ndims * 2))
+            basenet.add(KL.Dense(ndims * 2, name='dense'))
             basenet.add(layers.AffineTransformationsToMatrix(ndims))
         elif transform_type == 'rigid+scale':
-            basenet.add(KL.Dense(ndims * 2+1))
+            basenet.add(KL.Dense(ndims * 2+1, name='dense'))
             basenet.add(layers.AffineTransformationsToMatrix(ndims,scale=True))
         else:
-            basenet.add(KL.Dense(ndims * (ndims + 1)))
+            basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
 
         # inputs
         source = Input(shape=[*inshape, 1])
