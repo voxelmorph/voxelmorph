@@ -145,13 +145,13 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, bidir=False, rigid=False, blurs=[1]):
+    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1]):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             bidir: Enable bidirectional cost function. Default is False.
-            rigid: Require rigid registration (not fully tested). Default is False.
+            transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
         """
 
@@ -161,7 +161,7 @@ class VxmAffine(LoadableModel):
 
         # configure base encoder CNN
         Conv = getattr(KL, 'Conv%dD' % ndims)   
-        basenet = Sequential()
+        basenet = Sequential(name='core_model')
         for nf in enc_nf:
             basenet.add(Conv(nf, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=2))
             basenet.add(LeakyReLU(0.2))
@@ -169,12 +169,15 @@ class VxmAffine(LoadableModel):
         # dense layer to affine matrix
         basenet.add(KL.Flatten())
 
-        if rigid:
+        if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
-            basenet.add(KL.Dense(ndims * 2))
+            basenet.add(KL.Dense(ndims * 2, name='dense'))
             basenet.add(layers.AffineTransformationsToMatrix(ndims))
+        elif transform_type == 'rigid+scale':
+            basenet.add(KL.Dense(ndims * 2+1, name='dense'))
+            basenet.add(layers.AffineTransformationsToMatrix(ndims,scale=True))
         else:
-            basenet.add(KL.Dense(ndims * (ndims + 1)))
+            basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
 
         # inputs
         source = Input(shape=[*inshape, 1])
@@ -214,7 +217,7 @@ class VxmAffine(LoadableModel):
         # cache affines
         self.references = LoadableModel.ReferenceContainer()
         self.references.affines = affines
-        self.references.rigid = rigid
+        self.references.transform_type = transform_type
 
     def get_predictor_model(self):
         """
@@ -234,35 +237,53 @@ class VxmAffine(LoadableModel):
         return Model([source, affine], aligned)
 
 
-class VxmCombined(LoadableModel):
+class VxmAffineDense(LoadableModel):
     """
     VoxelMorph network to perform combined affine and nonlinear registration.
     """
 
     @store_config_args
-    def __init__(self, inshape, nb_unet_features=None, rigid=False, **kwargs):
+    def __init__(self,
+        inshape,
+        enc_nf,
+        dec_nf,
+        enc_nf_affine=None,
+        transform_type='affine',
+        affine_bidir=False,
+        affine_blurs=[1],
+        **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            rigid: Require rigid registration (not fully tested). Default is False.
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            enc_nf_affine: List of affine encoder filters. Default is None (uses enc_nf in this case).
+            transform_type:  See VxmAffine for types. Default is 'affine'.
+            affine_bidir: Enable bidirectional affine training. Default is False.
+            affine_blurs: List of blurring levels for affine transform. Default is [1].
             kwargs: Forwarded to the internal VxmDense model.
         """
 
+        if enc_nf_affine is None:
+            enc_nf_affine = enc_nf 
+
         # affine component
-        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)  # TODOATH
+        affine_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs)
         affine_pred_model = affine_model.get_predictor_model()
 
-        # dense component
-        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, **kwargs)
+        # build a dense model that takes the affine transformed src as input
+        dense_model = VxmDense(inshape, enc_nf, dec_nf, **kwargs)
         dense_model_outputs = dense_model([affine_model.outputs[0], affine_model.inputs[1]])
+        dense_warp = dense_model_outputs[1]
 
-        # combine models
-        composed = layers.ComposeTransform()([affine_pred_model.outputs[0], dense_model_outputs[1]])
+        # build a single transform that applies both affine and dense to src
+        # and apply it to the input (src) volume so that there is only 1 interpolation
+        # and output it as the combined model output (plus the dense warp)
+        composed = layers.ComposeTransform()([affine_pred_model.outputs[0], dense_warp])
         output_image = layers.SpatialTransformer()([affine_model.inputs[0], composed])
 
         # initialize the keras model
-        super().__init__(inputs=affine_model.inputs, outputs=[output_image, dense_model_outputs[1]])
+        super().__init__(inputs=affine_model.inputs, outputs=[output_image, dense_warp])
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
@@ -602,6 +623,54 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
 
+class VxmAffineSegSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for (semi-supervised) nonlinear registration between two images.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, enc_nf, nb_labels, int_downsize=2, seg_downsize=2, transform_type='affine', blurs=[1], bidir=False):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            nb_labels: Number of labels used for ground truth segmentations.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+            seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
+        """
+
+        # configure base voxelmorph network
+        vxm_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=bidir, blurs=blurs)
+
+        # configure downsampled seg input layer
+        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
+        seg_src = Input(shape=(*inshape_downsized, nb_labels))
+
+        # configure warped seg output layer
+        if seg_downsize > 1:  # this fails, not sure why (BRF)
+            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[0])
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+        else:
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[0]])
+
+        # initialize the keras model
+        inputs = vxm_model.inputs + [seg_src]
+        outputs = vxm_model.outputs + [y_seg]
+        super().__init__(inputs=inputs, outputs=outputs)
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affines = vxm_model.references.affines
+        self.references.affine_model = vxm_model
+
+    def get_predictor_model(self):
+        """
+        Extracts a predictor model from the VxmDense that directly outputs the warped image and 
+        final diffeomorphic warp field (instead of the non-integrated flow field used for training).
+        """
+        self.references.affine_model.get_predictor_model()
+
+
 class VxmDenseSurfaceSemiSupervised(LoadableModel):
     """
     VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
@@ -662,6 +731,79 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=outputs)
+
+
+class VxmAffineSurfaceSemiSupervised(LoadableModel):
+    """
+    VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
+    """
+
+    @store_config_args
+    def __init__(self,
+        inshape,
+        enc_nf,
+        nb_surface_points,
+        nb_labels_sample,
+        sdt_vol_resize=1,
+        surf_bidir=True,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
+            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_surface_points: Number of surface points to warp.
+            nb_labels_sample: Number of labels to sample.
+            sdt_vol_resize: Resize factor of distance transform. Default is 1.
+            surf_bidir: Train with bidirectional surface warping. Default is True.
+            kwargs: Forwarded to the internal VxmAffine model.
+        """
+
+        sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
+        surface_points_shape = [nb_surface_points, len(inshape) + 1]
+        single_pt_trf = lambda x: point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
+
+        # vm model
+        affine_model = VxmAffine(inshape, enc_nf, **kwargs)
+        affine_tensor = affine_model.references.affines[0]
+        dense_tensor = layers.AffineToDense(inshape)(affine_tensor)
+        dense = tf.keras.models.Model(affine_model.inputs, dense_tensor)
+        inverse_affine = layers.InvertAffine()(affine_tensor)
+        pos_flow = dense_tensor
+        neg_flow = layers.AffineToDense(inshape)(inverse_affine)
+        # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
+        atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
+
+        # warp atlas surface
+        # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
+        warped_atl_surf_pts = Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, pos_flow])
+
+        # get value of dt_input *at* warped_atlas_surface
+        subj_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
+        subj_dt_value = Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+
+        if surf_bidir:
+            # go the other way and warp subject to atlas
+            subj_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='subj_surface_input')
+            warped_subj_surf_pts = Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
+
+            atl_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
+            atl_dt_value = Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+
+            inputs  = [*affine_model.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
+            outputs = [*affine_model.outputs, subj_dt_value, atl_dt_value]
+
+        else:
+            inputs  = [*affine_model.inputs, subj_dt_input, atl_surf_input]
+            outputs = [*affine_model.outputs, subj_dt_value]
+
+        # initialize the keras model
+        super().__init__(inputs=inputs, outputs=outputs)
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.affine_model = affine_model
+        self.references.affines = affine_model.references.affines
+        self.references.pos_flow = pos_flow
+        self.references.neg_flow = neg_flow
 
 
 class Transform(Model):
@@ -805,7 +947,10 @@ def gaussian_blur(tensor, level, ndims):
         sigma = (level-1) ** 2
         blur_kernel = ne.utils.gaussian_kernel([sigma] * ndims)
         blur_kernel = tf.reshape(blur_kernel, blur_kernel.shape.as_list() + [1, 1])
-        conv = lambda x: tf.nn.conv3d(x, blur_kernel, [1, 1, 1, 1, 1], 'SAME')
+        if ndims == 3:
+            conv = lambda x: tf.nn.conv3d(x, blur_kernel, [1, 1, 1, 1, 1], 'SAME')
+        else:
+            conv = lambda x: tf.nn.conv2d(x, blur_kernel, [1, 1, 1, 1], 'SAME')
         return KL.Lambda(conv)(tensor)
     elif level == 1:
         return tensor

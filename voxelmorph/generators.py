@@ -5,7 +5,11 @@ import numpy as np
 from . import utils
 
 
-def volgen(vol_names, batch_size=1, return_segs=False, np_var='vol', pad_shape=None, resize_factor=1, add_feat_axis=True):
+def volgen(vol_names, batch_size=1, return_segs=False,
+           np_var='vol',
+           pad_shape=None,
+           resize_factor=1,
+           add_feat_axis=True):
     """
     Base generator for random volume loading. Corresponding segmentations are additionally
     loaded if return_segs is set to True. If loading segmentations, it's expected that
