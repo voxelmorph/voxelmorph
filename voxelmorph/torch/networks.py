@@ -8,23 +8,46 @@ from . import layers
 from .model_io import LoadableModel, store_config_args
 
 
-class unet(nn.Module):
-    """ 
-    Unet architecture for the voxelmorph models.
+class Unet(nn.Module):
+    """
+    A unet architecture. Layer features can be specified directly as a list of encoder and decoder
+    features or as a single integer along with a number of unet levels. The default network features
+    per layer (when no options are specified) are:
+
+        encoder: [16, 32, 32, 32]
+        decoder: [32, 32, 32, 32, 32, 16, 16]
     """
 
-    def __init__(self, inshape, enc_nf, dec_nf):
+    def __init__(self, inshape, nb_features=None, nb_levels=None, feat_mult=1):
         super().__init__()
         """
         Parameters:
-            inshape: Input shape. e.g. (256, 256, 256)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
+            inshape: Input shape. e.g. (192, 192, 192)
+            nb_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
+                the unet features are defined by the default config described in the class documentation.
+            nb_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
+            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
         """
 
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # default encoder and decoder layer features if nothing provided
+        if nb_features is None:
+            nb_features = [
+                [16, 32, 32, 32],             # encoder
+                [32, 32, 32, 32, 32, 16, 16]  # decoder
+            ]
+
+        # build feature list automatically
+        if isinstance(nb_features, int):
+            if nb_levels is None:
+                raise ValueError('must provide unet nb_levels if nb_features is an integer')
+            feats = np.round(nb_features * feat_mult ** np.arange(nb_levels)).astype(int)
+            enc_nf = feats[:-1]
+            dec_nf = np.flip(feats)
 
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
@@ -77,12 +100,23 @@ class VxmDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False):
+    def __init__(self,
+        inshape,
+        nb_unet_features=None,
+        nb_unet_levels=None,
+        unet_feat_mult=1,
+        int_steps=7,
+        int_downsize=2,
+        bidir=False,
+        use_probs=False):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
+                the unet features are defined by the default config described in the unet class documentation.
+            nb_unet_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
+            unet_feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
@@ -99,7 +133,12 @@ class VxmDense(LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # configure core unet model
-        self.unet_model = unet(inshape, enc_nf, dec_nf)
+        self.unet_model = Unet(
+            inshape
+            nb_features=nb_unet_features,
+            nb_levels=nb_unet_levels,
+            feat_mult=unet_feat_mult
+        )
 
         # configure unet to flow field layer
         Conv = getattr(nn, 'Conv%dd' % ndims)

@@ -87,8 +87,7 @@ else:
     # otherwise configure new model
     model = vxm.networks.VxmDense(
         inshape=inshape,
-        enc_nf=enc_nf,
-        dec_nf=dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         bidir=bidir,
         int_steps=args.int_steps,
         int_downsize=args.int_downsize
