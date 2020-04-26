@@ -101,8 +101,7 @@ with tf.device(device):
     # build the model
     model = vxm.networks.VxmDense(
         inshape=inshape,
-        enc_nf=enc_nf,
-        dec_nf=dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         bidir=args.bidir,
         use_probs=args.use_probs,
         int_steps=args.int_steps,

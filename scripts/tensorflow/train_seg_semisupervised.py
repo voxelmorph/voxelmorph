@@ -90,8 +90,7 @@ with tf.device(device):
     # build the model
     model = vxm.networks.VxmDenseSegSemiSupervised(
         inshape=inshape,
-        enc_nf=enc_nf,
-        dec_nf=dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         nb_labels=len(train_labels),
         int_steps=args.int_steps,
         int_downsize=args.int_downsize

@@ -106,8 +106,7 @@ with tf.device(device):
     # build the model
     model = vxm.networks.ProbAtlasSegmentation(
         inshape,
-        enc_nf,
-        dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         nb_labels=nb_labels,
         stat_post_warp=(not args.stat_pre_warp),
         warp_atlas=warp_atlas,

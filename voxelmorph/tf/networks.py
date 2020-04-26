@@ -1,7 +1,8 @@
 import numpy as np
 import neuron as ne
-import tensorflow as tf
+from collections.abc import Iterable
 
+import tensorflow as tf
 from tensorflow import keras
 import tensorflow
 import tensorflow.keras.backend as K
@@ -22,12 +23,28 @@ class VxmDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False, src_feats=1, trg_feats=1, input_model=None):
+    def __init__(self,
+            inshape,
+            nb_unet_features=None,
+            nb_unet_levels=None,
+            unet_feat_mult=1,
+            nb_unet_conv_per_level=1,
+            int_steps=7,
+            int_downsize=2,
+            bidir=False,
+            use_probs=False,
+            src_feats=1,
+            trg_feats=1,
+            input_model=None):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
+                the unet features are defined by the default config described in the unet class documentation.
+            nb_unet_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
+            unet_feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
+            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
@@ -35,16 +52,28 @@ class VxmDense(LoadableModel):
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
-            input_model: Model to concat with unet input layer.
+            input_model: Model to replace default input layer. Default is None.
         """
 
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
+        # configure default input layers if an input model is not provided
+        source = tf.keras.Input(shape=(*inshape, src_feats), name='source_input')
+        target = tf.keras.Input(shape=(*inshape, trg_feats), name='target_input')
+        inputs = [source, target]
+
         # build core unet model and grab inputs
-        unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats, trg_feats=trg_feats, input_model=input_model)
-        source, target = unet_model.inputs[:2]
+        input_model = tf.keras.Model(inputs=inputs, outputs=[tf.keras.layers.concatenate(inputs, name='input_concat')])
+        unet_model = Unet(
+            input_model=input_model,
+            nb_features=nb_unet_features,
+            nb_levels=nb_unet_levels,
+            feat_mult=unet_feat_mult,
+            nb_conv_per_level=nb_unet_conv_per_level
+        )
+        source, target = unet_model.inputs[:2]  # TODO don't think this is necessary
 
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
@@ -211,22 +240,21 @@ class VxmCombined(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, rigid=False, **kwargs):
+    def __init__(self, inshape, nb_unet_features=None, rigid=False, **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             rigid: Require rigid registration (not fully tested). Default is False.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
         # affine component
-        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)
+        affine_model = VxmAffine(inshape, enc_nf, rigid=rigid)  # TODOATH
         affine_pred_model = affine_model.get_predictor_model()
 
         # dense component
-        dense_model = VxmDense(inshape, enc_nf, dec_nf, **kwargs)
+        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, **kwargs)
         dense_model_outputs = dense_model([affine_model.outputs[0], affine_model.inputs[1]])
 
         # combine models
@@ -271,9 +299,8 @@ class ProbAtlasSegmentation(LoadableModel):
     @store_config_args
     def __init__(self,
         inshape,
-        enc_nf,
-        dec_nf,
         nb_labels,
+        nb_unet_features=None,
         init_mu=None,
         init_sigma=None,
         warp_atlas=True,
@@ -284,9 +311,8 @@ class ProbAtlasSegmentation(LoadableModel):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
             nb_labels: Number of labels in probabilistic atlas.
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
             stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
@@ -300,7 +326,7 @@ class ProbAtlasSegmentation(LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # build warp network
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, src_feats=nb_labels, **kwargs)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, src_feats=nb_labels, **kwargs)
 
         # extract necessary layers from the network
         # important to note that we're warping the atlas to the image in this case and
@@ -387,18 +413,17 @@ class TemplateCreation(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, mean_cap=100, **kwargs):
+    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             mean_cap: Cap for mean stream. Default is 100.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
         # warp model
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
 
         # pre-warp (atlas) model
         atlas = layers.LocalParamWithInput(name='atlas', shape=[*inshape, 1], mult=1.0,
@@ -436,8 +461,7 @@ class ConditionalTemplateCreation(LoadableModel):
     def __init__(self,
         inshape,
         pheno_input_shape,
-        enc_nf,
-        dec_nf,
+        nb_unet_features=None,
         src_feats=1,
         conv_image_shape=None,
         conv_size=3,
@@ -454,8 +478,7 @@ class ConditionalTemplateCreation(LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             pheno_input_shape: Pheno data input shape. e.g. (2)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             src_feats: Number of source (atlas) features. Default is 1.
             conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
@@ -471,7 +494,7 @@ class ConditionalTemplateCreation(LoadableModel):
         """
 
         # warp model
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, bidir=True, src_feats=src_feats, **kwargs)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, src_feats=src_feats, **kwargs)
 
         if not use_stack:
             outputs = vxm_model.outputs + [vxm_model.references.pos_flow, vxm_model.references.neg_flow]
@@ -550,13 +573,12 @@ class VxmDenseSegSemiSupervised(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, nb_labels, int_steps=7, int_downsize=2, seg_downsize=2):
+    def __init__(self, inshape, nb_labels, nb_unet_features=None, int_steps=7, int_downsize=2, seg_downsize=2):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
             nb_labels: Number of labels used for ground truth segmentations.
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
@@ -564,7 +586,7 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         """
 
         # configure base voxelmorph network
-        vxm_model = VxmDense(inshape, enc_nf, dec_nf, int_steps=int_steps, int_downsize=int_downsize)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, int_steps=int_steps, int_downsize=int_downsize)
 
         # configure downsampled seg input layer
         inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
@@ -588,20 +610,18 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
     @store_config_args
     def __init__(self,
         inshape,
-        enc_nf,
-        dec_nf,
         nb_surface_points,
         nb_labels_sample,
+        nb_unet_features=None,
         sdt_vol_resize=1,
         surf_bidir=True,
         **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-            dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 32, 16, 16]
             nb_surface_points: Number of surface points to warp.
             nb_labels_sample: Number of labels to sample.
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             sdt_vol_resize: Resize factor of distance transform. Default is 1.
             surf_bidir: Train with bidirectional surface warping. Default is True.
             kwargs: Forwarded to the internal VxmDense model.
@@ -612,7 +632,7 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
         single_pt_trf = lambda x: point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
 
         # vm model
-        dense = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
+        dense = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
 
         # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
         atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
@@ -672,70 +692,109 @@ class Transform(Model):
         super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
 
 
-def conv_block(x, nfeat, strides=1):
+def conv_block(x, nfeat, strides=1, name=None):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
     ndims = len(x.get_shape()) - 2
-    assert ndims in (1, 2, 3), "ndims should be one of 1, 2, or 3. found: %d" % ndims
+    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     Conv = getattr(KL, 'Conv%dD' % ndims)
 
-    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides)(x)
-    return LeakyReLU(0.2)(convolved)
+    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides, name=name)(x)
+    name = name + '_activation' if name else None
+    return LeakyReLU(0.2, name=name)(convolved)
 
 
-def upsample_block(x, connection):
+def upsample_block(x, connection, name=None):
     """
     Specific upsampling and concatenation layer for unet.
     """
     ndims = len(x.get_shape()) - 2
-    assert ndims in (1, 2, 3), "ndims should be one of 1, 2, or 3. found: %d" % ndims
+    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
+    
+    upsampled = UpSampling(name=name)(x)
+    name = name + '_concat' if name else None
+    return concatenate([upsampled, connection], name=name)
 
-    upsampled = UpSampling()(x)
-    return concatenate([upsampled, connection])
 
+class Unet(Model):
+    """
+    A unet architecture that builds off of an input keras model. Layer features can be specified directly
+    as a list of encoder and decoder features or as a single integer along with a number of unet levels.
+    The default network features per layer (when no options are specified) are:
 
-def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, input_model=None):
-    """ 
-    Constructs a simple unet architecture.
+        encoder: [16, 32, 32, 32]
+        decoder: [32, 32, 32, 32, 32, 16, 16]
 
-    Parameters:
-        inshape: Input shape. e.g. (256, 256, 256)
-        enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
-        dec_nf: List of decoder filters. e.g. [32, 32, 32, 32, 8, 8]
-        src_feats: Number of source image features. Default is 1.
-        trg_feats: Number of target image features. Default is 1.
-        input_model: Model to concat with input layer.
+    This network specifically does not subclass LoadableModel because it's meant to be a core,
+    internal model for more complex networks, and is not meant to be saved/loaded independently.
     """
 
-    # configure inputs
-    concat = [
-        Input(shape=(*inshape, src_feats)),
-        Input(shape=(*inshape, trg_feats))
-    ]
-    inputs = concat.copy()
+    def __init__(self, input_model, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1):
+        """
+        Parameters:
+            input_model: Input model that feeds directly into the unet.
+            nb_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
+                the unet features are defined by the default config described in the class documentation.
+            nb_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
+            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
+            nb_conv_per_level: Number of convolutions per unet level. Default is 1.
+        """
 
-    if input_model is not None:
-        concat += input_model.outputs
-        inputs += input_model.inputs
+        # default encoder and decoder layer features if nothing provided
+        if nb_features is None:
+            nb_features = [
+                [16, 32, 32, 32],             # encoder
+                [32, 32, 32, 32, 32, 16, 16]  # decoder
+            ]
 
-    # configure encoder (down-sampling path)
-    enc_layers = [concatenate(concat)]
-    for nf in enc_nf:
-        enc_layers.append(conv_block(enc_layers[-1], nf, strides=2))
+        # build feature list automatically
+        if isinstance(nb_features, int):
+            if nb_levels is None:
+                raise ValueError('must provide unet nb_levels if nb_features is an integer')
+            feats = np.round(nb_features * feat_mult ** np.arange(nb_levels)).astype(int)
+            nb_features = [
+                np.repeat(feats[:-1], nb_conv_per_level),
+                np.repeat(np.flip(feats), nb_conv_per_level)
+            ]
 
-    # configure decoder (up-sampling path)
-    x = enc_layers.pop()
-    for nf in dec_nf[:len(enc_nf)]:
-        x = conv_block(x, nf, strides=1)
-        x = upsample_block(x, enc_layers.pop())
+        # extract any surplus (full resolution) decoder convolutions
+        enc_nf, dec_nf = nb_features
+        nb_dec_convs = len(enc_nf)
+        final_convs = dec_nf[nb_dec_convs:]
+        dec_nf = dec_nf[:nb_dec_convs]
+        nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
-    # now we take care of the remaining convolutions
-    for i, nf in enumerate(dec_nf[len(enc_nf):]):
-        x = conv_block(x, nf, strides=1)
+        # configure encoder (down-sampling path)
+        enc_layers = [input_model.output]
+        last = input_model.output
+        for level in range(nb_levels - 1):
+            for conv in range(nb_conv_per_level):
+                nf = enc_nf[level * nb_conv_per_level + conv]
+                strides = 2 if conv == (nb_conv_per_level - 1) else 1
+                name = 'unet_enc_conv_%d_%d' % (level, conv)
+                last = conv_block(last, nf, strides=strides, name=name)
+            enc_layers.append(last)
 
-    return Model(inputs=inputs, outputs=[x])
+        # configure decoder (up-sampling path)
+        last = enc_layers.pop()
+        for level in range(nb_levels - 1):
+            real_level = nb_levels - level - 2
+            for conv in range(nb_conv_per_level):
+                nf = dec_nf[level * nb_conv_per_level + conv]
+                name = 'unet_dec_conv_%d_%d' % (real_level, conv)
+                last = conv_block(last, nf, name=name)
+            name = 'unet_dec_upsample_' + str(real_level)
+            last = upsample_block(last, enc_layers.pop(), name=name)
+
+        # now we take care of any remaining convolutions
+        for num, nf in enumerate(final_convs):
+            name = 'unet_dec_final_conv_' + str(num)
+            last = conv_block(last, nf, name=name)
+
+        return super().__init__(inputs=input_model.inputs, outputs=last)
 
 
 def gaussian_blur(tensor, level, ndims):

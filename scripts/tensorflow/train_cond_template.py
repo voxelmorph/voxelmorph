@@ -113,8 +113,7 @@ with tf.device(device):
     model = vxm.networks.ConditionalTemplateCreation(
         inshape,
         pheno_input_shape=pheno_shape,
-        enc_nf=enc_nf,
-        dec_nf=dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         conv_nb_features=4,
         conv_nb_levels=0,
         extra_conv_layers=3,

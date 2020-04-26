@@ -101,8 +101,7 @@ with tf.device(device):
     # build model
     model = vxm.networks.TemplateCreation(
         atlas_shape,
-        enc_nf=enc_nf,
-        dec_nf=dec_nf,
+        nb_unet_features=[enc_nf, dec_nf],
         src_feats=nfeats,
         trg_feats=nfeats
     )
