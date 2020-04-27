@@ -59,13 +59,15 @@ class VxmDense(LoadableModel):
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
-        # configure default input layers if an input model is not provided
-        source = tf.keras.Input(shape=(*inshape, src_feats), name='source_input')
-        target = tf.keras.Input(shape=(*inshape, trg_feats), name='target_input')
-        inputs = [source, target]
+
+        if input_model is None:
+            # configure default input layers if an input model is not provided
+            source = tf.keras.Input(shape=(*inshape, src_feats), name='source_input')
+            target = tf.keras.Input(shape=(*inshape, trg_feats), name='target_input')
+            inputs = [source, target]
+            input_model = tf.keras.Model(inputs=inputs, outputs=[tf.keras.layers.concatenate(inputs, name='input_concat')])
 
         # build core unet model and grab inputs
-        input_model = tf.keras.Model(inputs=inputs, outputs=[tf.keras.layers.concatenate(inputs, name='input_concat')])
         unet_model = Unet(
             input_model=input_model,
             nb_features=nb_unet_features,
@@ -121,7 +123,7 @@ class VxmDense(LoadableModel):
 
         # initialize the keras model
         outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]
-        super().__init__(name='vxm_dense', inputs=unet_model.inputs, outputs=outputs)
+        super().__init__(name='vxm_dense', inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
@@ -660,6 +662,8 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
         self.references = LoadableModel.ReferenceContainer()
+
+        # cache pointers to important layers and tensors for future reference
         self.references.affines = vxm_model.references.affines
         self.references.affine_model = vxm_model
 
@@ -799,11 +803,69 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=outputs)
+
+        # cache pointers to important layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
         self.references.affine_model = affine_model
         self.references.affines = affine_model.references.affines
         self.references.pos_flow = pos_flow
         self.references.neg_flow = neg_flow
+
+
+class VxmSynthetic(LoadableModel):
+    """
+    VoxelMorph network for registering segmentations.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, all_labels, hot_labels, nb_unet_features=None, int_steps=5, **kwargs):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            all_labels: List of all labels included in training segmentations.
+            hot_labels: List of labels to output as one-hot maps.
+            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
+                the unet features are defined by the default config described in the unet class documentation.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            kwargs: Forwarded to the internal VxmAffine model.
+        """
+        from SynthSeg.labels_to_image_model import labels_to_image_model
+
+        # brain generation
+        make_im_model = lambda id: labels_to_image_model(inshape, inshape, all_labels, hot_labels, id=id,
+            apply_affine_trans=False, apply_nonlin_trans=True, nonlin_shape_factor=0.0625, bias_shape_factor=0.025
+        )
+        bg_model_1, self.warp_shape, self.bias_shape = make_im_model(0)
+        bg_model_2 = make_im_model(1)[0]
+        image_1, labels_1 = bg_model_1.outputs[:2]
+        image_2, labels_2 = bg_model_2.outputs[:2]
+
+        # build brain generation input model
+        inputs = bg_model_1.inputs + bg_model2.inputs
+        unet_input_model = Model(inputs=inputs, outputs=concatenate([image_1, image_2]))
+
+        # attach dense voxelmorph network and extract flow field layer
+        dense_model = VxmDense(
+            inshape,
+            nb_unet_features=nb_unet_features,
+            int_steps=int_steps,
+            input_model=unet_input_model,
+            **kwargs
+        )
+        flow = dense_model.references.pos_flow
+
+        # one-hot encoding
+        one_hot_func = lambda x: tf.one_hot(x[..., 0], len(hot_labels), dtype='float32')
+        one_hot_1 = KL.Lambda(one_hot_func)(labels_1)
+        one_hot_2 = KL.Lambda(one_hot_func)(labels_2)
+
+        # transformation
+        pred = layers.SpatialTransformer(interp_method='linear', name='transformer')([one_hot_1, flow])
+        concat = KL.Concatenate(axis=-1, name='concat')([one_hot_2, pred])
+
+        # initialize the keras model
+        super().__init__(name='vxm_synth', inputs=inputs, outputs=[concat, flow])
 
 
 class Transform(Model):
