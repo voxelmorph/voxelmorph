@@ -680,17 +680,17 @@ class VxmAffineSegSemiSupervised(LoadableModel):
 
         # configure warped seg output layer
         if seg_downsize > 1:  # this fails, not sure why (BRF)
-            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[-1])
+            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affine)
             y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
         else:
-            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[-1]])
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affine])
 
         # initialize the keras model
         inputs = vxm_model.inputs + [seg_src]
         outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
         self.references = LoadableModel.ReferenceContainer()
-        self.references.affines = vxm_model.references.affines
+        self.references.affine = vxm_model.references.affine
         self.references.affine_model = vxm_model
 
     def get_predictor_model(self):
@@ -797,7 +797,7 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
 
         # vm model
         affine_model = VxmAffine(inshape, enc_nf, **kwargs)
-        affine_tensor = affine_model.references.affines[-1]
+        affine_tensor = affine_model.references.affine
         dense_tensor = layers.AffineToDense(inshape)(affine_tensor)
         dense = tf.keras.models.Model(affine_model.inputs, dense_tensor)
         inverse_affine = layers.InvertAffine()(affine_tensor)
@@ -833,7 +833,7 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
         self.references = LoadableModel.ReferenceContainer()
         self.references.affine_model = affine_model
-        self.references.affines = affine_model.references.affines
+        self.references.affine = affine_model.references.affine
         self.references.pos_flow = pos_flow
         self.references.neg_flow = neg_flow
 
