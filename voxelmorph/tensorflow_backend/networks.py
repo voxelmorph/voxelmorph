@@ -669,7 +669,6 @@ class VxmAffineSegSemiSupervised(LoadableModel):
             seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
            for remaining parameters see VxmAffine
         """
-        assert len(blurs) == 1, 'not properly implemented with more than 1 blur'
 
         # configure base voxelmorph network
         vxm_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=bidir, blurs=blurs)
