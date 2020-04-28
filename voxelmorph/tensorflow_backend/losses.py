@@ -42,7 +42,8 @@ class NCC:
         IJ = I * J
 
         # compute filters
-        sum_filt = tf.ones([*self.win, 1, 1])
+        in_ch = J.get_shape().as_list()[-1]
+        sum_filt = tf.ones([*self.win, in_ch, 1])
         strides = 1
         if ndims > 1:
             strides = [1] * (ndims + 2)
@@ -56,7 +57,7 @@ class NCC:
         IJ_sum = conv_fn(IJ, sum_filt, strides, padding)
 
         # compute cross correlation
-        win_size = np.prod(self.win)
+        win_size = np.prod(self.win) * in_ch
         u_I = I_sum / win_size
         u_J = J_sum / win_size
 
@@ -70,7 +71,7 @@ class NCC:
         return tf.reduce_mean(cc)
 
     def loss(self, y_true, y_pred):
-        return 1.0 - self.ncc(y_true, y_pred)
+        return - self.ncc(y_true, y_pred)
 
 
 class MSE:

@@ -3,6 +3,7 @@ import sys
 import numpy as np
 
 from . import utils
+from .tensorflow_backend.external.SynthSeg.SynthSeg import model_input_generator as sg
 
 
 def volgen(vol_names, batch_size=1, return_segs=False,
@@ -378,3 +379,30 @@ def surf_semisupervised(
             outputs = [atlas_ret, X_ret, zero_flow, zero_surface_values]
 
         yield (inputs, outputs)
+
+
+def synth_seg(files, all_labels, warp_shape, bias_shape, batch_size=1,
+    same_subj=False, vel_std=6):
+    """
+    Generator for sythesizing images and label maps from segmentations.
+
+    Parameters:
+        files: List of segmentations or paths.
+        all_labels: List of unique labels included.
+        warp_shape: Shape of warps to sample internally.
+        bias_shape: Shape of bias field to sample internally.
+        batch_size: Batch size. Default is 1.
+        same_subj: Whether to generate source and target from the same segmentation. Default is False.
+        vel_std: Maximum sampling SD for velocity fields. Default is 6.
+    """
+    gen = sg.build_model_input_generator(
+        files, all_labels, warp_shape, bias_shape,
+        nonlin_std_dev=vel_std, batch_size=2*batch_size, same_subj=same_subj)
+    split = lambda x: (x[:batch_size,...], x[batch_size:,...])
+    zeros = None
+    while True:
+        inputs = [split(i) for i in next(gen)]
+        in1, in2 = map(lambda i: [x[i] for x in inputs], range(2))
+        if zeros is None:
+            zeros = np.zeros(in1[0].shape)
+        yield (*in1, *in2), (zeros, zeros)
