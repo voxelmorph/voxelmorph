@@ -203,7 +203,13 @@ class VxmAffine(LoadableModel):
         affine registration matrix to an image.
         """
         source = Input(shape=(*inshape, 1))
-        affine = Input(shape=[12])
+        if len(inshape) == 3:
+            affine = Input(shape=[12])
+        elif len(inshape) == 2:
+            affine = Input(shape=[6])
+        else:
+            assert 0, 'VxmAffine: get_affine_transformer onl support for 2D and 3D, not %d' % len(inshape)
+
         aligned = layers.SpatialTransformer()([source, affine])
         return Model([source, affine], aligned)
 
@@ -622,10 +628,10 @@ class VxmAffineSegSemiSupervised(LoadableModel):
 
         # configure warped seg output layer
         if seg_downsize > 1:  # this fails, not sure why (BRF)
-            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[0])
+            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[-1])
             y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
         else:
-            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[0]])
+            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[-1]])
 
 
         # initialize the keras model
@@ -635,6 +641,9 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         self.references = LoadableModel.ReferenceContainer()
         self.references.affines = vxm_model.references.affines
         self.references.affine_model = vxm_model
+
+    def get_affine_transformer(self, inshape):
+        return self.references.affine_model.get_affine_transformer(inshape)
 
     def get_predictor_model(self):
         """
@@ -740,7 +749,7 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
 
         # vm model
         affine_model = VxmAffine(inshape, enc_nf, **kwargs)
-        affine_tensor = affine_model.references.affines[0]
+        affine_tensor = affine_model.references.affines[-1]
         dense_tensor = layers.AffineToDense(inshape)(affine_tensor)
         dense = tf.keras.models.Model(affine_model.inputs, dense_tensor)
         inverse_affine = layers.InvertAffine()(affine_tensor)
@@ -780,6 +789,11 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
         self.references.pos_flow = pos_flow
         self.references.neg_flow = neg_flow
 
+    def get_affine_transformer(self, inshape):
+        return self.references.affine_model.get_affine_transformer(inshape)
+
+    def get_predictor_model(self):
+        return self.references.affine_model.get_predictor_model()
 
 class Transform(Model):
     """
