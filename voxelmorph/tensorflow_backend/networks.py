@@ -716,7 +716,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        self.references.affine_model.get_predictor_model()
+        return self.references.affine_model.get_predictor_model()
 
 
 class VxmDenseSurfaceSemiSupervised(LoadableModel):
