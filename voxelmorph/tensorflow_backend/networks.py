@@ -1,9 +1,7 @@
 import numpy as np
-import neuron as ne
 import tensorflow as tf
-
 from tensorflow import keras
-import tensorflow
+import tensorflow  # is this needed?
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 from tensorflow.keras.models import Model, Sequential
@@ -11,10 +9,12 @@ from tensorflow.keras.layers import Layer, Conv3D, Activation, Input, UpSampling
 from tensorflow.keras.layers import concatenate, LeakyReLU, Reshape, Lambda
 from tensorflow.keras.initializers import RandomNormal, Constant
 
+import neuron as ne
+import SynthSeg.labels_to_image_model as ss
+
 from .. import utils
 from . import layers
 from .model_io import LoadableModel, store_config_args
-import SynthSeg.labels_to_image_model as ss
 
 
 class VxmDense(LoadableModel):
@@ -177,6 +177,7 @@ class VxmAffine(LoadableModel):
 
         # invert affine for bidirectional training
         if bidir:
+            assert len(blurs) == 1, 'inverse not properly implemented with more than 1 blur'
             inv_affine = layers.InvertAffine()(affine)
             y_target = layers.SpatialTransformer()([target_blur, inv_affine])
             outputs = [y_source, y_target]
@@ -677,6 +678,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
             seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
            for remaining parameters see VxmAffine
         """
+        assert len(blurs) == 1, 'not properly implemented with more than 1 blur'
 
         # configure base voxelmorph network
         vxm_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=bidir, blurs=blurs)
