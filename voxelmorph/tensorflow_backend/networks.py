@@ -205,6 +205,8 @@ class VxmAffine(LoadableModel):
         affine registration matrix to an image.
         """
         source = Input(shape=(*inshape, 1))
+
+        # TODO: change to ndims * (ndims + 1)
         if len(inshape) == 3:
             affine = Input(shape=[12])
         elif len(inshape) == 2:
