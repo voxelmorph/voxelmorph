@@ -622,7 +622,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
 
         # configure warped seg output layer
         if seg_downsize > 1:  # this fails, not sure why (BRF)
-            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[0])
+            seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[-1])
             y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
         else:
             y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affines[0]])
