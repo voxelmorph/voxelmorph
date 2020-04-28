@@ -369,7 +369,7 @@ class AffineTransformationsToMatrix(Layer):
             if self.scale == True:
                 scale = vector[3]
             else:
-                scale = 1
+                scale = 1.0
 
             m_scale = tf.convert_to_tensor([
                 [scale, 0],
