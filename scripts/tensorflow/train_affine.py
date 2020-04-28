@@ -70,12 +70,14 @@ model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow gpu handling
-device = '/gpu:' + args.gpu
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.allow_soft_placement = True
-tf.keras.backend.set_session(tf.Session(config=config))
+# device = '/gpu:' + args.gpu
+# os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+# config = tf.ConfigProto()
+# config.gpu_options.allow_growth = True
+# config.allow_soft_placement = True
+# tf.keras.backend.set_session(tf.Session(config=config))
+device = '/cpu:0'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 # ensure valid batch size given gpu count
 nb_gpus = len(args.gpu.split(','))
@@ -87,14 +89,17 @@ enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
+# transform type
+transform_type = 'rigid' if args.rigid else 'affine'
+
 with tf.device(device):
 
     # build the model
     model = vxm.networks.VxmAffine(
         inshape,
         enc_nf=enc_nf,
+        transform_type=transform_type,
         bidir=args.bidir,
-        rigid=args.rigid,
         blurs=args.blurs
     )
 
@@ -110,7 +115,7 @@ with tf.device(device):
         save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
     # configure loss
-    image_loss_func = vxm.losses.NCC(blur_level=args.blurs[-1]).loss
+    image_loss_func = vxm.losses.NCC().loss
 
     # need two image loss functions if bidirectional
     if args.bidir:
