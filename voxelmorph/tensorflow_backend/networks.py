@@ -678,11 +678,12 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         seg_src = Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
+        seg_transformer_layer = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')
         if seg_downsize > 1:  # this fails, not sure why (BRF)
             seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affine)
-            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+            y_seg = seg_transformer_layer([seg_src, seg_flow])
         else:
-            y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, vxm_model.references.affine])
+            y_seg = seg_transformer_layer([seg_src, vxm_model.references.affine])
 
         # initialize the keras model
         inputs = vxm_model.inputs + [seg_src]
