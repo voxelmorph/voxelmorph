@@ -860,7 +860,7 @@ class Transform(Model):
         scan_input = Input((*inshape, nb_feats), name='scan_input')
 
         if affine:
-            trf_input = Input((12), name='trf_input')
+            trf_input = Input((ndims * (ndims + 1)), name='trf_input')
         else:
             trf_input = Input((*inshape, ndims), name='trf_input')
 
