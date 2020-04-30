@@ -1,13 +1,9 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
-import tensorflow  # is this needed?
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
-from tensorflow.keras.models import Model, Sequential
-from tensorflow.keras.layers import Layer, Conv3D, Activation, Input, UpSampling3D
-from tensorflow.keras.layers import concatenate, LeakyReLU, Reshape, Lambda
-from tensorflow.keras.initializers import RandomNormal, Constant
+import tensorflow.keras.models as KM
+import tensorflow.keras.initializers as KI
 
 import neuron as ne
 import SynthSeg.labels_to_image_model as ss
@@ -50,16 +46,16 @@ class VxmDense(LoadableModel):
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
         flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                    kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
+                    kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
 
         # optionally include probabilities
         if use_probs:
             # initialize the velocity variance very low, to start stable
             flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
-                            kernel_initializer=RandomNormal(mean=0.0, stddev=1e-10),
-                            bias_initializer=Constant(value=-10),
+                            kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-10),
+                            bias_initializer=KI.Constant(value=-10),
                             name='log_sigma')(unet_model.output)
-            flow_params = concatenate([flow_mean, flow_logsigma])
+            flow_params = KL.concatenate([flow_mean, flow_logsigma])
             flow = ne.layers.SampleNormalLogVar(name="z_sample")([flow_mean, flow_logsigma])
         else:
             flow_params = flow_mean
@@ -108,7 +104,7 @@ class VxmDense(LoadableModel):
         Extracts a predictor model from the VxmDense that directly outputs the warped image and 
         final diffeomorphic warp field (instead of the non-integrated flow field used for training).
         """
-        return tensorflow.keras.Model(self.inputs, [self.references.y_source, self.references.pos_flow])
+        return KM.Model(self.inputs, [self.references.y_source, self.references.pos_flow])
 
 
 class VxmAffine(LoadableModel):
@@ -133,14 +129,14 @@ class VxmAffine(LoadableModel):
 
         # configure base encoder CNN
         Conv = getattr(KL, 'Conv%dD' % ndims)   
-        basenet = Sequential(name='core_model')
+        basenet = KM.Sequential(name='core_model')
         for nf in enc_nf:
             basenet.add(Conv(nf, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=2))
-            basenet.add(LeakyReLU(0.2))
+            basenet.add(KL.LeakyReLU(0.2))
         
         # dense layer to affine matrix
         basenet.add(KL.Flatten())
-        dense_init = RandomNormal(mean=0.0, stddev=1e-5)
+        dense_init = KI.RandomNormal(mean=0.0, stddev=1e-5)
         if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
             basenet.add(KL.Dense(ndims * 2, name='dense', kernel_initializer=dense_init))
@@ -152,8 +148,8 @@ class VxmAffine(LoadableModel):
             basenet.add(KL.Dense(ndims * (ndims + 1), name='dense', kernel_initializer=dense_init))
 
         # inputs
-        source = Input(shape=[*inshape, 1])
-        target = Input(shape=[*inshape, 1])
+        source = KL.Input(shape=[*inshape, 1])
+        target = KL.Input(shape=[*inshape, 1])
 
         scale_affines = []
         full_affine = None
@@ -166,7 +162,7 @@ class VxmAffine(LoadableModel):
             target_blur = gaussian_blur(target, blur, ndims)
 
             # per-scale affine encoder
-            curr_affine = basenet(concatenate([source_blur, target_blur]))
+            curr_affine = basenet(KL.concatenate([source_blur, target_blur]))
             scale_affines.append(curr_affine)
 
             # compose affine at this scale
@@ -197,7 +193,7 @@ class VxmAffine(LoadableModel):
         Extracts a predictor model from the VxmAffine that directly outputs the
         computed affine instead of the transformed source image.
         """
-        return tensorflow.keras.Model(self.inputs, self.references.affine)
+        return KM.Model(self.inputs, self.references.affine)
 
 
 class VxmAffineDense(LoadableModel):
@@ -285,7 +281,7 @@ class VxmSynthetic(LoadableModel):
         # transform unet output into a velocity field
         Conv = getattr(KL, 'Conv%dD' % ndims)
         flow = Conv(ndims, kernel_size=3, padding='same',
-            kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
+            kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
@@ -320,9 +316,9 @@ class InstanceTrainer(LoadableModel):
 
     @store_config_args
     def __init__(self, inshape, warp):
-        source = tensorflow.keras.layers.Input(shape=inshape)
-        target = tensorflow.keras.layers.Input(shape=inshape)
-        nullwarp = tensorflow.keras.layers.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
+        source = KL.Input(shape=inshape)
+        target = KL.Input(shape=inshape)
+        nullwarp = KL.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
         flow_layer = vxm.layers.LocalParamWithInput(shape=warp.shape[1:])
         flow = flow_layer(nullwarp)
         y = vxm.layers.SpatialTransformer()([source, flow])
@@ -383,7 +379,7 @@ class ProbAtlasSegmentation(LoadableModel):
         # compute stat using the warped atlas (or not)
         if stat_post_warp:
             assert warp_atlas, 'must enable warp_atlas if computing stat post warp'
-            combined = concatenate([warped_atlas, image])
+            combined = KL.concatenate([warped_atlas, image])
         else:
             # use last convolution in the unet before the flow convolution
             combined = vxm_model.references.unet_model.layers[-2].output
@@ -393,25 +389,25 @@ class ProbAtlasSegmentation(LoadableModel):
         conv = conv_block(conv, nb_labels)
 
         Conv = getattr(KL, 'Conv%dD' % ndims)
-        weaknorm = RandomNormal(mean=0.0, stddev=1e-5)
+        weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
 
         # convolve into mu and sigma volumes
         stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
         stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
         
         # pool to get 'final' stat
-        stat_mu = tensorflow.keras.layers.GlobalMaxPooling3D()(stat_mu_vol)
-        stat_logssq = tensorflow.keras.layers.GlobalMaxPooling3D()(stat_logssq_vol)
+        stat_mu = KL.GlobalMaxPooling3D()(stat_mu_vol)
+        stat_logssq = KL.GlobalMaxPooling3D()(stat_logssq_vol)
 
         # combine mu with initialization
         if init_mu is not None: 
             init_mu = np.array(init_mu)
-            stat_mu = Lambda(lambda x: network_stat_weight * x + init_mu, name='comb_mu')(stat_mu)
+            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu, name='comb_mu')(stat_mu)
         
         # combine sigma with initialization
         if init_sigma is not None: 
             init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
-            stat_logssq = Lambda(lambda x: network_stat_weight * x + init_logsigmasq, name='comb_sigma')(stat_logssq)
+            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq, name='comb_sigma')(stat_logssq)
 
         # unnorm loglike
         def unnorm_loglike(I, mu, logsigmasq, use_log=True):
@@ -426,7 +422,7 @@ class ProbAtlasSegmentation(LoadableModel):
             logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
             return alpha + tf.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
-        loss_vol = Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
+        loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
 
         # initialize the keras model
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
@@ -449,7 +445,7 @@ class ProbAtlasSegmentation(LoadableModel):
             self.references.stat_logssq,
             self.outputs[-1]
         ]
-        return tensorflow.keras.Model(self.inputs, outputs)
+        return KM.Model(self.inputs, outputs)
 
 
 class TemplateCreation(LoadableModel):
@@ -473,8 +469,8 @@ class TemplateCreation(LoadableModel):
 
         # pre-warp (atlas) model
         atlas = layers.LocalParamWithInput(name='atlas', shape=[*inshape, 1], mult=1.0,
-                                   initializer=RandomNormal(mean=0.0, stddev=1e-7))(vxm_model.inputs[0])
-        prewarp_model = tensorflow.keras.Model(vxm_model.inputs[0], atlas)
+                                   initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))(vxm_model.inputs[0])
+        prewarp_model = KM.Model(vxm_model.inputs[0], atlas)
 
         # stack models
         stacked = ne.utils.stack_models([prewarp_model, vxm_model], [[0]])
@@ -546,7 +542,7 @@ class ConditionalTemplateCreation(LoadableModel):
 
         if not use_stack:
             outputs = vxm_model.outputs + [vxm_model.references.pos_flow, vxm_model.references.neg_flow]
-            vxm_model = Model(inputs=vxm_model.inputs, outputs=outputs)
+            vxm_model = KM.Model(inputs=vxm_model.inputs, outputs=outputs)
 
         if conv_image_shape is None:
             conv_image_shape = (*inshape, conv_nb_features)
@@ -555,7 +551,7 @@ class ConditionalTemplateCreation(LoadableModel):
         pheno_input = KL.Input(pheno_input_shape, name='pheno_input')
         pheno_dense = KL.Dense(np.prod(conv_image_shape), activation='elu')(pheno_input)
         pheno_reshaped = KL.Reshape(conv_image_shape)(pheno_dense)
-        pheno_init_model = tensorflow.keras.models.Model(pheno_input, pheno_reshaped)
+        pheno_init_model = KM.Model(pheno_input, pheno_reshaped)
 
         # build model to decode reshaped pheno
         pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
@@ -570,8 +566,8 @@ class ConditionalTemplateCreation(LoadableModel):
 
         # final convolution to get atlas features
         atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
-                         kernel_initializer=RandomNormal(mean=0.0, stddev=1e-7),
-                         bias_initializer=RandomNormal(mean=0.0, stddev=1e-7))(last)
+                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7),
+                         bias_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))(last)
 
         # atlas input layer
         atlas_input = KL.Input([*inshape, src_feats], name='atlas_input')
@@ -580,7 +576,8 @@ class ConditionalTemplateCreation(LoadableModel):
             atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
             # change first channel to be result from seg with another add layer
             tmp_layer = KL.Lambda(lambda x: K.softmax(x[..., 1:]))(atlas_tensor)
-            conv_layer = Conv(1, kernel_size=1, padding='same', use_bias=False, name='atlas_gen', kernel_initializer=RandomNormal(mean=0, stddev=1e-5))
+            conv_layer = Conv(1, kernel_size=1, padding='same', use_bias=False,
+            name='atlas_gen', kernel_initializer=KI.RandomNormal(mean=0, stddev=1e-5))
             x_img = conv_layer(tmp_layer)
             if templcondsi_init is not None:
                 weights = conv_layer.get_weights()
@@ -591,7 +588,7 @@ class ConditionalTemplateCreation(LoadableModel):
             atlas = KL.Add(name='atlas')([atlas_input, atlas_gen])
 
         # build complete pheno to atlas model
-        pheno_model = tensorflow.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas)
+        pheno_model = KM.Model([pheno_decoder_model.input, atlas_input], atlas)
 
         # stacked input list
         inputs = pheno_model.inputs + [vxm_model.inputs[1]]
@@ -675,7 +672,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
 
         # configure downsampled seg input layer
         inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
-        seg_src = Input(shape=(*inshape_downsized, nb_labels))
+        seg_src = KL.Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
         if seg_downsize > 1:  # this fails, not sure why (BRF)
@@ -735,23 +732,23 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
         dense = VxmDense(inshape, enc_nf, dec_nf, bidir=True, **kwargs)
 
         # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
-        atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
+        atl_surf_input = KL.Input(surface_points_shape, name='atl_surface_input')
 
         # warp atlas surface
         # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
-        warped_atl_surf_pts = Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, dense.references.pos_flow])
+        warped_atl_surf_pts = KL.Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, dense.references.pos_flow])
 
         # get value of dt_input *at* warped_atlas_surface
-        subj_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
-        subj_dt_value = Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+        subj_dt_input = KL.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
+        subj_dt_value = KL.Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
 
         if surf_bidir:
             # go the other way and warp subject to atlas
-            subj_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='subj_surface_input')
-            warped_subj_surf_pts = Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, dense.references.neg_flow])
+            subj_surf_input = KL.Input(surface_points_shape, name='subj_surface_input')
+            warped_subj_surf_pts = KL.Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, dense.references.neg_flow])
 
-            atl_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
-            atl_dt_value = Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+            atl_dt_input = KL.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
+            atl_dt_value = KL.Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
 
             inputs  = [*dense.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
             outputs = [*dense.outputs, subj_dt_value, atl_dt_value]
@@ -798,28 +795,28 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
         affine_model = VxmAffine(inshape, enc_nf, **kwargs)
         affine_tensor = affine_model.references.affine
         dense_tensor = layers.AffineToDense(inshape)(affine_tensor)
-        dense = tf.keras.models.Model(affine_model.inputs, dense_tensor)
+        dense = KM.Model(affine_model.inputs, dense_tensor)
         inverse_affine = layers.InvertAffine()(affine_tensor)
         pos_flow = dense_tensor
         neg_flow = layers.AffineToDense(inshape)(inverse_affine)
         # surface inputs and invert atlas_v for inverse transform to get final 'atlas surface'
-        atl_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='atl_surface_input')
+        atl_surf_input = KL.Input(surface_points_shape, name='atl_surface_input')
 
         # warp atlas surface
         # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
-        warped_atl_surf_pts = Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, pos_flow])
+        warped_atl_surf_pts = KL.Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, pos_flow])
 
         # get value of dt_input *at* warped_atlas_surface
-        subj_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
-        subj_dt_value = Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+        subj_dt_input = KL.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
+        subj_dt_value = KL.Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
 
         if surf_bidir:
             # go the other way and warp subject to atlas
-            subj_surf_input = tensorflow.keras.layers.Input(surface_points_shape, name='subj_surface_input')
-            warped_subj_surf_pts = Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
+            subj_surf_input = KL.Input(surface_points_shape, name='subj_surface_input')
+            warped_subj_surf_pts = KL.Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
 
-            atl_dt_input = tensorflow.keras.layers.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
-            atl_dt_value = Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+            atl_dt_input = KL.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
+            atl_dt_value = KL.Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
 
             inputs  = [*affine_model.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
             outputs = [*affine_model.outputs, subj_dt_value, atl_dt_value]
@@ -840,7 +837,7 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
         return self.references.affine_model.get_predictor_model()
 
 
-class Transform(Model):
+class Transform(KM.Model):
     """
     Simple transform model to apply dense or affine transforms.
     """
@@ -856,12 +853,12 @@ class Transform(Model):
 
         # configure inputs
         ndims = len(inshape)
-        scan_input = Input((*inshape, nb_feats), name='scan_input')
+        scan_input = KL.Input((*inshape, nb_feats), name='scan_input')
 
         if affine:
-            trf_input = Input((ndims * (ndims + 1)), name='trf_input')
+            trf_input = KL.Input((ndims * (ndims + 1)), name='trf_input')
         else:
-            trf_input = Input((*inshape, ndims), name='trf_input')
+            trf_input = KL.Input((*inshape, ndims), name='trf_input')
 
         # transform and initialize the keras model
         y_source = layers.SpatialTransformer(interp_method=interp_method)([scan_input, trf_input])
@@ -890,8 +887,8 @@ def transform(
     ndims = len(inshape)
 
     # nn warp model
-    scan_input = Input((*inshape, nb_feats), name='scan_input')
-    trf_input = Input((*[int(f*vel_resize) for f in inshape], ndims) , name='trf_input')
+    scan_input = KL.Input((*inshape, nb_feats), name='scan_input')
+    trf_input = KL.Input((*[int(f*vel_resize) for f in inshape], ndims) , name='trf_input')
 
     if int_steps > 0:
         trf = ne.layers.VecInt(method=int_method, name='trf-int', int_steps=int_steps, **kwargs)(trf_input)
@@ -901,7 +898,7 @@ def transform(
 
     nn_output = layers.SpatialTransformer(interp_method=interp_method, indexing=indexing)
     nn_spatial_output = nn_output([scan_input, trf])
-    return Model([scan_input, trf_input], nn_spatial_output)
+    return KM.Model([scan_input, trf_input], nn_spatial_output)
 
 
 def conv_block(x, nfeat, strides=1):
@@ -913,7 +910,7 @@ def conv_block(x, nfeat, strides=1):
     Conv = getattr(KL, 'Conv%dD' % ndims)
 
     convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides)(x)
-    return LeakyReLU(0.2)(convolved)
+    return KL.LeakyReLU(0.2)(convolved)
 
 
 def upsample_block(x, connection):
@@ -925,7 +922,7 @@ def upsample_block(x, connection):
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
 
     upsampled = UpSampling()(x)
-    return concatenate([upsampled, connection])
+    return KL.concatenate([upsampled, connection])
 
 
 def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
@@ -947,9 +944,9 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
 
     # configure inputs
     if src_layer is None:
-        src_layer = Input(shape=(*inshape, src_feats))
+        src_layer = KL.Input(shape=(*inshape, src_feats))
     if trg_layer is None:
-        trg_layer = Input(shape=(*inshape, trg_feats))
+        trg_layer = KL.Input(shape=(*inshape, trg_feats))
     concat = [src_layer, trg_layer]
     if inputs is None:
         inputs = concat.copy()
@@ -959,7 +956,7 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
         inputs += input_model.inputs
 
     # configure encoder (down-sampling path)
-    enc_layers = [concatenate(concat)]
+    enc_layers = [KL.concatenate(concat)]
     for nf in enc_nf:
         enc_layers.append(conv_block(enc_layers[-1], nf, strides=2))
 
@@ -973,7 +970,7 @@ def unet(inshape, enc_nf, dec_nf, src_feats=1, trg_feats=1, src_layer=None,
     for i, nf in enumerate(dec_nf[len(enc_nf):]):
         x = conv_block(x, nf, strides=1)
 
-    return Model(inputs=inputs, outputs=[x])
+    return KM.Model(inputs=inputs, outputs=[x])
 
 
 def gaussian_blur(tensor, level, ndims):
