@@ -44,11 +44,15 @@ class VxmDense(LoadableModel):
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
+        if source is None:
+            source = KL.Input(shape=(*inshape, src_feats))
+        if target is None:
+            target = KL.Input(shape=(*inshape, trg_feats))
+
         # build core unet model and grab inputs
         unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats,
             trg_feats=trg_feats, src_layer=source, trg_layer=target,
             inputs=inputs, input_model=input_model)
-        source, target = unet_model.inputs[:2]
 
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
