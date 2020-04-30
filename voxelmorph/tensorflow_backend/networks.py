@@ -74,25 +74,21 @@ class VxmDense(LoadableModel):
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
-        if bidir:
-            neg_flow = ne.layers.Negate()(flow)
+        neg_flow = ne.layers.Negate()(flow)
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
             pos_flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(pos_flow)
-            if bidir:
-                neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
+            neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
                 pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
-                if bidir:
-                    neg_flow = layers.RescaleTransform(int_downsize, name='neg_diffflow')(neg_flow)
+                neg_flow = layers.RescaleTransform(int_downsize, name='neg_diffflow')(neg_flow)
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
-        if bidir:
-            y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
+        y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
 
         # initialize the keras model
         outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]
