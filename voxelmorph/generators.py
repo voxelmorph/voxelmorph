@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 import numpy as np
 
 from . import utils
@@ -12,12 +13,14 @@ def volgen(vol_names, batch_size=1, return_segs=False,
            resize_factor=1,
            add_feat_axis=True):
     """
-    Base generator for random volume loading. Corresponding segmentations are additionally
-    loaded if return_segs is set to True. If loading segmentations, it's expected that
-    vol_names is a list of npz files with 'vol' and 'seg' arrays.
+    Base generator for random volume loading. Volumes can be passed as a path to
+    the parent directory, a glob pattern or a list of file paths. Corresponding
+    segmentations are additionally loaded if return_segs is set to True. If
+    loading segmentations, npz files with variable names 'vol' and 'seg' are
+    expected.
 
     Parameters:
-        vol_names: List of volume files to load.
+        vol_names: Path, glob pattern or list of volume files to load.
         batch_size: Batch size. Default is 1.
         return_segs: Loads corresponding segmentations. Default is False.
         np_var: Name of the volume variable if loading npz files. Default is 'vol'.
@@ -25,6 +28,11 @@ def volgen(vol_names, batch_size=1, return_segs=False,
         resize_factor: Volume resize factor. Default is 1.
         add_feat_axis: Load volume arrays with added feature axis. Default is True.
     """
+    if isinstance(vol_names, str):
+        if os.path.isdir(vol_names):
+            vol_names = os.path.join(vol_names, '*')
+        vol_names = glob.glob(vol_names)
+
     while True:
         # generate <batchsize> random image indices
         indices = np.random.randint(len(vol_names), size=batch_size)
