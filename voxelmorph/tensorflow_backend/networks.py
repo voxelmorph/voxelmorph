@@ -19,7 +19,9 @@ class VxmDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2, bidir=False, use_probs=False, src_feats=1, trg_feats=1, input_model=None):
+    def __init__(self, inshape, enc_nf, dec_nf, int_steps=7, int_downsize=2,
+        bidir=False, use_probs=False, src_feats=1, trg_feats=1, source=None,
+        target=None, inputs=None, input_model=None):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -32,6 +34,9 @@ class VxmDense(LoadableModel):
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
+            source: Source layer. Default is new input with src_feats features.
+            target: Target layer. Default is new input with trg_feats features.
+            inputs: Inputs to model. Default is concatenated source and target.
             input_model: Model to concat with unet input layer.
         """
 
@@ -40,7 +45,9 @@ class VxmDense(LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # build core unet model and grab inputs
-        unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats, trg_feats=trg_feats, input_model=input_model)
+        unet_model = unet(inshape, enc_nf, dec_nf, src_feats=src_feats,
+            trg_feats=trg_feats, src_layer=source, trg_layer=target,
+            inputs=inputs, input_model=input_model)
         source, target = unet_model.inputs[:2]
 
         # transform unet output into a flow field
