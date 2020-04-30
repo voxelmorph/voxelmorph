@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import numpy as np
 import scipy
 import csv
 import functools
@@ -16,9 +15,10 @@ def get_backend():
     return 'pytorch' if os.environ.get('VXM_BACKEND') == 'pytorch' else 'tensorflow'
 
 
-def load_volfile(filename, np_var='vol', add_batch_axis=False, add_feat_axis=False, pad_shape=None, resize_factor=1, ret_affine=False):
+def load_volfile(filename, np_var='vol', add_batch_axis=False,
+    add_feat_axis=False, pad_shape=None, resize_factor=1, ret_affine=False):
     """
-    Loads a file in nii, nii.gz, mgz, or npz format.
+    Loads a file in nii, nii.gz, mgz, npz or npy format.
 
     Parameters:
         filename: Filename to load.
@@ -38,6 +38,9 @@ def load_volfile(filename, np_var='vol', add_batch_axis=False, add_feat_axis=Fal
     elif filename.endswith('.npz'):
         npz = np.load(filename)
         vol = next(iter(npz.values())) if len(npz.keys()) == 1 else npz[np_var]
+        affine = None
+    elif filename.endswith('.npy'):
+        vol = np.load(filename)
         affine = None
     else:
         raise ValueError('unknown filetype for %s' % filename)
