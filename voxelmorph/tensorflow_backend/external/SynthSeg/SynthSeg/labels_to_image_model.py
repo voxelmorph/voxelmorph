@@ -153,10 +153,10 @@ def labels_to_image_model(labels_shape,
             zoom = [o / d / int_at for o, d in zip(output_shape, def_field_size)] 
             vel_field = nonlin_field_in
             #vel_field = nrn_layers.RescaleValues(1 / int_at)(vel_field)
-            vel_field = nrn_layers.Resize(zoom, interp_method='linear')(vel_field)
+            vel_field = nrn_layers.Resize(zoom, interp_method='linear', name=f'resize_vel_{id}')(vel_field)
             def_field = nrn_layers.VecInt(int_steps=5)(vel_field)
             #def_field = nrn_layers.RescaleValues(int_at)(def_field)
-            def_field = nrn_layers.Resize(int_at, interp_method='linear')(def_field)
+            def_field = nrn_layers.Resize(int_at, interp_method='linear', name=f'resize_def_{id}')(def_field)
             trans_inputs.append(def_field)
 
             #if 0:

@@ -268,11 +268,8 @@ class VxmSynthetic(LoadableModel):
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
         """
-        # ensure correct dimensionality
-        ndims = len(inshape)
-        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
-        # brain generation
+        # Brain generation.
         arg = [inshape, inshape, all_labels, hot_labels]
         key = {'apply_affine_trans':False, 'apply_nonlin_trans':True,
             'nonlin_shape_factor':0.0625, 'bias_shape_factor':0.025}
@@ -281,23 +278,12 @@ class VxmSynthetic(LoadableModel):
         image1, labels1, *_ = bg_model1.outputs
         image2, labels2, *_ = bg_model2.outputs
 
-        # build core unet model and grab inputs
-        inputs = [*bg_model1.inputs, *bg_model2.inputs] # Dummy.
-        unet_model = unet(inshape, enc_nf, dec_nf, src_layer=image1, trg_layer=image2, inputs=inputs)
-
-        # transform unet output into a velocity field
-        Conv = getattr(KL, 'Conv%dD' % ndims)
-        flow = Conv(ndims, kernel_size=3, padding='same',
-            kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
-
-        # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
-        if int_steps > 0:
-            if int_downsize > 1:
-                flow = layers.RescaleTransform(1 / int_downsize, name='downsize')(flow)
-            flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(flow)
-            # resize to final resolution
-            if int_downsize > 1:
-                flow = layers.RescaleTransform(int_downsize, name='upsize')(flow)
+        # Warp prediction.
+        inputs = [*bg_model1.inputs, *bg_model2.inputs]
+        dense_model = VxmDense(inshape, enc_nf, dec_nf, source=image1,
+            target=image2, inputs=inputs, int_steps=int_steps,
+            int_downsize=int_downsize)
+        flow = dense_model.get_layer('diffflow').output
 
         # One-hot encoding.
         f = lambda x: tf.one_hot(x[..., 0], len(hot_labels), dtype='float32')
@@ -305,15 +291,15 @@ class VxmSynthetic(LoadableModel):
         one_hot2 = KL.Lambda(f)(labels2)
 
         # Transformation.
-        pred = layers.SpatialTransformer(interp_method='linear', name='transformer')([one_hot1, flow])
+        pred = layers.SpatialTransformer(interp_method='linear', name='pred')([one_hot1, flow])
         concat = KL.Concatenate(axis=-1, name='concat')([one_hot2, pred])
 
-        # initialize the keras model
-        super().__init__(name='vxm_synth', inputs=inputs, outputs=[concat, flow])
-
-        # cache pointers to layers and tensors for future reference
+        # Model initialization.
+        super().__init__(inputs=inputs, outputs=[concat, flow])
         self.references = LoadableModel.ReferenceContainer()
-        self.references.unet_model = unet_model
+        self.references.bg_model1 = bg_model1
+        self.references.bg_model2 = bg_model2
+        self.references.dense_model = dense_model
 
 
 class InstanceTrainer(LoadableModel):
