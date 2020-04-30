@@ -117,7 +117,7 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1]):
+    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1], rescale_affine=1.0):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -125,6 +125,8 @@ class VxmAffine(LoadableModel):
             bidir: Enable bidirectional cost function. Default is False.
             transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
+            rescale_affine: a scalar (or ndims*(ndims+1)) array) to rescale the output of the dense layer
+                this improves stability by enabling different gradient flow to affect the affine parameters
         """
 
         # ensure correct dimensionality
@@ -166,7 +168,8 @@ class VxmAffine(LoadableModel):
             target_blur = gaussian_blur(target, blur, ndims)
 
             # per-scale affine encoder
-            curr_affine = basenet(concatenate([source_blur, target_blur]))
+            curr_affine_scaled = basenet(concatenate([source_blur, target_blur]))
+            curr_affine = ne.layers.RescaleValues(rescale_affine)(curr_affine_scaled)
             scale_affines.append(curr_affine)
 
             # compose affine at this scale
@@ -657,7 +660,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, nb_labels, int_downsize=2, seg_downsize=2, transform_type='affine', blurs=[1], bidir=False):
+    def __init__(self, inshape, enc_nf, nb_labels, int_downsize=2, seg_downsize=2, **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -667,11 +670,11 @@ class VxmAffineSegSemiSupervised(LoadableModel):
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
             seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
-           for remaining parameters see VxmAffine
+           for remaining parameters (in kwargs) see VxmAffine
         """
 
         # configure base voxelmorph network
-        vxm_model = VxmAffine(inshape, enc_nf, transform_type=transform_type, bidir=bidir, blurs=blurs)
+        vxm_model = VxmAffine(inshape, enc_nf, **kwargs)
 
         # configure downsampled seg input layer
         inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
