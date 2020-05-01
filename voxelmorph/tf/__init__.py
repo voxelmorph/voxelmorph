@@ -15,6 +15,7 @@ paths = [os.path.join(basedir, package) for package in subdirs]
 sys.path = paths + sys.path
 
 import neuron
+import SynthSeg
 
 from . import layers
 from . import networks

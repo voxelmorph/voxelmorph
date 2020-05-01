@@ -52,20 +52,20 @@ class VxmDense(LoadableModel):
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
-            input_model: Model to replace default input layer. Default is None.
+            input_model: Model to replace default input layer before concatenation. Default is None.
         """
 
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
-
         if input_model is None:
             # configure default input layers if an input model is not provided
             source = tf.keras.Input(shape=(*inshape, src_feats), name='source_input')
             target = tf.keras.Input(shape=(*inshape, trg_feats), name='target_input')
-            inputs = [source, target]
-            input_model = tf.keras.Model(inputs=inputs, outputs=[tf.keras.layers.concatenate(inputs, name='input_concat')])
+            input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
+        else:
+            source, target = input_model.outputs[:2]
 
         # build core unet model and grab inputs
         unet_model = Unet(
@@ -75,7 +75,6 @@ class VxmDense(LoadableModel):
             feat_mult=unet_feat_mult,
             nb_conv_per_level=nb_unet_conv_per_level
         )
-        source, target = unet_model.inputs[:2]  # TODO don't think this is necessary
 
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
@@ -97,7 +96,7 @@ class VxmDense(LoadableModel):
 
         # optionally resize for integration
         if int_steps > 0 and int_downsize > 1:
-            flow = layers.RescaleTransform(1 / int_downsize, name='resize')(flow)
+            flow = layers.RescaleTransform(1 / int_downsize, name='flow_resize')(flow)
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
@@ -106,9 +105,9 @@ class VxmDense(LoadableModel):
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
-            pos_flow = ne.layers.VecInt(method='ss', name='flow-int', int_steps=int_steps)(pos_flow)
+            pos_flow = ne.layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
             if bidir:
-                neg_flow = ne.layers.VecInt(method='ss', name='neg_flow-int', int_steps=int_steps)(neg_flow)
+                neg_flow = ne.layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
@@ -177,7 +176,7 @@ class VxmAffine(LoadableModel):
             basenet.add(layers.AffineTransformationsToMatrix(ndims))
         elif transform_type == 'rigid+scale':
             basenet.add(KL.Dense(ndims * 2+1, name='dense'))
-            basenet.add(layers.AffineTransformationsToMatrix(ndims,scale=True))
+            basenet.add(layers.AffineTransformationsToMatrix(ndims, scale=True))
         else:
             basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
 
@@ -436,43 +435,45 @@ class TemplateCreation(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, **kwargs):
+    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             mean_cap: Cap for mean stream. Default is 100.
+            atlas_feats: Number of atlas/template features. Default is 1.
+            src_feats: Number of source image features. Default is 1.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
-        # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
+        # configure inputs
+        atlas_input = tf.keras.Input(shape=[*inshape, atlas_feats], name='atlas_input')
+        source_input = tf.keras.Input(shape=[*inshape, src_feats], name='source_input')
 
         # pre-warp (atlas) model
-        atlas = layers.LocalParamWithInput(name='atlas', shape=[*inshape, 1], mult=1.0,
-                                   initializer=RandomNormal(mean=0.0, stddev=1e-7))(vxm_model.inputs[0])
-        prewarp_model = tensorflow.keras.Model(vxm_model.inputs[0], atlas)
+        atlas_layer = layers.LocalParamWithInput(name='atlas', shape=(*inshape, 1), mult=1.0, initializer=RandomNormal(mean=0.0, stddev=1e-7))
+        atlas_tensor = atlas_layer(atlas_input)
+        warp_input_model = tf.keras.Model([atlas_input, source_input], outputs=[atlas_tensor, source_input])
 
-        # stack models
-        stacked = ne.utils.stack_models([prewarp_model, vxm_model], [[0]])
+        # warp model
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
 
         # extract tensors from stacked model
-        y_source = stacked.get_layer('transformer').get_output_at(-1)
-        y_target = stacked.get_layer('neg_transformer').get_output_at(-1)
-        pos_flow = stacked.get_layer('transformer').get_input_at(-1)[1]
-        neg_flow = stacked.get_layer('neg_transformer').get_input_at(-1)[1]
+        y_source = vxm_model.references.y_source
+        y_target = vxm_model.references.y_target
+        pos_flow = vxm_model.references.pos_flow
+        neg_flow = vxm_model.references.neg_flow
 
         # get mean stream of negative flow
         mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
 
         # initialize the keras model
-        outputs = [y_source, y_target, mean_stream, pos_flow]
-        super().__init__(inputs=vxm_model.inputs, outputs=outputs)
+        super().__init__(inputs=[atlas_input, source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
 
         # cache pointers to important layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
-        self.references.atlas_layer = stacked.get_layer('atlas')
-        self.references.atlas_tensor = self.references.atlas_layer.get_output_at(-1)
+        self.references.atlas_layer = atlas_layer
+        self.references.atlas_tensor = atlas_tensor
 
 
 class ConditionalTemplateCreation(LoadableModel):
@@ -488,12 +489,11 @@ class ConditionalTemplateCreation(LoadableModel):
         src_feats=1,
         conv_image_shape=None,
         conv_size=3,
-        conv_nb_levels=5,
+        conv_nb_levels=0,
         conv_nb_features=32,
-        extra_conv_layers=0,
+        extra_conv_layers=3,
         use_mean_stream=True,
         mean_cap=100,
-        use_stack=True,
         templcondsi=False,
         templcondsi_init=None,
         **kwargs):
@@ -505,23 +505,15 @@ class ConditionalTemplateCreation(LoadableModel):
             src_feats: Number of source (atlas) features. Default is 1.
             conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
-            conv_nb_levels: Number of levels in atlas generator unet. Default is 5.
+            conv_nb_levels: Number of levels in atlas generator unet. Default is 0.
             conv_nb_features: Number of features in atlas generator convolutions. Default is 32.
-            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 0.
+            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
             use_mean_stream: Return mean stream layer for training. Default is True.
             mean_cap: Cap for mean stream. Default is 100.
-            use_stack: Stack models instead of combining manually. Default is True.
             templcondsi: Default is False.
             templcondsi_init: Default is None.
             kwargs: Forwarded to the internal VxmDense model.
         """
-
-        # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, src_feats=src_feats, **kwargs)
-
-        if not use_stack:
-            outputs = vxm_model.outputs + [vxm_model.references.pos_flow, vxm_model.references.neg_flow]
-            vxm_model = Model(inputs=vxm_model.inputs, outputs=outputs)
 
         if conv_image_shape is None:
             conv_image_shape = (*inshape, conv_nb_features)
@@ -548,8 +540,9 @@ class ConditionalTemplateCreation(LoadableModel):
                          kernel_initializer=RandomNormal(mean=0.0, stddev=1e-7),
                          bias_initializer=RandomNormal(mean=0.0, stddev=1e-7))(last)
 
-        # atlas input layer
-        atlas_input = KL.Input([*inshape, src_feats], name='atlas_input')
+        # image input layers
+        atlas_input = tf.keras.Input((*inshape, src_feats), name='atlas_input')
+        source_input = tf.keras.Input((*inshape, src_feats), name='source_input')
 
         if templcondsi:
             atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
@@ -563,21 +556,21 @@ class ConditionalTemplateCreation(LoadableModel):
                 conv_layer.set_weights(weights)
             atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][...,1:]]), name='atlas')([x_img, atlas_tensor])
         else:
-            atlas = KL.Add(name='atlas')([atlas_input, atlas_gen])
+            atlas_tensor = KL.Add(name='atlas')([atlas_input, atlas_gen])
 
         # build complete pheno to atlas model
-        pheno_model = tensorflow.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas)
+        pheno_model = tensorflow.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas_tensor)
 
-        # stacked input list
-        inputs = pheno_model.inputs + [vxm_model.inputs[1]]
+        inputs = [pheno_decoder_model.input, atlas_input, source_input]
+        warp_input_model = tf.keras.Model(inputs=inputs, outputs=[atlas_tensor, source_input])
 
-        if use_stack:
-            stacked = ne.utils.stack_models([pheno_model, vxm_model], [[0]])
-            y_source = stacked.get_layer('transformer').get_output_at(-1)
-            pos_flow = stacked.get_layer('transformer').get_input_at(-1)[1]
-            neg_flow = stacked.get_layer('neg_transformer').get_input_at(-1)[1]
-        else:
-            y_source, _, _, pos_flow, neg_flow = vxm_model(pheno_model.outputs + [vxm_model.inputs[1]])
+        # warp model
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
+
+        # extract tensors from stacked model
+        y_source = vxm_model.references.y_source
+        pos_flow = vxm_model.references.pos_flow
+        neg_flow = vxm_model.references.neg_flow
 
         if use_mean_stream:
             # get mean stream from negative flow
@@ -651,7 +644,8 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         seg_src = Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
-        if seg_downsize > 1:  # this fails, not sure why (BRF)
+        if seg_downsize > 1:
+            # TODO: fix this - affines can't be rescaled
             seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.affines[0])
             y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
         else:
@@ -661,9 +655,9 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         inputs = vxm_model.inputs + [seg_src]
         outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
-        self.references = LoadableModel.ReferenceContainer()
 
         # cache pointers to important layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
         self.references.affines = vxm_model.references.affines
         self.references.affine_model = vxm_model
 
@@ -842,8 +836,8 @@ class VxmSynthetic(LoadableModel):
         image_2, labels_2 = bg_model_2.outputs[:2]
 
         # build brain generation input model
-        inputs = bg_model_1.inputs + bg_model2.inputs
-        unet_input_model = Model(inputs=inputs, outputs=concatenate([image_1, image_2]))
+        inputs = bg_model_1.inputs + bg_model_2.inputs
+        unet_input_model = Model(inputs=inputs, outputs=[image_1, image_2])
 
         # attach dense voxelmorph network and extract flow field layer
         dense_model = VxmDense(
@@ -938,7 +932,7 @@ class Unet(Model):
     def __init__(self, input_model, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1):
         """
         Parameters:
-            input_model: Input model that feeds directly into the unet.
+            input_model: Input model that feeds directly into the unet before concatenation.
             nb_features: Unet convolutional features. Can be specified via a list of lists with
                 the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
                 the unet features are defined by the default config described in the class documentation.
@@ -972,8 +966,8 @@ class Unet(Model):
         nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
         # configure encoder (down-sampling path)
-        enc_layers = [input_model.output]
-        last = input_model.output
+        enc_layers = [tf.keras.layers.concatenate(input_model.outputs, name='unet_input_concat')]
+        last = enc_layers[0]
         for level in range(nb_levels - 1):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]

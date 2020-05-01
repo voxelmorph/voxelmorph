@@ -102,8 +102,8 @@ with tf.device(device):
     model = vxm.networks.TemplateCreation(
         atlas_shape,
         nb_unet_features=[enc_nf, dec_nf],
-        src_feats=nfeats,
-        trg_feats=nfeats
+        atlas_feats=nfeats,
+        src_feats=nfeats
     )
 
     # set initial atlas weights
