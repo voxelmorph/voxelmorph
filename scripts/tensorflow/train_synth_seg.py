@@ -85,7 +85,7 @@ enc_nf = args.enc if args.enc else (32, 64, 64, 64)
 dec_nf = args.dec if args.dec else (64, 64, 64, 64, 32)
 
 # build the model
-model = vxm.networks.VxmSynthetic(
+model = vxm.networks.VxmDenseSynth(
     inshape=inshape,
     all_labels=all_labels,
     hot_labels=hot_labels,

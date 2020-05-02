@@ -251,7 +251,7 @@ class VxmAffineDense(LoadableModel):
         self.references.dense_model = dense_model
 
 
-class VxmSynthetic(LoadableModel):
+class VxmDenseSynth(LoadableModel):
     """
     VoxelMorph network for registering segmentations.
     """
