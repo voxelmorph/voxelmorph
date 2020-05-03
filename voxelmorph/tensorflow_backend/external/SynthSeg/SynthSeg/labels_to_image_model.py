@@ -173,26 +173,22 @@ def labels_to_image_model(labels_shape,
     image = KL.Add(name=f'add_means_{id}')([image, means])
 
     if rand_blur:
-        # Gaussian smoothing kernel with random FWHM.
         shape = [5] * n_dims 
         lim = [(s - 1) / 2 for s in shape]
         lim = [np.arange(-l, l+1) for l in lim]
         grid = np.meshgrid(*lim, indexing='ij')
         grid = [g ** 2 for g in grid]
         c_grid = KL.Lambda(lambda x: tf.constant(np.stack(grid), dtype='float32'))([])
-        fwhm = KL.Lambda(lambda x: tf.constant(0.1) + tf.abs(tf.random.normal((n_dims,), stddev=2.0)))([])
-        sigma = KL.Lambda(lambda x: x / tf.constant(2.355))(fwhm)
-        #sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=3))([])
+        sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=1))([])
         f = lambda x: x[0] / x[1]**2
-        kern1 = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
-        kern2 = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kern1)
-        kernel = KL.Lambda(lambda x: x[..., None, None] / tf.reduce_sum(x))(kern2)
+        kernel = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
+        kernel = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kernel)
+        kernel = KL.Lambda(lambda x: x[..., None, None] / tf.reduce_sum(x))(kernel)
     else:
         if (target_res is None) | (labels_res == target_res):
             sigma = [0.55] * n_dims
         else:
             sigma = [0.85 * labels_res[i] / target_res[i] for i in range(n_dims)]
-        # create gaussian kernel and blur image
         kernel = KL.Lambda(lambda x: tf.convert_to_tensor(add_axis(add_axis(gauss_kernel(sigma, n_dims), -1), -1),
                                                           dtype=x.dtype), name=f'gauss_kernel_{id}')(image)
 
