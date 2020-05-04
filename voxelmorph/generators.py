@@ -2,7 +2,7 @@ import os
 import sys
 import numpy as np
 
-from . import utils
+from . import py
 
 
 def volgen(vol_names, batch_size=1, return_segs=False,
@@ -30,13 +30,13 @@ def volgen(vol_names, batch_size=1, return_segs=False,
 
         # load volumes and concatenate
         load_params = dict(np_var=np_var, add_batch_axis=True, add_feat_axis=add_feat_axis, pad_shape=pad_shape, resize_factor=resize_factor)
-        imgs = [utils.load_volfile(vol_names[i], **load_params) for i in indices]
+        imgs = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
         vols = [np.concatenate(imgs, axis=0)]
 
         # optionally load segmentations and concatenate
         if return_segs:
             load_params['np_var'] = 'seg'  # be sure to load seg
-            segs = [utils.load_volfile(vol_names[i], **load_params) for i in indices]
+            segs = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
             vols.append(np.concatenate(segs, axis=0))
 
         yield tuple(vols)
@@ -133,8 +133,8 @@ def semisupervised(vol_names, labels, atlas_file=None, downsize=2):
 
     # cache target vols and segs if atlas is supplied
     if atlas_file:
-        trg_vol = utils.load_volfile(atlas_file, np_var='vol', add_batch_axis=True, add_feat_axis=True)
-        trg_seg = utils.load_volfile(atlas_file, np_var='seg', add_batch_axis=True, add_feat_axis=True)
+        trg_vol = py.utils.load_volfile(atlas_file, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+        trg_seg = py.utils.load_volfile(atlas_file, np_var='seg', add_batch_axis=True, add_feat_axis=True)
         trg_seg = split_seg(trg_seg)
 
     while True:
@@ -203,28 +203,12 @@ def conditional_template_creation(vol_names, atlas, attributes, batch_size=1, np
 
         # load volumes and concatenate
         load_params = dict(np_var=np_var, add_batch_axis=True, add_feat_axis=add_feat_axis, pad_shape=pad_shape)
-        vols = [utils.load_volfile(vol_names[i], **load_params) for i in indices]
+        vols = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
         vols = np.concatenate(vols, axis=0)
 
         invols  = [pheno, atlas, vols]
         outvols = [vols, zeros, zeros, zeros]
         yield (invols, outvols)
-
-
-# TODOATH remove this
-def hypertuning(base_gen, batch_size=1, nb_params=1):
-    """
-    Generates random input values between 0 and 1 for hyperparameter tuning.
-
-    Parameters:
-        base_gen: Base generator function to add to.
-        batch_size: Training batch size. Default is 1.
-        nb_params: Number of hypertuning parameters. Default is 1.
-    """
-    while True:
-        invols, outvols = next(base_gen)
-        rand = np.random.random((batch_size, nb_params))
-        yield (invols + [rand], outvols)
 
 
 def surf_semisupervised(
@@ -270,7 +254,7 @@ def surf_semisupervised(
 
     # compute labels from atlas, and the number of labels to sample.
     if labels is not None:
-        atlas_seg = utils.filter_labels(atlas_seg, labels)
+        atlas_seg = py.utils.filter_labels(atlas_seg, labels)
     else:
         labels = np.sort(np.unique(atlas_seg))[1:]
 
@@ -283,7 +267,7 @@ def surf_semisupervised(
     atlas_seg_bs = np.repeat(atlas_seg[np.newaxis, ..., np.newaxis], batch_size, axis=0)
 
     # prepare surface extraction function
-    std_to_surf = lambda x, y: utils.sdt_to_surface_pts(x, y, surface_pts_upsample_factor=surface_pts_upsample_factor, thr=(1/surface_pts_upsample_factor + 1e-5))
+    std_to_surf = lambda x, y: py.utils.sdt_to_surface_pts(x, y, surface_pts_upsample_factor=surface_pts_upsample_factor, thr=(1/surface_pts_upsample_factor + 1e-5))
     
     # prepare zeros, which will be used for outputs unused in cost functions
     zero_flow = np.zeros((batch_size, *vol_shape, len(vol_shape)))
@@ -295,8 +279,8 @@ def surf_semisupervised(
     nb_edges = np.zeros(len(labels))
     for li, label in enumerate(labels):  # if only one label, get surface points here
         atlas_label_vols[li] = atlas_seg == label
-        atlas_label_vols[li] = utils.clean_seg(atlas_label_vols[li], smooth_seg_std)
-        atlas_sdt[li] = utils.vol_to_sdt(atlas_label_vols[li], sdt=True, sdt_vol_resize=sdt_vol_resize)
+        atlas_label_vols[li] = py.utils.clean_seg(atlas_label_vols[li], smooth_seg_std)
+        atlas_sdt[li] = py.utils.vol_to_sdt(atlas_label_vols[li], sdt=True, sdt_vol_resize=sdt_vol_resize)
         nb_edges[li] = np.sum(np.abs(atlas_sdt[li]) < 1.01)
     layer_edge_ratios = nb_edges / np.sum(nb_edges)
 
@@ -304,7 +288,7 @@ def surf_semisupervised(
     # pre-compute the atlas surface points
     atlas_surface_pts = np.zeros((batch_size, nb_surface_pts, len(vol_shape) + 1))
     if nb_labels_sample == len(labels):
-        nb_surface_pts_sel = utils.get_surface_pts_per_label(nb_surface_pts, layer_edge_ratios)
+        nb_surface_pts_sel = py.utils.get_surface_pts_per_label(nb_surface_pts, layer_edge_ratios)
         for li, label in enumerate(labels):  # if only one label, get surface points here
             atlas_surface_pts_ = std_to_surf(atlas_sdt[li], nb_surface_pts_sel[li])[np.newaxis, ...]
             # get the surface point stack indexes for this element
@@ -322,14 +306,14 @@ def surf_semisupervised(
         # prepare data
         X = next(gen)
         X_img = X[0]
-        X_seg = utils.filter_labels(X[1], labels)
+        X_seg = py.utils.filter_labels(X[1], labels)
 
         # get random labels
         sel_label_idxs = range(len(labels))  # all labels
         if nb_labels_sample != len(labels):
             sel_label_idxs = np.sort(np.random.choice(range(len(labels)), size=nb_labels_sample, replace=False))
             sel_layer_edge_ratios = [layer_edge_ratios[li] for li in sel_label_idxs]
-            nb_surface_pts_sel = utils.get_surface_pts_per_label(nb_surface_pts, sel_layer_edge_ratios)
+            nb_surface_pts_sel = py.utils.get_surface_pts_per_label(nb_surface_pts, sel_layer_edge_ratios)
                 
         # prepare signed distance transforms and surface point arrays
         X_sdt_k = np.zeros((batch_size, *sdt_shape, nb_labels_sample))
@@ -350,8 +334,8 @@ def surf_semisupervised(
 
             # compute X distance from surface
             X_label = X_seg == labels[sli]
-            X_label = utils.clean_seg_batch(X_label, smooth_seg_std)
-            X_sdt_k[..., li] = utils.vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=sdt_vol_resize)[..., 0]
+            X_label = py.utils.clean_seg_batch(X_label, smooth_seg_std)
+            X_sdt_k[..., li] = py.utils.vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=sdt_vol_resize)[..., 0]
 
             if surf_bidir:
                 atl_dt = atlas_sdt[li][np.newaxis, ...]

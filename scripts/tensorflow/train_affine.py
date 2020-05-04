@@ -56,7 +56,7 @@ generator_args = dict(no_warp=True, batch_size=batch_size, pad_shape=args.paddin
 
 if args.atlas:
     # scan-to-atlas generator
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True)
+    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=True, resize_factor=args.resize, pad_shape=args.padding)
     generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, **generator_args)
 else:
     # scan-to-scan generator
@@ -87,14 +87,17 @@ enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
+# transform type
+transform_type = 'rigid' if args.rigid else 'affine'
+
 with tf.device(device):
 
     # build the model
     model = vxm.networks.VxmAffine(
         inshape,
         enc_nf=enc_nf,
+        transform_type=transform_type,
         bidir=args.bidir,
-        rigid=args.rigid,
         blurs=args.blurs
     )
 
@@ -110,7 +113,7 @@ with tf.device(device):
         save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
     # configure loss
-    image_loss_func = vxm.losses.NCC(blur_level=args.blurs[-1]).loss
+    image_loss_func = vxm.losses.NCC().loss
 
     # need two image loss functions if bidirectional
     if args.bidir:

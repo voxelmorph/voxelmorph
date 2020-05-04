@@ -45,8 +45,8 @@ else:
 
 # load moving and fixed images
 add_feat_axis = not args.multichannel
-moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
+moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
+fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
 with tf.device(device):
 
@@ -84,8 +84,8 @@ with tf.device(device):
     moved, warp = model.predict([moving, fixed, zeros])
 
 # save moved image
-vxm.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)
+vxm.py.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)
 
 # save warp
 if args.save_warp:
-    vxm.utils.save_volfile(warp.squeeze(), args.save_warp, fixed_affine)
+    vxm.py.utils.save_volfile(warp.squeeze(), args.save_warp, fixed_affine)

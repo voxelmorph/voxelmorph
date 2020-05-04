@@ -56,18 +56,18 @@ add_feat_axis = not args.multichannel
 # prepare the initial weights for the atlas "layer"
 if args.atlas:
     # load atlas from file
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
     print('creating input atlas by averaging scans')
     atlas = 0
     atlas_scans = train_vol_names[:100]
     for scan in atlas_scans:
-        atlas += vxm.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
+        atlas += vxm.py.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
     atlas /= len(atlas_scans)
 
 # save input atlas for the record
-vxm.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz'))
+vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz'))
 
 # get atlas shape (might differ from image input shape)
 atlas_shape = atlas.shape[1:-1]

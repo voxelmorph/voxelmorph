@@ -81,17 +81,19 @@ inshape = dataset[0].shape
 enc_nf = args.enc if args.enc else [32, 64, 64, 64]
 dec_nf = args.dec if args.dec else [64, 64, 64, 64, 32]
 
-# build the model
-model = vxm.networks.VxmSynthetic(
-    inshape=inshape,
-    all_labels=all_labels,
-    hot_labels=hot_labels,
-    nb_unet_features=[enc_nf, dec_nf],
-    int_steps=args.int_steps,
-    int_downsize=args.int_downsize,
-)
-warp_shape = model.warp_shape
-bias_shape = model.bias_shape
+with tf.device(device):
+
+    # build the model
+    model = vxm.networks.VxmSynthetic(
+        inshape=inshape,
+        all_labels=all_labels,
+        hot_labels=hot_labels,
+        nb_unet_features=[enc_nf, dec_nf],
+        int_steps=args.int_steps,
+        int_downsize=args.int_downsize,
+    )
+    warp_shape = model.warp_shape
+    bias_shape = model.bias_shape
 
 # define a generator
 def synth_generator(files, all_labels, warp_shape, bias_shape, batch_size=1, same_subj=False, vel_std=6):
@@ -131,45 +133,47 @@ generator = synth_generator(
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-# load initial weights (if provided)
-if args.load_weights:
-    model.load_weights(args.load_weights)
+with tf.device(device):
 
-# configure custom dice
-def data_loss(_, x):
-    shape = x.shape.as_list()
-    depth = int(shape[-1] / 2)
-    true = x[..., :depth]
-    pred = x[..., depth:]
-    return 1 + vxm.losses.Dice().loss(true, pred)
+    # load initial weights (if provided)
+    if args.load_weights:
+        model.load_weights(args.load_weights)
 
-losses  = [data_loss, vxm.losses.Grad('l2').loss]
-weights = [1, args.reg_param]
+    # configure custom dice
+    def data_loss(_, x):
+        shape = x.shape.as_list()
+        depth = int(shape[-1] / 2)
+        true = x[..., :depth]
+        pred = x[..., depth:]
+        return 1 + vxm.losses.Dice().loss(true, pred)
 
-# multi-gpu support and callbacks
-if nb_gpus > 1:
-    save_callback = vxm.networks.ModelCheckpointParallel(save_filename, period=args.save_freq)
-    model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
-else:
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=args.save_freq)
+    losses  = [data_loss, vxm.losses.Grad('l2').loss]
+    weights = [1, args.reg_param]
 
-# tensorboard callback
-callbacks = [save_callback]
-if log_dir:
-    callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, write_graph=False))
+    # multi-gpu support and callbacks
+    if nb_gpus > 1:
+        save_callback = vxm.networks.ModelCheckpointParallel(save_filename, period=args.save_freq)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+    else:
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=args.save_freq)
 
-model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+    # tensorboard callback
+    callbacks = [save_callback]
+    if log_dir:
+        callbacks.append(tf.keras.callbacks.TensorBoard(log_dir=log_dir, write_graph=False))
 
-# save starting weights
-model.save(save_filename.format(epoch=args.initial_epoch))
+    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-model.fit_generator(generator,
-    initial_epoch=args.initial_epoch,
-    epochs=args.epochs,
-    steps_per_epoch=args.steps_per_epoch,
-    callbacks=callbacks,
-    verbose=args.verbose,
-)
+    # save starting weights
+    model.save(save_filename.format(epoch=args.initial_epoch))
 
-# save final model weights
-model.save(save_filename.format(epoch=args.epochs))
+    model.fit_generator(generator,
+        initial_epoch=args.initial_epoch,
+        epochs=args.epochs,
+        steps_per_epoch=args.steps_per_epoch,
+        callbacks=callbacks,
+        verbose=args.verbose,
+    )
+
+    # save final model weights
+    model.save(save_filename.format(epoch=args.epochs))

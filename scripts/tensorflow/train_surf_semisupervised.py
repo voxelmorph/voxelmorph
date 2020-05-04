@@ -61,8 +61,8 @@ assert len(train_vol_names) > 0, 'Could not find any training data'
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
 
-atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol')
-atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
+atlas_vol = vxm.py.utils.load_volfile(args.atlas, np_var='vol')
+atlas_seg = vxm.py.utils.load_volfile(args.atlas, np_var='seg')
 
 # get labels and number of labels to sample
 labels = args.labels if args.labels is not None else np.sort(np.unique(atlas_seg))[1:]

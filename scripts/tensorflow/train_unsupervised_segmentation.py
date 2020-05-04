@@ -48,7 +48,7 @@ args = parser.parse_args()
 
 
 # load reference atlas (group labels in tissue types if necessary)
-atlas_full = vxm.utils.load_volfile(args.atlas, add_batch_axis=True)
+atlas_full = vxm.py.utils.load_volfile(args.atlas, add_batch_axis=True)
 if args.mapping:
     mapping = np.load(args.mapping)['mapping'].astype('int').flatten()
     assert len(mapping) == atlas_full.shape[-1], \

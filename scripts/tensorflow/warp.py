@@ -26,8 +26,8 @@ args = parser.parse_args()
 
 # load moving image and deformation field
 add_feat_axis = not args.multichannel
-moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-deform, deform_affine = vxm.utils.load_volfile(args.warp, add_batch_axis=True, ret_affine=add_feat_axis)
+moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
+deform, deform_affine = vxm.py.utils.load_volfile(args.warp, add_batch_axis=True, ret_affine=add_feat_axis)
 
 # device handling
 if args.gpu and (args.gpu != '-1'):
@@ -43,11 +43,9 @@ else:
 
 with tf.device(device):
 
-    # build transfer model
+    # build transfer model and warp
     transform_model = vxm.networks.Transform(moving.shape[1:-1], interp_method=args.interp, nb_feats=moving.shape[-1])
-
-    # warp segments with flow
     moved = transform_model.predict([moving, deform])
 
 # save moved image
-vxm.utils.save_volfile(moved.squeeze(), args.moved, deform_affine)
+vxm.py.utils.save_volfile(moved.squeeze(), args.moved, deform_affine)

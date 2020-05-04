@@ -31,7 +31,7 @@ args = parser.parse_args()
 
 
 # load reference atlas (group labels in tissue types if necessary)
-atlas_full = vxm.utils.load_volfile(args.atlas, add_batch_axis=True)
+atlas_full = vxm.py.utils.load_volfile(args.atlas, add_batch_axis=True)
 mapping = np.load(args.mapping)['mapping'].astype('int').flatten()
 assert len(mapping) == atlas_full.shape[-1], \
     'mapping shape %d is inconsistent with atlas shape %d' % (len(mapping), atlas_full.shape[-1])
@@ -44,7 +44,7 @@ for i in range(np.max(mapping.shape)):
 inshape = atlas.shape[1:-1]
 
 # load input scan
-image, affine = vxm.utils.load_volfile(args.image, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
+image, affine = vxm.py.utils.load_volfile(args.image, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
 
 # define an isolated method of computing posteriors
 def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
@@ -83,7 +83,7 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
         input_atlas = tf.placeholder(tf.float32, this_atlas_full_shape)
 
         # warp atlas
-        warped = vxm.networks.neuron_transform(input_atlas, input_flow, interp_method='linear', indexing='ij')
+        warped = vxm.tf.ne.transform(input_atlas, input_flow, interp_method='linear', indexing='ij')
 
         # normalized posterior
         post_lst = [ul_pred[..., this_mapping[j]] * warped[..., j] for j in range(len(this_mapping))]
@@ -116,7 +116,7 @@ with tf.device(device):
     funcs = make_k_functions(inshape, mapping, max_feats=args.max_feats, norm_post=False)
 
     # load the model from file
-    model = vxm.networks.ProbAtlasSegmentation.load(args.model).get_predictor_model()
+    model = vxm.networks.ProbAtlasSegmentation.load(args.model).get_gaussian_warp_model()
 
     # predict log likelihood and flow
     outputs = model.predict([image, atlas])
@@ -143,20 +143,20 @@ with tf.device(device):
     segmentation = posteriors.argmax(-1)
 
 # save segmentation
-vxm.utils.save_volfile(segmentation.astype('int32'), args.seg, affine)
+vxm.py.utils.save_volfile(segmentation.astype('int32'), args.seg, affine)
 
 # save warped atlas
 if args.warped_atlas:
-    vxm.utils.save_volfile(warped_atlas, args.warped_atlas, affine)
+    vxm.py.utils.save_volfile(warped_atlas, args.warped_atlas, affine)
 
 # save posteriors
 if args.posteriors:
     normalized = posteriors / (1e-12 + np.sum(posteriors, -1, keepdims=True))
-    vxm.utils.save_volfile(normalized, args.posteriors, affine)
+    vxm.py.utils.save_volfile(normalized, args.posteriors, affine)
 
 # save warp
 if args.warp:
-    vxm.utils.save_volfile(flow, args.warp, affine)
+    vxm.py.utils.save_volfile(flow, args.warp, affine)
 
 # save computed stats
 if args.stats:

@@ -20,6 +20,7 @@ import SynthSeg
 from . import layers
 from . import networks
 from . import losses
+from . import utils
 
 # We don't want the modified sys.path to potentially interfere with a
 # user's other module imports (if they share the same name), so we'll

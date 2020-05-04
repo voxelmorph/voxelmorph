@@ -92,6 +92,14 @@ class LoadableModel(tf.keras.Model):
         """
         with h5py.File(path, mode='r') as f:
             config = json.loads(f.attrs['model_config'].decode('utf-8'))['config']
+
+        # provide a temporary backport for the old-school enc_nf/dec_nf constructor params
+        if config.get('enc_nf') and config.get('dec_nf'):
+            config['nb_unet_features'] = [
+                config.pop('enc_nf'),
+                config.pop('dec_nf')
+            ]
+
         model = cls(**config)
         model.load_weights(path, by_name=by_name)
         return model

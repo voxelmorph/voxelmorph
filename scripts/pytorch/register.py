@@ -39,8 +39,8 @@ else:
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 # load moving and fixed images
-moving = vxm.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=True)
-fixed, fixed_affine = vxm.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
+moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=True)
+fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
 
 # load and set up model
 model = vxm.networks.VxmDense.load(args.model)
@@ -56,9 +56,9 @@ moved, warp = model.warp(input_moving, input_fixed)
 
 # save moved image
 moved = array = moved.detach().cpu().numpy().squeeze()
-vxm.utils.save_volfile(moved, args.moved, fixed_affine)
+vxm.py.utils.save_volfile(moved, args.moved, fixed_affine)
 
 # save warp
 if args.save_warp:
     warp = warp.detach().cpu().numpy().squeeze()
-    vxm.utils.save_volfile(warp, args.save_warp, fixed_affine)
+    vxm.py.utils.save_volfile(warp, args.save_warp, fixed_affine)

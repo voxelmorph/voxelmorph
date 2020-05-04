@@ -62,7 +62,7 @@ add_feat_axis = not args.multichannel
 
 if args.atlas:
     # scan-to-atlas generator
-    atlas = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
     generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator

@@ -31,8 +31,8 @@ labels = np.load(args.labels)['labels']
 
 # load atlas volume and seg
 add_feat_axis = not args.multichannel
-atlas_vol = vxm.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
-atlas_seg = vxm.utils.load_volfile(args.atlas, np_var='seg')
+atlas_vol = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+atlas_seg = vxm.py.utils.load_volfile(args.atlas, np_var='seg')
 inshape = atlas_seg.shape
 
 # device handling
@@ -55,8 +55,8 @@ with tf.device(device):
 for i, scan in enumerate(args.scans):
 
     # load scan
-    moving_vol = vxm.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
-    moving_seg = vxm.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    moving_vol = vxm.py.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    moving_seg = vxm.py.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=add_feat_axis)
 
     # predict transform
     with tf.device(device):
@@ -66,5 +66,5 @@ for i, scan in enumerate(args.scans):
     warped_seg = transform_model.predict([moving_seg, warp]).squeeze()
     
     # compute volume overlap (dice)
-    overlap = vxm.utils.dice(warped_seg, atlas_seg, labels=labels)
+    overlap = vxm.py.utils.dice(warped_seg, atlas_seg, labels=labels)
     print('scan %3d:   dice mean = %5.3f  std = %5.3f' % (i, np.mean(overlap), np.std(overlap)))
