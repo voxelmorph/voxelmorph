@@ -14,8 +14,8 @@ class SpatialTransformer(nn.Module):
         # create sampling grid
         vectors = [torch.arange(0, s) for s in size]
         grids = torch.meshgrid(vectors)
-        grid = torch.stack(grids) # y, x, z
-        grid = torch.unsqueeze(grid, 0)  # add batch
+        grid = torch.stack(grids)
+        grid = torch.unsqueeze(grid, 0)
         grid = grid.type(torch.FloatTensor)
         self.register_buffer('grid', grid)
         self.mode = mode
@@ -38,7 +38,7 @@ class SpatialTransformer(nn.Module):
             new_locs = new_locs.permute(0, 2, 3, 4, 1)
             new_locs = new_locs[..., [2, 1, 0]]
 
-        return nnf.grid_sample(src, new_locs, mode=self.mode)
+        return nnf.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 
 class VecInt(nn.Module):
@@ -78,13 +78,13 @@ class ResizeTransform(nn.Module):
     def forward(self, x):
         if self.factor < 1:
             # resize first to save memory
-            x = nnf.interpolate(x, scale_factor=self.factor, mode=self.mode)
+            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode)
             x = self.factor * x
 
         elif self.factor > 1:
             # multiply first to save memory
             x = self.factor * x
-            x = nnf.interpolate(x, scale_factor=self.factor, mode=self.mode)
+            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode)
 
         # don't do anything if resize is 1
         return x

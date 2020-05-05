@@ -128,20 +128,24 @@ for epoch in range(args.initial_epoch, args.epochs):
 
     for step in range(args.steps_per_epoch):
 
-        # generate inputs (and predicted outputs) and convert them to tensors
-        inputs, predicted = next(generator)
-        inputs    = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        predicted = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in predicted]
+        # generate inputs (and true outputs) and convert them to tensors
+        inputs, y_true = next(generator)
+        inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
+        y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
 
         # run inputs through the model to produce a warped image and flow field
-        outputs = model(*inputs)
+        y_pred = model(*inputs)
 
         # calculate total loss
         loss = 0
+        loss_list = []
         for n, loss_function in enumerate(losses):
-            loss += loss_function(outputs[n], predicted[n]) * weights[n]
+            curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+            loss_list.append(str(curr_loss.item()))
+            loss += curr_loss
 
-        print('epoch %d step %d/%d - loss: %f' % (epoch + 1, step + 1, args.steps_per_epoch, loss.item()), flush=True)
+        loss_info = 'loss: %s    [%s]' % (str(loss.item()), ', '.join(loss_list))
+        print('epoch %d step %d/%d    %s' % (epoch + 1, step + 1, args.steps_per_epoch, loss_info), flush=True)
 
         # backpropagate and optimize
         optimizer.zero_grad()

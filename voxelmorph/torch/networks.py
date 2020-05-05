@@ -43,24 +43,26 @@ class Unet(nn.Module):
             if nb_levels is None:
                 raise ValueError('must provide unet nb_levels if nb_features is an integer')
             feats = np.round(nb_features * feat_mult ** np.arange(nb_levels)).astype(int)
-            enc_nf = feats[:-1]
-            dec_nf = np.flip(feats)
+            self.enc_nf = feats[:-1]
+            self.dec_nf = np.flip(feats)
         elif nb_levels is not None:
             raise ValueError('cannot use nb_levels if nb_features is not an integer')
+        else:
+           self.enc_nf, self.dec_nf = nb_features
 
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 
         # configure encoder (down-sampling path)
         prev_nf = 2
         self.downarm = nn.ModuleList()
-        for nf in enc_nf:
+        for nf in self.enc_nf:
             self.downarm.append(ConvBlock(ndims, prev_nf, nf, stride=2))
             prev_nf = nf
 
         # configure decoder (up-sampling path)
-        enc_history = list(reversed(enc_nf))
+        enc_history = list(reversed(self.enc_nf))
         self.uparm = nn.ModuleList()
-        for i, nf in enumerate(dec_nf[:len(enc_nf)]):
+        for i, nf in enumerate(self.dec_nf[:len(self.enc_nf)]):
             channels = prev_nf + enc_history[i] if i > 0 else prev_nf
             self.uparm.append(ConvBlock(ndims, channels, nf, stride=1))
             prev_nf = nf
@@ -68,7 +70,7 @@ class Unet(nn.Module):
         # configure extra decoder convolutions (no up-sampling)
         prev_nf += 2
         self.extras = nn.ModuleList()
-        for nf in dec_nf[len(enc_nf):]:
+        for nf in self.dec_nf[len(self.enc_nf):]:
             self.extras.append(ConvBlock(ndims, prev_nf, nf, stride=1))
             prev_nf = nf
  
@@ -133,7 +135,7 @@ class VxmDense(LoadableModel):
 
         # configure core unet model
         self.unet_model = Unet(
-            inshape
+            inshape,
             nb_features=nb_unet_features,
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult
@@ -141,7 +143,7 @@ class VxmDense(LoadableModel):
 
         # configure unet to flow field layer
         Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.flow = Conv(dec_nf[-1], ndims, kernel_size=3, padding=1)
+        self.flow = Conv(self.unet_model.dec_nf[-1], ndims, kernel_size=3, padding=1)
 
         # init flow layer with small weights and bias
         self.flow.weight = nn.Parameter(Normal(0, 1e-5).sample(self.flow.weight.shape))
@@ -220,15 +222,8 @@ class ConvBlock(nn.Module):
     def __init__(self, ndims, in_channels, out_channels, stride=1):
         super().__init__()
 
-        if stride == 1:
-            ksize = 3
-        elif stride == 2:
-            ksize = 4
-        else:
-            raise ValueError('stride must be 1 or 2')
-
         Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.main = Conv(in_channels, out_channels, ksize, stride, 1)
+        self.main = Conv(in_channels, out_channels, 3, stride, 1)
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, x):

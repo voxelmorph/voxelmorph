@@ -12,7 +12,11 @@ class NCC:
     def __init__(self, window=None):
         self.window = window
 
-    def loss(self, I, J):
+    def loss(self, y_true, y_pred):
+
+        I = y_true
+        J = y_pred
+
         # get dimension of volume
         # assumes I, J are sized [batch_size, *vol_shape, nb_feats]
         ndims = len(list(I.size())) - 2
@@ -25,9 +29,9 @@ class NCC:
         conv_fn = getattr(F, 'conv%dd' % ndims)
 
         # compute CC squares
-        I2 = I*I
-        J2 = J*J
-        IJ = I*J
+        I2 = I * I
+        J2 = J * J
+        IJ = I * J
 
         # compute filters
         sum_filt = torch.ones([1, 1, *win]).to("cuda")
@@ -46,9 +50,9 @@ class NCC:
         
         I_var, J_var, cross = compute_local_sums(I, J, sum_filt, stride, padding, win)
 
-        cc = cross*cross / (I_var*J_var + 1e-5)
+        cc = cross * cross / (I_var * J_var + 1e-5)
 
-        return -1 * torch.mean(cc)
+        return -torch.mean(cc)
 
 
 class MSE:
@@ -68,10 +72,10 @@ class Grad:
     def __init__(self, penalty='l1'):
         self.penalty = penalty
 
-    def loss(self, y_true, y_pred):
-        dy = torch.abs(y_true[:, :, 1:, :, :] - y_true[:, :, :-1, :, :]) 
-        dx = torch.abs(y_true[:, :, :, 1:, :] - y_true[:, :, :, :-1, :]) 
-        dz = torch.abs(y_true[:, :, :, :, 1:] - y_true[:, :, :, :, :-1]) 
+    def loss(self, _, y_pred):
+        dy = torch.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :]) 
+        dx = torch.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :]) 
+        dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1]) 
 
         if self.penalty == 'l2':
             dy = dy * dy
