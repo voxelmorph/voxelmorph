@@ -130,7 +130,6 @@ def labels_to_image_model(labels_shape,
     if resample_shape is not None:
         labels = KL.Lambda(lambda x: tf.cast(x, dtype='float32'))(labels)
         zoom_fact = [r / l for r, l in zip(resample_shape, labels_shape)] 
-        #labels._keras_shape = tuple(labels.get_shape().as_list())
         labels = nrn_layers.Resize(zoom_fact, interp_method='nearest', name=f'resample_labels_{id}')(labels)
 
     # deform labels
@@ -147,43 +146,14 @@ def labels_to_image_model(labels_shape,
             def_field_size = get_nonlin_field_shape(crop_shape, nonlin_shape_factor)
             nonlin_field_in = KL.Input(shape=def_field_size, name=f'nonlin_input_{id}')
             list_inputs.append(nonlin_field_in)
-            # Randomly change warp. Scaling the field before integrating makes
-            # the warps more bubbely, but they need to be downscaled later.
             int_at = 2.0
             zoom = [o / d / int_at for o, d in zip(output_shape, def_field_size)] 
             vel_field = nonlin_field_in
-            #vel_field = nrn_layers.RescaleValues(1 / int_at)(vel_field)
-            vel_field = nrn_layers.Resize(zoom, interp_method='linear')(vel_field)
+            vel_field = nrn_layers.Resize(zoom, interp_method='linear', name=f'resize_vel_{id}')(vel_field)
             def_field = nrn_layers.VecInt(int_steps=5)(vel_field)
             #def_field = nrn_layers.RescaleValues(int_at)(def_field)
-            def_field = nrn_layers.Resize(int_at, interp_method='linear')(def_field)
+            def_field = nrn_layers.Resize(int_at, interp_method='linear', name=f'resize_def_{id}')(def_field)
             trans_inputs.append(def_field)
-
-            #if 0:
-            #    shape = [7] * n_dims
-            #    lim = [(s - 1) / 2 for s in shape]
-            #    lim = [np.arange(-l, l+1) for l in lim]
-            #    grid = np.meshgrid(*lim, indexing='ij')
-            #    grid = [g ** 2 for g in grid]
-            #    c_grid = KL.Lambda(lambda x: tf.constant(np.stack(grid), dtype='float32'))([])
-            #    fwhm = KL.Lambda(lambda x: tf.constant(1.0, shape=(n_dims, )) + tf.abs(tf.random.normal((1, ), stddev=3.0)))([])
-            #    sigma = KL.Lambda(lambda x: x / tf.constant(2.355))(fwhm)
-            #    #sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=1.))([])
-            #    f = lambda x: x[0] / x[1]**2
-            #    kern1 = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
-            #    kern2 = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kern1)
-            #    kern3 = KL.Lambda(lambda x: x / tf.reduce_sum(x))(kern2)
-            #    def prep_kernel(kern):
-            #        zeros = tf.zeros_like(kern)
-            #        out = [None] * n_dims
-            #        for j in range(n_dims):
-            #            out[j] = tf.stack([kern if i == j else zeros for i in range(n_dims)], axis=-1)
-            #        out = tf.stack(out, axis=-1)
-            #        op = tf.print('\nDEBUG', tf.reduce_max(out))
-            #        with tf.control_dependencies([op]): 
-            #            return out
-            #    kernel = KL.Lambda(prep_kernel)(kern3)
-            #    def_field = KL.Lambda(lambda x: tf.nn.convolution(x[0], x[1], padding='SAME', strides=[1] * n_dims))([def_field, kernel])
 
         # apply deformations
         labels = nrn_layers.SpatialTransformer(interp_method='nearest', name=f'trans_{id}')(trans_inputs)
@@ -203,26 +173,22 @@ def labels_to_image_model(labels_shape,
     image = KL.Add(name=f'add_means_{id}')([image, means])
 
     if rand_blur:
-        # Gaussian smoothing kernel with random FWHM.
         shape = [5] * n_dims 
         lim = [(s - 1) / 2 for s in shape]
         lim = [np.arange(-l, l+1) for l in lim]
         grid = np.meshgrid(*lim, indexing='ij')
         grid = [g ** 2 for g in grid]
         c_grid = KL.Lambda(lambda x: tf.constant(np.stack(grid), dtype='float32'))([])
-        fwhm = KL.Lambda(lambda x: tf.constant(0.1) + tf.abs(tf.random.normal((n_dims,), stddev=2.0)))([])
-        sigma = KL.Lambda(lambda x: x / tf.constant(2.355))(fwhm)
-        #sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=3))([])
+        sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=1))([])
         f = lambda x: x[0] / x[1]**2
-        kern1 = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
-        kern2 = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kern1)
-        kernel = KL.Lambda(lambda x: x[..., None, None] / tf.reduce_sum(x))(kern2)
+        kernel = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
+        kernel = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kernel)
+        kernel = KL.Lambda(lambda x: x[..., None, None] / tf.reduce_sum(x))(kernel)
     else:
         if (target_res is None) | (labels_res == target_res):
             sigma = [0.55] * n_dims
         else:
             sigma = [0.85 * labels_res[i] / target_res[i] for i in range(n_dims)]
-        # create gaussian kernel and blur image
         kernel = KL.Lambda(lambda x: tf.convert_to_tensor(add_axis(add_axis(gauss_kernel(sigma, n_dims), -1), -1),
                                                           dtype=x.dtype), name=f'gauss_kernel_{id}')(image)
 
@@ -325,7 +291,6 @@ def labels_to_image_model(labels_shape,
                 out = n
                 n += 1
             out_lut[i] = out
-        #out_lut = [i if x in segmentation_label_list else 0 for i, x in enumerate(generation_label_list)]
     labels = KL.Lambda(lambda x: tf.gather(tf.cast(out_lut, dtype='int32'),
                                            tf.cast(x, dtype='int32')), name=f'labels_back_{id}')(labels)
 
@@ -342,36 +307,7 @@ def labels_to_image_model(labels_shape,
                       name=f'gamma_{id}')([image, labels])
 
     outputs = [image, labels]
-    #if apply_affine_trans:
-    #    outputs.append(aff_in)
     if apply_nonlin_trans:
         outputs.append(vel_field)
     brain_model = keras.Model(inputs=list_inputs, outputs=outputs)
-    #import pdb; pdb.set_trace()
     return brain_model, def_field_size, bias_field_size
-
-
-def draw_rotation_angle(rotation_range, n_dims):
-    # reformat rotation_range
-    if not isinstance(rotation_range, np.ndarray):
-        if rotation_range is None:
-            rotation_range = [-10, 10]
-        elif isinstance(rotation_range, (int, float)):
-            rotation_range = [-rotation_range, rotation_range]
-        elif isinstance(rotation_range, (list, tuple)):
-            assert len(rotation_range) == 2, 'if list, rotation_range should be of length 2.'
-        else:
-            raise Exception('If not numpy array, rotation_range should be None, int, float or list.')
-        if n_dims == 2:
-            rotation_angle = npr.uniform(low=rotation_range[0], high=rotation_range[1], size=1)
-        else:
-            rotation_angle = npr.uniform(low=rotation_range[0], high=rotation_range[1], size=n_dims)
-
-    elif isinstance(rotation_range, np.ndarray):
-        assert rotation_range.shape == (2, n_dims), 'rotation_range should be array of size {}'.format((2, n_dims))
-        rotation_angle = npr.uniform(low=rotation_range[0, :], high=rotation_range[1, :])
-
-    else:
-        raise Exception('rotation_range should be None, int, float, list or numpy array')
-
-    return rotation_angle

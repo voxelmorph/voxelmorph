@@ -113,8 +113,8 @@ class Dice:
         vol_axes = list(range(1, ndims+1))
 
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
-        bottom = tf.maximum(tf.reduce_sum(y_true + y_pred, vol_axes), 1e-5)
-        dice = tf.reduce_mean(top/bottom)
+        bottom = tf.reduce_sum(y_true + y_pred, vol_axes)
+        dice = tf.reduce_mean(tf.div_no_nan(top, bottom))
         return -dice
 
 
