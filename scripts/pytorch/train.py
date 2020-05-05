@@ -30,7 +30,7 @@ parser.add_argument('--atlas', help='atlas filename (default: data/atlas_norm.np
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
 
 # training parameters
-parser.add_argument('--gpu', default='0', help='GPU ID number(s) (default: 0)')
+parser.add_argument('--gpu', default='0', help='GPU ID number(s), comma-separated (default: 0)')
 parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 parser.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
@@ -73,8 +73,11 @@ model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
 # device handling
-device = 'cuda'
+gpus = args.gpu.split(',')
+nb_gpus = len(gpus)
+device = f'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+assert args.batch_size >= nb_gpus, 'Batch size (%d) should be no less than the number of gpus (%d)' % (args.batch_size, nb_gpus)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -92,6 +95,10 @@ else:
         int_steps=args.int_steps,
         int_downsize=args.int_downsize
     )
+if nb_gpus > 1:
+    # use multiple GPUs via DataParallel
+    model = torch.nn.DataParallel(model)
+    model.save = model.module.save
 
 # prepare the model for training and send to device
 model.train()
