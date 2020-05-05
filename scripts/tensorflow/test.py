@@ -49,7 +49,7 @@ else:
 
 with tf.device(device):
     # load warp model and build nearest-neighbor transfer model
-    warp_predictor = vxm.networks.VxmDense.load(args.model).get_predictor_model()
+    registration_model = vxm.networks.VxmDense.load(args.model).get_registration_model()
     transform_model = vxm.networks.Transform(inshape, interp_method='nearest')
 
 for i, scan in enumerate(args.scans):
@@ -58,12 +58,10 @@ for i, scan in enumerate(args.scans):
     moving_vol = vxm.py.utils.load_volfile(scan, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
     moving_seg = vxm.py.utils.load_volfile(scan, np_var='seg', add_batch_axis=True, add_feat_axis=add_feat_axis)
 
-    # predict transform
+    # predict and apply transform
     with tf.device(device):
-        _, warp = warp_predictor.predict([moving_vol, atlas_vol])
-
-    # warp segments with flow
-    warped_seg = transform_model.predict([moving_seg, warp]).squeeze()
+        warp = registration_model.predict([moving_vol, atlas_vol])
+        warped_seg = transform_model.predict([moving_seg, warp]).squeeze()
     
     # compute volume overlap (dice)
     overlap = vxm.py.utils.dice(warped_seg, atlas_seg, labels=labels)

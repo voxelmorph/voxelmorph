@@ -163,31 +163,14 @@ def dice(array1, array2, labels):
     return dicem
 
 
-def affine_matrix_to_vec(matrix):
+def affine_shift_to_matrix(trf, resize=None):
     """
-    Converts an affine matrix to a transform vector (of len 12).
+    Converts an affine shift to a matrix (over the identity).
     """
-    trf = matrix - np.eye(4)
-    trf = trf[:3,:]
-    trf = trf.reshape([1, 12])
-    return trf
-
-
-def affine_vec_to_matrix(trf):
-    """
-    Converts an affine transform vector (of len 12) to a matrix.
-    """
-    return np.concatenate([trf.reshape((3, 4)), np.zeros((1, 4))], 0) + np.eye(4)
-
-
-def affine_merge(transforms, resize):
-    """
-    Merges a set of affine transforms and scales the matrix to account for volume resizing.
-    """
-    matrices = [affine_vec_to_matrix(trf) for trf in transforms]
-    matrix = functools.reduce(np.matmul, matrices)
-    matrix[:, -1] *= (1 / resize)
-    return affine_matrix_to_vec(matrix)
+    matrix = np.concatenate([trf.reshape((3, 4)), np.zeros((1, 4))], 0) + np.eye(4)
+    if resize is not None:
+        matrix[:3, -1] *= resize
+    return matrix
 
 
 def extract_largest_vol(bw, connectivity=1):

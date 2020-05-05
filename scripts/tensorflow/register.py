@@ -4,7 +4,7 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 scan (moving) to an atlas (fixed). To register a scan to the atlas and save the warp field, run:
 
-    python register.py moving.nii.gz fixed.nii.gz moved.nii.gz --model model.h5 --save-warp warp.nii.gz
+    python register.py moving.nii.gz fixed.nii.gz --model model.h5 --moved moved.nii.gz --warp warp.nii.gz
 
 The source and target input images are expected to be affinely registered, but if not, an initial linear registration
 can be run by specifing an affine model with the --affine-model flag, which expects an affine model file as input.
@@ -23,10 +23,11 @@ import tensorflow as tf
 parser = argparse.ArgumentParser()
 parser.add_argument('moving', help='moving image (source) filename')
 parser.add_argument('fixed', help='fixed image (target) filename')
-parser.add_argument('moved', help='registered image output filename')
+parser.add_argument('--moved', help='registered image output filename')
 parser.add_argument('--model', help='run nonlinear registration - must specify keras model file')
+parser.add_argument('--warp', help='output warp filename')
 parser.add_argument('--affine-model', help='run intitial affine registration - must specify keras model file')
-parser.add_argument('--save-warp', help='output warp filename')
+parser.add_argument('--affine', help='output affine filename (must be npz)')
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
 parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 args = parser.parse_args()
@@ -69,11 +70,16 @@ if args.affine_model:
 
         # apply the transform and crop back to the target space
         moving = moving_padded[np.newaxis]
-        aligned = vxm.tf.utils.transform(moving, affine, rescale=(1 / resize))[0, ...]
+        aligned = vxm.tf.utils.transform(moving, affine, rescale=(1.0/resize))[0, ...]
         moved = aligned[cropping]
 
-        # set as 'moving' for the following nonlinear registration
-        moving = moved
+    # set as 'moving' for the following nonlinear registration
+    moving = moved
+
+    # save affine
+    if args.affine:
+        true_affine = vxm.py.utils.affine_shift_to_matrix(affine.squeeze(), resize=(1.0/resize))
+        np.savez_compressed(args.affine, affine=true_affine)
 
 if args.model:
 
@@ -86,8 +92,8 @@ if args.model:
         moved = vxm.tf.utils.transform(moving, warp)
 
     # save warp
-    if args.save_warp:
-        vxm.py.utils.save_volfile(warp.squeeze(), args.save_warp, fixed_affine)
+    if args.warp:
+        vxm.py.utils.save_volfile(warp.squeeze(), args.warp, fixed_affine)
 
 # save moved image
 vxm.py.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)
