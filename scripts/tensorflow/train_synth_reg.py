@@ -36,6 +36,7 @@ parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch 
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.0001)')
 parser.add_argument('--verbose', type=int, default=1, help='verbosity level (default: 1)')
 parser.add_argument('--save-freq', type=int, default=10, help='number of epochs between model saves (default: 10)')
+parser.add_argument('--resume', action='store_true', help='resume training at highest-numbered epoch')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 32 64 64 64)')
@@ -136,6 +137,8 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # load initial weights (if provided)
+    if args.resume:
+        args.load_weights, args.initial_epoch = vxm.py.utils.find_weights_file(model_dir)
     if args.load_weights:
         model.load_weights(args.load_weights)
 

@@ -3,6 +3,7 @@ import numpy as np
 import scipy
 import csv
 import functools
+import glob
 
 from skimage import measure
 
@@ -343,3 +344,17 @@ def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr
 
     # can't just correct by surface_pts_upsample_factor because of how interpolation works...
     return np.stack([sf_pts[..., f] *  (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)
+
+
+def find_weights_file(path):
+    """
+    Find the highest-numbered weights file and return its path and the epoch
+    number. Weight file names are assumed to have the format ^[0-9]+\.h5$.
+
+    Parameters:
+        path: Directory, file path or glob pattern.
+    """
+    path = os.path.join(path, '*.h5') if os.path.isdir(path) else path
+    file = sorted(glob.glob(path))[-1]
+    epoch, _ = os.path.splitext( os.path.basename(file) )
+    return file, int(epoch)
