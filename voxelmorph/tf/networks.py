@@ -1015,7 +1015,7 @@ class VxmDenseSynth(LoadableModel):
         self.references = LoadableModel.ReferenceContainer()
         self.references.flow = flow
         self.references.bg_model_1 = bg_model_1
-        self.references.bg_model_1 = bg_model_1
+        self.references.bg_model_2 = bg_model_2
         self.references.dense_model = dense_model
 
 
