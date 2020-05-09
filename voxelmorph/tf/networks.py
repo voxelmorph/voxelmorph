@@ -964,15 +964,13 @@ class VxmDenseSynth(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, all_labels, hot_labels, nb_unet_features=None, int_steps=5, **kwargs):
+    def __init__(self, inshape, all_labels, hot_labels, **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             all_labels: List of all labels included in training segmentations.
             hot_labels: List of labels to output as one-hot maps.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            kwargs: Forwarded to the internal VxmAffine model.
+            kwargs: Optional keyword arguments forwarded to the internal VxmDense model.
         """
         from SynthSeg.labels_to_image_model import labels_to_image_model
 
@@ -990,13 +988,7 @@ class VxmDenseSynth(LoadableModel):
         unet_input_model = tf.keras.Model(inputs=inputs, outputs=[image_1, image_2])
 
         # attach dense voxelmorph network and extract flow field layer
-        dense_model = VxmDense(
-            inshape,
-            nb_unet_features=nb_unet_features,
-            int_steps=int_steps,
-            input_model=unet_input_model,
-            **kwargs
-        )
+        dense_model = VxmDense(inshape, input_model=unet_input_model, **kwargs)
         flow = dense_model.references.pos_flow
 
         # one-hot encoding
