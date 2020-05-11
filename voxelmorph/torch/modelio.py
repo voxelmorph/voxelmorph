@@ -58,15 +58,19 @@ class LoadableModel(nn.Module):
         """
         Saves the model configuration and weights to a pytorch file.
         """
-        torch.save({'config': self.config, 'model_state': self.state_dict()}, path)
+        # don't save the transformer_grid buffers - see SpatialTransformer doc for more info
+        sd = self.state_dict().copy()
+        grid_buffers = [key for key in sd.keys() if key.endswith('.grid')]
+        for key in grid_buffers:
+            sd.pop(key)
+        torch.save({'config': self.config, 'model_state': sd}, path)
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path, device):
         """
         Load a python model configuration and weights.
         """
-        checkpoint = torch.load(path)
-        print(type(checkpoint))
+        checkpoint = torch.load(path, map_location=torch.device(device))
         model = cls(**checkpoint['config'])
-        model.load_state_dict(checkpoint['model_state'])
+        model.load_state_dict(checkpoint['model_state'], strict=False)
         return model

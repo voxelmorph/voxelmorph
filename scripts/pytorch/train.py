@@ -13,6 +13,7 @@ import os
 import random
 import argparse
 import glob
+import time
 import numpy as np
 import torch
 
@@ -28,6 +29,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('datadir', help='base data directory')
 parser.add_argument('--atlas', help='atlas filename (default: data/atlas_norm.npz)')
 parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID number(s), comma-separated (default: 0)')
@@ -37,6 +39,7 @@ parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency 
 parser.add_argument('--load-model', help='optional model file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--cudnn-nondet',  action='store_true', help='disable cudnn determinism - might slow down training')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
@@ -57,13 +60,16 @@ train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
 random.shuffle(train_vol_names)  # shuffle volume list
 assert len(train_vol_names) > 0, 'Could not find any training data'
 
+# no need to append an extra feature axis if data is multichannel
+add_feat_axis = not args.multichannel
+
 if args.atlas:
     # scan-to-atlas generator
-    atlas = np.load(args.atlas)['vol'][np.newaxis, ..., np.newaxis]
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=bidir)
+    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=bidir)
+    generator = vxm.generators.scan_to_scan(train_vol_names, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -75,9 +81,12 @@ os.makedirs(model_dir, exist_ok=True)
 # device handling
 gpus = args.gpu.split(',')
 nb_gpus = len(gpus)
-device = f'cuda'
+device = 'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 assert args.batch_size >= nb_gpus, 'Batch size (%d) should be no less than the number of gpus (%d)' % (args.batch_size, nb_gpus)
+
+# enabling cudnn determinism appears to speed up training by a lot
+torch.backends.cudnn.deterministic = not args.cudnn_nondet
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -85,7 +94,7 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 if args.load_model:
     # load initial model (if specified)
-    model = vxm.networks.VxmDense.load(args.load_model)
+    model = vxm.networks.VxmDense.load(args.load_model, device)
 else:
     # otherwise configure new model
     model = vxm.networks.VxmDense(
@@ -95,14 +104,15 @@ else:
         int_steps=args.int_steps,
         int_downsize=args.int_downsize
     )
+
 if nb_gpus > 1:
     # use multiple GPUs via DataParallel
     model = torch.nn.DataParallel(model)
     model.save = model.module.save
 
 # prepare the model for training and send to device
-model.train()
 model.to(device)
+model.train()
 
 # set optimizer
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
@@ -135,6 +145,8 @@ for epoch in range(args.initial_epoch, args.epochs):
 
     for step in range(args.steps_per_epoch):
 
+        step_start_time = time.time()
+
         # generate inputs (and true outputs) and convert them to tensors
         inputs, y_true = next(generator)
         inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
@@ -148,16 +160,21 @@ for epoch in range(args.initial_epoch, args.epochs):
         loss_list = []
         for n, loss_function in enumerate(losses):
             curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            loss_list.append(str(curr_loss.item()))
+            loss_list.append('%.6f' % curr_loss.item())
             loss += curr_loss
 
-        loss_info = 'loss: %s    [%s]' % (str(loss.item()), ', '.join(loss_list))
-        print('epoch %d step %d/%d    %s' % (epoch + 1, step + 1, args.steps_per_epoch, loss_info), flush=True)
+        loss_info = 'loss: %.6f  (%s)' % (loss.item(), ', '.join(loss_list))
 
         # backpropagate and optimize
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # print step info
+        epoch_info = 'epoch: %04d' % (epoch + 1)
+        step_info = ('step: %d/%d' % (step + 1, args.steps_per_epoch)).ljust(14)
+        time_info = 'time: %.2f sec' % (time.time() - step_start_time)
+        print('  '.join((epoch_info, step_info, time_info, loss_info)), flush=True)
 
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))

@@ -168,7 +168,14 @@ class VxmDense(LoadableModel):
         # configure transformer
         self.transformer = layers.SpatialTransformer(inshape)
 
-    def forward(self, source, target):
+    def forward(self, source, target, registration=False):
+        '''
+        Parameters:
+            source: Source image tensor.
+            target: Target image tensor.
+            registration: Return transformed image and flow. Default is False.
+        '''
+
         # concatenate inputs and propagate unet
         x = torch.cat([source, target], dim=1)
         x = self.unet_model(x)
@@ -199,19 +206,10 @@ class VxmDense(LoadableModel):
         y_target = self.transformer(target, neg_flow) if self.bidir else None
 
         # return non-integrated flow field if training
-        if self.training:
+        if not registration:
             return (y_source, y_target, flow_field) if self.bidir else (y_source, flow_field)
         else:
             return y_source, pos_flow
-
-    def warp(self, source, target):
-        """
-        Function to run the model and return the warped image and final diffeomorphic warp.
-        """
-        self.training = False
-        moved, warp = self(source, target)
-        self.training = True
-        return moved, warp
 
 
 class ConvBlock(nn.Module):
