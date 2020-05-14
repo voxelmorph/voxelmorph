@@ -160,14 +160,14 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1], rescale_affine=1.0):
+    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[0], rescale_affine=1.0):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             enc_nf: List of encoder filters. e.g. [16, 32, 32, 32]
             bidir: Enable bidirectional cost function. Default is False.
             transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
-            blurs: List of gaussian blur kernel levels for inputs. Default is [1].
+            blurs: List of sigmas of Gaussian kernels applied to inputs at each smoothing level. Default is [0].
             rescale_affine: a scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
                 this improves stability by enabling different gradient flow to affect the affine parameters
         """
@@ -211,8 +211,8 @@ class VxmAffine(LoadableModel):
             prefix = 'blur_%d_' % blur_num
 
             # set input and blur using gaussian kernel  
-            source_blur = gaussian_blur(y_source, blur, ndims)
-            target_blur = gaussian_blur(target, blur, ndims)
+            source_blur = gaussian_blur(y_source, blur)
+            target_blur = gaussian_blur(target, blur)
 
             # per-scale affine encoder
             curr_affine_scaled = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))

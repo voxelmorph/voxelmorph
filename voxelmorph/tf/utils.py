@@ -46,23 +46,34 @@ def affine_identity_to_shift(trf):
     return tf.reshape(trf, [ndims * (ndims + 1)])
 
 
-def gaussian_blur(tensor, level, ndims):
+def gaussian_blur(tensor, sigma):
     """
-    Blurs a tensor using a gaussian kernel (nothing done if level=1).
+    Blur a tensor of standard Keras shape (batch, space ..., feature) using an
+    isotropic Gaussian kernel. Nothing is done if sigma is 0 or None.
     """
-    if level > 1:
-        sigma = (level-1) ** 2
-        blur_kernel = ne.utils.gaussian_kernel([sigma] * ndims)
-        blur_kernel = tf.reshape(blur_kernel, blur_kernel.shape.as_list() + [1, 1])
-        if ndims == 3:
-            conv = lambda x: tf.nn.conv3d(x, blur_kernel, [1, 1, 1, 1, 1], 'SAME')
-        else:
-            conv = lambda x: tf.nn.conv2d(x, blur_kernel, [1, 1, 1, 1], 'SAME')
-        return KL.Lambda(conv)(tensor)
-    elif level == 1:
+    if sigma is None or sigma == 0:
         return tensor
-    else:
-        raise ValueError('Gaussian blur level must not be less than 1')
+    if sigma < 0:
+        raise ValueError(f'Gaussian smoothing sigma {sigma} is less than 0')
+
+    # Make dimensions: batch, feature, space.
+    shape = tensor.shape.as_list()
+    ind = np.arange(len(shape))
+    forward = (ind[0], ind[-1], *ind[1:-1])
+    backward = (ind[0], *ind[2:], ind[1])
+    tensor = KL.Lambda(lambda x: tf.transpose(x, perm=forward))(tensor)
+
+    # Apply kernel once per batch, feature.
+    num_dim = len(shape) - 2
+    kernel = ne.utils.gaussian_kernel([sigma] * num_dim)[..., None, None]
+    func_feat = lambda x: tf.nn.convolution(x[None,...,None], kernel,
+        padding='SAME')[0,...,0]
+    func_batch = lambda x: tf.map_fn(func_feat, x, dtype='float32')
+    func_tensor = lambda x: tf.map_fn(func_batch, x, dtype='float32')
+    tensor = KL.Lambda(func_tensor)(tensor)
+
+    # Restore order of dimensions.
+    return KL.Lambda(lambda x: tf.transpose(x, perm=backward))(tensor)
 
 
 def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute_val=True):
