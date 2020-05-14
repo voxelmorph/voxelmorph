@@ -972,7 +972,7 @@ class VxmDenseSynth(LoadableModel):
             hot_labels: List of labels to output as one-hot maps.
             kwargs: Optional keyword arguments forwarded to the internal VxmDense model.
         """
-        from SynthSeg.labels_to_image_model import labels_to_image_model
+        from SynthSeg import labels_to_image_model
 
         # brain generation
         make_im_model = lambda id: labels_to_image_model(inshape, inshape, all_labels, hot_labels, id=id,
