@@ -1,10 +1,8 @@
-import tensorflow.keras as keras
 import numpy as np
 import tensorflow as tf
+import tensorflow.keras as keras
 import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
-import numpy.random as npr
-#from sklearn import preprocessing
 
 from neuron import layers as nrn_layers
 from .utils import add_axis, gauss_kernel, format_target_res, get_nonlin_field_shape, get_bias_field_shape, get_shapes
@@ -26,7 +24,7 @@ def labels_to_image_model(labels_shape,
                           blur_background=True,
                           normalise=True,
                           out_div_32=False,
-                          convert_back=False,
+                          one_hot=True,
                           id=0, # For different layer names if several models.
                           rand_blur=True):
     """
@@ -65,6 +63,7 @@ def labels_to_image_model(labels_shape,
     :param blur_background: Whether background is a regular label, thus blurred with the others.
     :param normalise: whether to normalise data. Default is False.
     :param out_div_32: whether model's outputs must be of shape divisible by 32
+    :param one_hot: whether to encode the output labels as one-hot maps
     """
 
     # get shapes
@@ -278,21 +277,24 @@ def labels_to_image_model(labels_shape,
         lambda x: x * tf.random.uniform([1], minval=0.6, maxval=1.4) + tf.random.uniform([1], minval=-30, maxval=30),
         name=f'stretching_{id}')(image)
 
-    # convert labels back to original values and remove unwanted labels
-    if convert_back:
-        out_lut = [x if x in segmentation_label_list else 0 for x in generation_label_list]
-    else:
-        # Rebase wanted indices into [0, N-1] for one-hot encoding.
-        n = 0
-        out_lut = [None] * len(generation_label_list)
-        for i, x in enumerate(generation_label_list):
-            out = -1
-            if x in segmentation_label_list:
-                out = n
-                n += 1
-            out_lut[i] = out
-    labels = KL.Lambda(lambda x: tf.gather(tf.cast(out_lut, dtype='int32'),
-                                           tf.cast(x, dtype='int32')), name=f'labels_back_{id}')(labels)
+    # Convert labels back to original values and remove unwanted labels.
+    # Alternatively, rebase the wanted labels into the interval [0, N-1] for
+    # one-hot encoding. Setting unwanted labels to -1 will remove them from the
+    # one-hot maps - we'll only accumulate them in the map with index 0 if
+    # this is the background (i.e. if background is part of the output labels).
+    unwanted = -1 if (one_hot and 0 not in segmentation_label_list) else 0
+    lut = np.full(n_generation_labels, fill_value=unwanted, dtype='int32')
+    ind = 0
+    for i, x in enumerate(generation_label_list):
+        if x in segmentation_label_list:
+            lut[i] = ind if one_hot else x
+            ind += 1
+    convert = lambda x: tf.gather(tf.constant(lut), tf.cast(x, dtype='int32'))
+    labels = KL.Lambda(convert, name=f'labels_back_{id}')(labels)
+    if one_hot:
+        depth = len(segmentation_label_list)
+        one_hot_func = lambda x: tf.one_hot(x[..., 0], depth)
+        labels = KL.Lambda(lambda x: tf.map_fn(one_hot_func, x, dtype='float32'))(labels)
 
     # normalise the produced image (include labels_out, so this layer is not removed when plugging in other keras model)
     if normalise:
@@ -303,8 +305,8 @@ def labels_to_image_model(labels_shape,
         image = KL.Lambda(lambda x: x[0] + K.zeros(1), name=f'dummy_{id}')([image])
 
     # gamma augmentation
-    image = KL.Lambda(lambda x: tf.math.pow(x[0], tf.math.exp(tf.random.normal([1], mean=0, stddev=0.25))),
-                      name=f'gamma_{id}')([image, labels])
+    image = KL.Lambda(lambda x: tf.math.pow(x[0],tf.math.exp(tf.random.normal([1], mean=0, stddev=0.25))),
+        name=f'gamma_{id}')([image, labels])
 
     outputs = [image, labels]
     if apply_nonlin_trans:
