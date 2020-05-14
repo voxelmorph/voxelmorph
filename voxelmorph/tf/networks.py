@@ -980,8 +980,8 @@ class VxmDenseSynth(LoadableModel):
         )
         bg_model_1, self.warp_shape, self.bias_shape = make_im_model(0)
         bg_model_2 = make_im_model(1)[0]
-        image_1, labels_1 = bg_model_1.outputs[:2]
-        image_2, labels_2 = bg_model_2.outputs[:2]
+        image_1, one_hot_1 = bg_model_1.outputs[:2]
+        image_2, one_hot_2 = bg_model_2.outputs[:2]
 
         # build brain generation input model
         inputs = bg_model_1.inputs + bg_model_2.inputs
@@ -990,11 +990,6 @@ class VxmDenseSynth(LoadableModel):
         # attach dense voxelmorph network and extract flow field layer
         dense_model = VxmDense(inshape, input_model=unet_input_model, **kwargs)
         flow = dense_model.references.pos_flow
-
-        # one-hot encoding
-        one_hot_func = lambda x: tf.one_hot(x[..., 0], len(hot_labels), dtype='float32')
-        one_hot_1 = KL.Lambda(one_hot_func)(labels_1)
-        one_hot_2 = KL.Lambda(one_hot_func)(labels_2)
 
         # transformation
         pred = layers.SpatialTransformer(interp_method='linear', name='pred')([one_hot_1, flow])
