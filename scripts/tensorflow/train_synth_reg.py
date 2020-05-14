@@ -140,6 +140,7 @@ with tf.device(device):
     if args.resume:
         args.load_weights, args.initial_epoch = vxm.py.utils.find_weights_file(model_dir)
     if args.load_weights:
+        args.load_weights, _ = vxm.py.utils.find_weights_file(args.load_weights)
         model.load_weights(args.load_weights)
 
     # configure custom dice
