@@ -46,10 +46,11 @@ def affine_identity_to_shift(trf):
     return tf.reshape(trf, [ndims * (ndims + 1)])
 
 
-def gaussian_blur(tensor, sigma):
+def gaussian_blur(tensor, sigma, kernel_width=None):
     """
     Blur a tensor of standard Keras shape (batch, space ..., feature) using an
-    isotropic Gaussian kernel. Nothing is done if sigma is 0 or None.
+    isotropic Gaussian kernel. Nothing is done if sigma is 0 or None. By
+    default, the kernel width will be 3 standard deviations times 2 plus 1.
     """
     if sigma is None or sigma == 0:
         return tensor
@@ -63,14 +64,23 @@ def gaussian_blur(tensor, sigma):
     backward = (ind[0], *ind[2:], ind[1])
     tensor = KL.Lambda(lambda x: tf.transpose(x, perm=forward))(tensor)
 
-    # Apply kernel once per batch, feature.
+    # Use the fact that a Gaussian kernel is separable.
+    kernel = ne.utils.gaussian_kernel(sigma, windowsize=[kernel_width])
+    kernel_width = kernel.shape[0].value
+
+    # For each dimension, apply the 1D kernel once per batch, feature.
     num_dim = len(shape) - 2
-    kernel = ne.utils.gaussian_kernel([sigma] * num_dim)[..., None, None]
-    func_feat = lambda x: tf.nn.convolution(x[None,...,None], kernel,
-        padding='SAME')[0,...,0]
-    func_batch = lambda x: tf.map_fn(func_feat, x, dtype='float32')
-    func_tensor = lambda x: tf.map_fn(func_batch, x, dtype='float32')
-    tensor = KL.Lambda(func_tensor)(tensor)
+    num_feat = shape[-1]
+    for i in range(num_dim):
+        kernel_shape = np.ones(num_dim + 2)
+        kernel_shape[i] = kernel_width
+        kernel = tf.reshape(kernel, shape=kernel_shape)
+        func_feat = lambda x: tf.nn.convolution(x[None,...,None], kernel,
+            padding='SAME')[0,...,0]
+        func_batch = lambda x: tf.map_fn(func_feat, x, dtype='float32',
+            parallel_iterations=num_feat)
+        func_tensor = lambda x: tf.map_fn(func_batch, x, dtype='float32')
+        tensor = KL.Lambda(func_tensor)(tensor)
 
     # Restore order of dimensions.
     return KL.Lambda(lambda x: tf.transpose(x, perm=backward))(tensor)
