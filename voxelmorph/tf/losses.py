@@ -148,11 +148,14 @@ class Grad:
 
     def loss(self, _, y_pred):
         if self.penalty == 'l1':
-            df = [tf.reduce_mean(tf.abs(f)) for f in self._diffs(y_pred)]
+            dif = [tf.abs(f) for f in self._diffs(y_pred)]
         else:
             assert self.penalty == 'l2', 'penalty can only be l1 or l2. Got: %s' % self.penalty
-            df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
+            dif = [f * f for f in self._diffs(y_pred)]
+
+        df = [tf.reduce_mean(K.batch_flatten(f), axis=-1) for f in dif]
         return tf.add_n(df) / len(df)
+
 
 
 
