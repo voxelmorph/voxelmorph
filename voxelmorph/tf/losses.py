@@ -58,8 +58,8 @@ class NCC:
 
         cc = cross * cross / (I_var * J_var + self.eps)
 
-        # return mean cc
-        return tf.reduce_mean(cc)
+        # return mean cc for each entry in batch
+        return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
 
     def loss(self, y_true, y_pred):
         return - self.ncc(y_true, y_pred)
