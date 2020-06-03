@@ -58,8 +58,8 @@ class NCC:
 
         cc = cross * cross / (I_var * J_var + self.eps)
 
-        # return mean cc
-        return tf.reduce_mean(cc)
+        # return mean cc for each entry in batch
+        return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
 
     def loss(self, y_true, y_pred):
         return - self.ncc(y_true, y_pred)
@@ -137,22 +137,27 @@ class Grad:
             r = [d, *range(d), *range(d + 1, ndims + 2)]
             y = K.permute_dimensions(y, r)
             dfi = y[1:, ...] - y[:-1, ...]
-            
+
             # permute back
             # note: this might not be necessary for this loss specifically,
             # since the results are just summed over anyway.
             r = [*range(1, d + 1), 0, *range(d + 1, ndims + 2)]
+            r = [d, *range(1, d), 0, *range(d + 1, ndims + 2)]
             df[i] = K.permute_dimensions(dfi, r)
-        
+
         return df
 
     def loss(self, _, y_pred):
         if self.penalty == 'l1':
-            df = [tf.reduce_mean(tf.abs(f)) for f in self._diffs(y_pred)]
+            dif = [tf.abs(f) for f in self._diffs(y_pred)]
         else:
             assert self.penalty == 'l2', 'penalty can only be l1 or l2. Got: %s' % self.penalty
-            df = [tf.reduce_mean(f * f) for f in self._diffs(y_pred)]
+            dif = [f * f for f in self._diffs(y_pred)]
+
+        df = [tf.reduce_mean(K.batch_flatten(f), axis=-1) for f in dif]
         return tf.add_n(df) / len(df)
+
+
 
 
 
