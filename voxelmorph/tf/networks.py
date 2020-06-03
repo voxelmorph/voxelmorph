@@ -280,6 +280,8 @@ class VxmAffineDense(LoadableModel):
         transform_type='affine',
         affine_bidir=False,
         affine_blurs=[1],
+        bidir=False,
+        affine_model=None,
         **kwargs):
         """
         Parameters:
@@ -289,6 +291,8 @@ class VxmAffineDense(LoadableModel):
             transform_type:  See VxmAffine for types. Default is 'affine'.
             affine_bidir: Enable bidirectional affine training. Default is False.
             affine_blurs: List of blurring levels for affine transform. Default is [1].
+            bidir: Enable bidirectional cost function. Default is False.
+            affine_model: Provide alternative affine model as inputs. Default is None.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -303,13 +307,15 @@ class VxmAffineDense(LoadableModel):
             enc_nf_affine = nb_unet_features[0]
 
         # affine component
-        affine_model = VxmAffine(inshape, enc_nf_affine, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs)
+        if affine_model is None:
+            affine_model = VxmAffine(inshape, enc_nf_affine, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs)
         source = affine_model.inputs[0]
+        target = affine_model.inputs[1]
         affine = affine_model.references.affine
 
         # build a dense model that takes the affine transformed src as input
-        dense_input_model = tf.keras.Model(affine_model.inputs, (affine_model.outputs[0], affine_model.inputs[1]))
-        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, input_model=dense_input_model, **kwargs)
+        dense_input_model = tf.keras.Model(affine_model.inputs, (affine_model.outputs[0], target))
+        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=bidir, input_model=dense_input_model, **kwargs)
         flow_params = dense_model.outputs[1]
         pos_flow = dense_model.references.pos_flow
 
@@ -319,14 +325,26 @@ class VxmAffineDense(LoadableModel):
         composed = layers.ComposeTransform()([affine, pos_flow])
         y_source = layers.SpatialTransformer()([source, composed])
 
+        # invert and transform for bidirectional training
+        if bidir:
+            neg_flow = dense_model.references.neg_flow
+            inv_affine = layers.InvertAffine()(affine)
+            inv_composed = layers.ComposeTransform()([inv_affine, neg_flow])
+            y_target = layers.SpatialTransformer()([target, inv_composed])
+            outputs = [y_source, y_target, flow_params]
+        else:
+            outputs = [y_source, flow_params]
+
         # initialize the keras model
-        super().__init__(inputs=affine_model.inputs, outputs=[y_source, flow_params])
+        super().__init__(inputs=affine_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
         self.references.affine = affine
         self.references.pos_flow = pos_flow
         self.references.composed = composed
+        self.references.neg_flow = neg_flow if bidir else None
+        self.references.inv_composed = inv_composed if bidir else None
 
     def get_split_registration_model(self):
         """
@@ -1024,11 +1042,12 @@ class Transform(tf.keras.Model):
     Simple transform model to apply dense or affine transforms.
     """
 
-    def __init__(self, inshape, affine=False, interp_method='linear', nb_feats=1):
+    def __init__(self, inshape, affine=False, interp_method='linear', rescale=None, nb_feats=1):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             affine: Enable affine transform. Default is False.
+            rescale: Transform rescale factor. Default in None.
             interp_method: Interpolation method. Can be 'linear' or 'nearest'. Default is 'linear'.
             nb_feats: Number of source image features. Default is 1.
         """
@@ -1042,8 +1061,10 @@ class Transform(tf.keras.Model):
         else:
             trf_input = tf.keras.Input((*inshape, ndims), name='trf_input')
 
+        trf_scaled = trf_input if rescale is None else layers.RescaleTransform(rescale)(trf_input)
+
         # transform and initialize the keras model
-        y_source = layers.SpatialTransformer(interp_method=interp_method, name='transformer')([scan_input, trf_input])
+        y_source = layers.SpatialTransformer(interp_method=interp_method, name='transformer')([scan_input, trf_scaled])
         super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
 
 
