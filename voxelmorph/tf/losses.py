@@ -4,6 +4,7 @@ import tensorflow as tf
 import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
 
+import sandbox as nes
 
 class NCC:
     """
@@ -121,10 +122,22 @@ class Dice:
 class Grad:
     """
     N-D gradient loss.
+    blur_sigma should be a list of sigma values, one for each dimension
+    note that if blur_sigma is specified, inshape must also be 
+    (with the number of channels)
+    If blur_sigma is a scalar, assume isotropic blurring for all dimensions
     """
 
-    def __init__(self, penalty='l1'):
+    def __init__(self, penalty='l1', blur_sigma=None, inshape=None):
         self.penalty = penalty
+        if blur_sigma is not None:
+            assert inshape is not None, 'vxm.losses.Grad: if specifying a blur_sigma must also specify inshape'
+            ndims = len(inshape)-1
+            nchannels = inshape[-1]
+            self.ncalls = 0
+            self.blur_kernel = nes.utils.blurring_tensor(ndims, nchannels, nchannels, blur_sigma)
+        else:
+            self.blur_kernel = None
 
     def _diffs(self, y):
         vol_shape = y.get_shape().as_list()[1:-1]
@@ -148,11 +161,21 @@ class Grad:
         return df
 
     def loss(self, _, y_pred):
+#        if self.blur_kernel is not None:  # blur the input data
+#            ndims = len(y_pred.get_shape().as_list()) - 2
+#            conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
+#            y_pred = conv_fn(y_pred, self.blur_kernel, (ndims+2)*[1],'SAME')
+
         if self.penalty == 'l1':
             dif = [tf.abs(f) for f in self._diffs(y_pred)]
         else:
             assert self.penalty == 'l2', 'penalty can only be l1 or l2. Got: %s' % self.penalty
             dif = [f * f for f in self._diffs(y_pred)]
+
+        if self.blur_kernel is not None:  # blur the input data
+            ndims = len(y_pred.get_shape().as_list()) - 2
+            conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
+            dif = [conv_fn(f, self.blur_kernel, (ndims+2)*[1],'SAME') for f in dif]
 
         df = [tf.reduce_mean(K.batch_flatten(f), axis=-1) for f in dif]
         return tf.add_n(df) / len(df)

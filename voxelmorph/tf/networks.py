@@ -160,7 +160,7 @@ class VxmAffine(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1], rescale_affine=1.0):
+    def __init__(self, inshape, enc_nf, bidir=False, transform_type='affine', blurs=[1], rescale_affine=1.0, nchannels=1, name='vxm_affine'):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -170,6 +170,8 @@ class VxmAffine(LoadableModel):
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
             rescale_affine: a scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
                 this improves stability by enabling different gradient flow to affect the affine parameters
+            nchannels - number of input channels
+            name - name of the model that is returned
         """
 
         # ensure correct dimensionality
@@ -198,8 +200,8 @@ class VxmAffine(LoadableModel):
             basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
 
         # inputs
-        source = tf.keras.Input(shape=[*inshape, 1], name='source_input')
-        target = tf.keras.Input(shape=[*inshape, 1], name='target_input')
+        source = tf.keras.Input(shape=[*inshape, nchannels], name='source_input')
+        target = tf.keras.Input(shape=[*inshape, nchannels], name='target_input')
 
         scale_affines = []
         full_affine = None
@@ -237,7 +239,7 @@ class VxmAffine(LoadableModel):
             outputs = [y_source]
 
         # initialize the keras model
-        super().__init__(name='affine_net', inputs=[source, target], outputs=outputs)
+        super().__init__(name=name, inputs=[source, target], outputs=outputs)
 
         # cache affines
         self.references = LoadableModel.ReferenceContainer()
@@ -316,7 +318,7 @@ class VxmAffineDense(LoadableModel):
         # build a dense model that takes the affine transformed src as input
         dense_input_model = tf.keras.Model(affine_model.inputs, (affine_model.outputs[0], target))
         dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=bidir, input_model=dense_input_model, **kwargs)
-        flow_params = dense_model.outputs[1]
+        flow_params = dense_model.outputs[-1]
         pos_flow = dense_model.references.pos_flow
 
         # build a single transform that applies both affine and dense to src
