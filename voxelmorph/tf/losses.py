@@ -4,7 +4,7 @@ import tensorflow as tf
 import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
 
-import sandbox as nes
+
 
 class NCC:
     """
@@ -131,6 +131,8 @@ class Grad:
     def __init__(self, penalty='l1', blur_sigma=None, inshape=None):
         self.penalty = penalty
         if blur_sigma is not None:
+            import sandbox as nes  # ugly bandaid but avoids crashes for now. 
+            
             assert inshape is not None, 'vxm.losses.Grad: if specifying a blur_sigma must also specify inshape'
             ndims = len(inshape)-1
             nchannels = inshape[-1]
