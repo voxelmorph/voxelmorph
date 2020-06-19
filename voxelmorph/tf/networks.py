@@ -168,8 +168,8 @@ class VxmAffine(LoadableModel):
             bidir: Enable bidirectional cost function. Default is False.
             transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
-            rescale_affine: A scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
-                this improves stability by enabling different gradient flow to affect the affine parameters
+            rescale_affine: A scalar or array to rescale the output of the affine dense layer.
+                This improves stability by enabling different gradient flow to affect the affine parameters.
             nchannels: Number of input channels. Default is 1.
             name: Model name. Default is 'vxm_affine'.
         """
@@ -191,13 +191,16 @@ class VxmAffine(LoadableModel):
         if transform_type == 'rigid':
             print('Warning: rigid registration has not been fully tested')
             basenet.add(KL.Dense(ndims * 2, name='dense'))
+            basenet.add(ne.layers.RescaleValues(rescale_affine, name='rigid_rescale'))
             basenet.add(layers.AffineTransformationsToMatrix(ndims, name='matrix_conversion'))
         elif transform_type == 'rigid+scale':
             print('Warning: rigid registration has not been fully tested')
             basenet.add(KL.Dense(ndims * 2+1, name='dense'))
+            basenet.add(ne.layers.RescaleValues(rescale_affine, name='rigid_rescale'))
             basenet.add(layers.AffineTransformationsToMatrix(ndims, scale=True, name='matrix_conversion'))
         else:
             basenet.add(KL.Dense(ndims * (ndims + 1), name='dense'))
+            basenet.add(ne.layers.RescaleValues(rescale_affine, name='matrix_rescale'))
 
         # inputs
         source = tf.keras.Input(shape=[*inshape, nchannels], name='source_input')
@@ -217,8 +220,7 @@ class VxmAffine(LoadableModel):
             target_blur = layers.GaussianBlur(blur, name=prefix+'target_blur')(target)
 
             # per-scale affine encoder
-            curr_affine_scaled = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))
-            curr_affine = ne.layers.RescaleValues(rescale_affine, name=prefix+'rescale')(curr_affine_scaled)
+            curr_affine = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))
             scale_affines.append(curr_affine)
 
             # compose affine at this scale
