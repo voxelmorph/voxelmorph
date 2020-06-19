@@ -10,7 +10,7 @@ from .. import default_unet_features
 from . import layers
 from . import neuron as ne
 from .modelio import LoadableModel, store_config_args
-from .utils import gaussian_blur, value_at_location, point_spatial_transformer
+from .utils import value_at_location, point_spatial_transformer
 
 
 # make ModelCheckpointParallel directly available from vxm
@@ -168,10 +168,10 @@ class VxmAffine(LoadableModel):
             bidir: Enable bidirectional cost function. Default is False.
             transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
-            rescale_affine: a scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
+            rescale_affine: A scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
                 this improves stability by enabling different gradient flow to affect the affine parameters
-            nchannels - number of input channels
-            name - name of the model that is returned
+            nchannels: Number of input channels. Default is 1.
+            name: Model name. Default is 'vxm_affine'.
         """
 
         # ensure correct dimensionality
@@ -213,8 +213,8 @@ class VxmAffine(LoadableModel):
             prefix = 'blur_%d_' % blur_num
 
             # set input and blur using gaussian kernel  
-            source_blur = gaussian_blur(y_source, blur, ndims)
-            target_blur = gaussian_blur(target, blur, ndims)
+            source_blur = layers.GaussianBlur(blur, name=prefix+'source_blur')(y_source)
+            target_blur = layers.GaussianBlur(blur, name=prefix+'target_blur')(target)
 
             # per-scale affine encoder
             curr_affine_scaled = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))
