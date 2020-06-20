@@ -10,7 +10,7 @@ from .. import default_unet_features
 from . import layers
 from . import neuron as ne
 from .modelio import LoadableModel, store_config_args
-from .utils import gaussian_blur, value_at_location, point_spatial_transformer
+from .utils import value_at_location, point_spatial_transformer
 
 
 # make ModelCheckpointParallel directly available from vxm
@@ -168,10 +168,12 @@ class VxmAffine(LoadableModel):
             bidir: Enable bidirectional cost function. Default is False.
             transform_type: 'affine' (default), 'rigid' or 'rigid+scale' currently
             blurs: List of gaussian blur kernel levels for inputs. Default is [1].
-            rescale_affine: a scalar (or ndims*(ndims+1) array) to rescale the output of the dense layer
-                this improves stability by enabling different gradient flow to affect the affine parameters
-            nchannels - number of input channels
-            name - name of the model that is returned
+            rescale_affine: A scalar or array to rescale the output of the affine matrix layer. Default is 1.0.
+                This improves stability by enabling different gradient flow to affect the affine parameters.
+                Input array can match the transform matrix shape or it can be a 2-element list that
+                represents individual [translation, linear] components.
+            nchannels: Number of input channels. Default is 1.
+            name: Model name. Default is 'vxm_affine'.
         """
 
         # ensure correct dimensionality
@@ -207,18 +209,25 @@ class VxmAffine(LoadableModel):
         full_affine = None
         y_source = source
 
+        # prepare rescaling matrix
+        if hasattr(rescale_affine, '__len__') and len(rescale_affine) == 2:
+            scaling = np.ones((ndims, ndims + 1), dtype='float32')
+            scaling[:, -1]  = rescale_affine[0]  # translation
+            scaling[:, :-1] = rescale_affine[1]  # linear (everything else)
+            rescale_affine = scaling[np.newaxis].flatten()
+
         # build net with multi-scales
         for blur_num, blur in enumerate(blurs):
             # get layer name prefix
             prefix = 'blur_%d_' % blur_num
 
             # set input and blur using gaussian kernel  
-            source_blur = gaussian_blur(y_source, blur, ndims)
-            target_blur = gaussian_blur(target, blur, ndims)
+            source_blur = layers.GaussianBlur(blur, name=prefix+'source_blur')(y_source)
+            target_blur = layers.GaussianBlur(blur, name=prefix+'target_blur')(target)
 
             # per-scale affine encoder
-            curr_affine_scaled = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))
-            curr_affine = ne.layers.RescaleValues(rescale_affine, name=prefix+'rescale')(curr_affine_scaled)
+            curr_affine_prescaled = basenet(KL.concatenate([source_blur, target_blur], name=prefix+'concat'))
+            curr_affine = ne.layers.RescaleValues(rescale_affine, name=prefix+'rescale')(curr_affine_prescaled)
             scale_affines.append(curr_affine)
 
             # compose affine at this scale

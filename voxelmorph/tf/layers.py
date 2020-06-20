@@ -170,6 +170,32 @@ class ComposeTransform(Layer):
             return (input_shape[0], *self.volshape, self.ndims)
 
 
+class GaussianBlur(Layer):
+    """ 
+    Applies gaussian blur to an input image.
+    """
+
+    def __init__(self, level, **kwargs):
+        if level < 1:
+            raise ValueError('Gaussian blur level must not be less than 1')
+        self.sigma = (level - 1) ** 2
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        ndims = len(input_shape) - 2
+        kernel = ne.utils.gaussian_kernel([self.sigma] * ndims)
+        kernel = tf.reshape(kernel, kernel.shape.as_list() + [1, 1])
+        convnd = getattr(tf.nn, 'conv%dd' % ndims)
+        self.conv = lambda x : convnd(tf.expand_dims(x, -1), kernel, [1] * (ndims + 2), padding='SAME')
+        self.nfeat = input_shape[-1]
+
+    def call(self, x):
+        return x if self.sigma == 0 else tf.concat([self.conv(x[..., n]) for n in range(self.nfeat)], -1)
+
+    def compute_output_shape(self, input_shape):
+        return input_shape
+
+
 class LocalParamWithInput(Layer):
     """ 
     Update 9/29/2019 - TODO: should try ne.layers.LocalParam() again after update.

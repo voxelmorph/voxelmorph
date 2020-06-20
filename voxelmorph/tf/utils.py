@@ -46,25 +46,6 @@ def affine_identity_to_shift(trf):
     return tf.reshape(trf, [ndims * (ndims + 1)])
 
 
-def gaussian_blur(tensor, level, ndims):
-    """
-    Blurs a tensor using a gaussian kernel (nothing done if level=1).
-    """
-    if level > 1:
-        sigma = (level-1) ** 2
-        blur_kernel = ne.utils.gaussian_kernel([sigma] * ndims)
-        blur_kernel = tf.reshape(blur_kernel, blur_kernel.shape.as_list() + [1, 1])
-        if ndims == 3:
-            conv = lambda x: tf.nn.conv3d(x, blur_kernel, [1, 1, 1, 1, 1], 'SAME')
-        else:
-            conv = lambda x: tf.nn.conv2d(x, blur_kernel, [1, 1, 1, 1], 'SAME')
-        return KL.Lambda(conv)(tensor)
-    elif level == 1:
-        return tensor
-    else:
-        raise ValueError('Gaussian blur level must not be less than 1')
-
-
 def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute_val=True):
     """
     Extracts value at given point.
