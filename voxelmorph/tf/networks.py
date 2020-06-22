@@ -293,6 +293,8 @@ class VxmAffineDense(LoadableModel):
         affine_blurs=[1],
         bidir=False,
         affine_model=None,
+        rescale_affine=1.0,
+        nfeats=1,
         **kwargs):
         """
         Parameters:
@@ -319,14 +321,14 @@ class VxmAffineDense(LoadableModel):
 
         # affine component
         if affine_model is None:
-            affine_model = VxmAffine(inshape, enc_nf_affine, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs)
+            affine_model = VxmAffine(inshape, enc_nf_affine, transform_type=transform_type, bidir=affine_bidir, blurs=affine_blurs,rescale_affine=rescale_affine,nchannels=nfeats)
         source = affine_model.inputs[0]
         target = affine_model.inputs[1]
         affine = affine_model.references.affine
 
         # build a dense model that takes the affine transformed src as input
         dense_input_model = tf.keras.Model(affine_model.inputs, (affine_model.outputs[0], target))
-        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=bidir, input_model=dense_input_model, **kwargs)
+        dense_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=bidir, input_model=dense_input_model, src_feats=nfeats, trg_feats=nfeats, **kwargs)
         flow_params = dense_model.outputs[-1]
         pos_flow = dense_model.references.pos_flow
 
