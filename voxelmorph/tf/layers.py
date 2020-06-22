@@ -230,10 +230,11 @@ class LocalParamWithInput(Layer):
 
     def call(self, x):
         # want the x variable for it's keras properties and the batch.
-        b = 0 * K.batch_flatten(x)[:, 0:1] + 1
-        params = K.expand_dims(K.flatten(self.kernel * self.biasmult), 0)
-        z = K.reshape(K.dot(b, params), [-1, *self.shape])
-        return z
+        xslice = K.batch_flatten(x)[:, 0:1]
+        b = xslice * tf.zeros((1,)) + tf.ones((1,))
+        # b = K.batch_flatten(0 * x)[:, 0:1] + 1
+        params = K.flatten(self.kernel * self.biasmult)[tf.newaxis, ...]
+        return K.reshape(K.dot(b, params), [-1, *self.shape])
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.shape)
