@@ -1,10 +1,13 @@
+
+# third party
 import numpy as np
-import neuron as ne
 import tensorflow as tf
 from tensorflow import keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Layer
+import neuron as ne
 
+# local utils
 from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity, affine_identity_to_shift
 
 
@@ -257,7 +260,8 @@ class AffineToDense(Layer):
                 raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
 
         if len(shape) == 2 and (shape[0] != self.ndims or shape[1] != self.ndims + 1):
-            raise ValueError('Expected affine matrix of shape %s but got %s' % (str((self.ndims, self.ndims + 1)), str(shape)))
+            err_msg = 'Expected affine matrix of shape %s but got %s'
+            raise ValueError(err_msg % (str((self.ndims, self.ndims + 1)), str(shape)))
 
         super().build(input_shape)
 
