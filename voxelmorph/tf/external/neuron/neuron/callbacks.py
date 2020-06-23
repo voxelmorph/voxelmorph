@@ -14,21 +14,21 @@ We'd like the following callback actions for neuron:
 
 '''
 import sys
+import time
+import warnings
+from imp import reload
 
 from tensorflow import keras
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
-import warnings
-from imp import reload
-import pytools.timer as timer
 
+import pytools.timer as timer
 import pynd.ndutils as nd
 import pynd.segutils as su
 
 # the neuron folder should be on the path
-import neuron.plot as nrn_plt
-import neuron.utils as nrn_utils
+import neuron as ne
 
 
 class ModelWeightCheck(keras.callbacks.Callback):
@@ -596,6 +596,24 @@ class ModelCheckpointParallel(keras.callbacks.Callback):
                         self.model.layers[-(num_outputs+1)].save(filepath, overwrite=True)
 
 
+class TimeHistory(keras.callbacks.Callback):
+    """
+    taken from https://stackoverflow.com/questions/43178668/record-the-computation-time-for-each-epoch-in-keras-during-model-fit
+
+    usecase:
+    time_callback = TimeHistory()
+    model.fit(..., callbacks=[..., time_callback],...)
+    times = time_callback.times
+    """
+    def on_train_begin(self, logs={}):
+        self.times = []
+
+    def on_epoch_begin(self, batch, logs={}):
+        self.epoch_time_start = time.time()
+
+    def on_epoch_end(self, batch, logs={}):
+        self.times.append(time.time() - self.epoch_time_start)
+
 
 ##################################################################################################
 # helper functions
@@ -605,7 +623,7 @@ def _generate_predictions(model, data_generator, batch_size, nb_samples, vol_par
     # whole volumes
     if vol_params is not None:
         for _ in range(nb_samples):  # assumes nr volume
-            vols = nrn_utils.predict_volumes(model,
+            vols = ne.utils.predict_volumes(model,
                                              data_generator,
                                              batch_size,
                                              vol_params["patch_size"],
@@ -617,7 +635,7 @@ def _generate_predictions(model, data_generator, batch_size, nb_samples, vol_par
     # just one batch
     else:
         for _ in range(nb_samples):  # assumes nr batches
-            vol_pred, vol_true = nrn_utils.next_label(model, data_generator)
+            vol_pred, vol_true = ne.utils.next_label(model, data_generator)
             yield (vol_true, vol_pred)
 
 import collections

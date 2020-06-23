@@ -11,7 +11,6 @@ License: GPLv3
 """
 
 import sys
-
 from . import layers
 
 # third party
@@ -220,6 +219,8 @@ def ae(nb_features,
        include_mu_shift_layer=False,
        single_model=False, # whether to return a single model, or a tuple of models that can be stacked.
        final_pred_activation='softmax',
+       src=None,
+       src_input=None,
        do_vae=False):
     """
     Convolutional Auto-Encoder.
@@ -259,7 +260,9 @@ def ae(nb_features,
                          use_residuals=use_residuals,
                          nb_conv_per_level=nb_conv_per_level,
                          conv_dropout=conv_dropout,
-                         batch_norm=batch_norm)
+                         batch_norm=batch_norm,
+                         src=src,
+                         src_input=src_input)
 
     # middle AE structure
     if single_model:
@@ -298,7 +301,7 @@ def ae(nb_features,
                          padding=padding,
                          activation=activation,
                          use_residuals=use_residuals,
-                         final_pred_activation='linear',
+                         final_pred_activation=final_pred_activation,
                          nb_conv_per_level=nb_conv_per_level,
                          batch_norm=batch_norm,
                          conv_dropout=conv_dropout,
@@ -365,7 +368,7 @@ def add_prior(input_model,
     if final_pred_activation == 'softmax':
         assert use_logp, 'cannot do softmax when adding prior via P()'
         print("using final_pred_activation %s for %s" % (final_pred_activation, model_name))
-        softmax_lambda_fcn = lambda x: tensorflow.keras.activations.softmax(x, axis=-1)
+        softmax_lambda_fcn = lambda x: tf.keras.activations.softmax(x, axis=-1)
         pred_tensor = KL.Lambda(softmax_lambda_fcn, name=pred_name)(post_tensor)
 
     else:
@@ -499,8 +502,8 @@ def single_ae(enc_size,
         if ae_type == 'dense':
             name = '%s_ae_sigma_enc_dense_%s' % (prefix, enc_size_str)
             last_tensor = KL.Dense(enc_size[0], name=name,
-                                #    kernel_initializer=tensorflow.keras.initializers.RandomNormal(mean=0.0, stddev=1e-5),
-                                #    bias_initializer=tensorflow.keras.initializers.RandomNormal(mean=-5.0, stddev=1e-5)
+                                #    kernel_initializer=tf.keras.initializers.RandomNormal(mean=0.0, stddev=1e-5),
+                                #    bias_initializer=tf.keras.initializers.RandomNormal(mean=-5.0, stddev=1e-5)
                                    )(pre_enc_layer)
 
         else:
@@ -610,7 +613,10 @@ def conv_enc(nb_features,
              use_residuals=False,
              nb_conv_per_level=2,
              conv_dropout=0,
-             batch_norm=None):
+             batch_norm=None,
+             convL=None,  # conv layer function
+             src=None,
+             src_input=None):
     """
     Fully Convolutional Encoder
     """
@@ -627,14 +633,21 @@ def conv_enc(nb_features,
         pool_size = (pool_size,) * ndims
 
     # prepare layers
-    convL = getattr(KL, 'Conv%dD' % ndims)
+    if convL is None:
+        convL = getattr(KL, 'Conv%dD' % ndims)
     conv_kwargs = {'padding': padding, 'activation': activation}
     maxpool = getattr(KL, 'MaxPooling%dD' % ndims)
 
     # first layer: input
-    name = '%s_input' % prefix
-    last_tensor = KL.Input(shape=input_shape, name=name)
-    input_tensor = last_tensor
+    if src is None:
+        name = '%s_input' % prefix
+        last_tensor = KL.Input(shape=input_shape, name=name)
+        input_tensor = last_tensor
+    else:
+        assert src_input is not None, 'need to provide src_input if given src'
+        input_tensor = src_input
+        last_tensor = src
+
 
     # down arm:
     # add nb_levels of conv + ReLu + conv + ReLu. Pool after each of first nb_levels - 1 layers
@@ -659,6 +672,11 @@ def conv_enc(nb_features,
                 # conv dropout along feature space only
                 name = '%s_dropout_downarm_%d_%d' % (prefix, level, conv)
                 noise_shape = [None, *[1]*ndims, nb_lvl_feats]
+                versions = tf.__version__.split('.')
+                ver = int(versions[0])
+                rev = int(versions[1])
+                if ver < 2 or (ver == 2 and rev < 2): # < 2.2
+                    noise_shape=None
                 last_tensor = KL.Dropout(conv_dropout, noise_shape=noise_shape)(last_tensor)
 
         if use_residuals:
@@ -677,6 +695,11 @@ def conv_enc(nb_features,
                 if conv_dropout > 0:
                     name = '%s_dropout_down_merge_%d_%d' % (prefix, level, conv)
                     noise_shape = [None, *[1]*ndims, nb_lvl_feats]
+                    versions = tf.__version__.split('.')
+                    ver = int(versions[0])
+                    rev = int(versions[1])
+                    if ver < 2 or (ver == 2 and rev < 2): # < 2.2
+                        noise_shape=None
                     last_tensor = KL.Dropout(conv_dropout, noise_shape=noise_shape)(last_tensor)
 
             name = '%s_res_down_merge_%d' % (prefix, level)
@@ -718,6 +741,7 @@ def conv_dec(nb_features,
              layer_nb_feats=None,
              batch_norm=None,
              conv_dropout=0,
+             convL=None,
              input_model=None):
     """
     Fully Convolutional Decoder
@@ -754,9 +778,12 @@ def conv_dec(nb_features,
     if isinstance(pool_size, int):
         if ndims > 1:
             pool_size = (pool_size,) * ndims
+    if ndims == 1 and isinstance(pool_size, tuple):
+        pool_size = pool_size[0]  # 1D upsampling takes int not tuple
 
     # prepare layers
-    convL = getattr(KL, 'Conv%dD' % ndims)
+    if convL is None:
+        convL = getattr(KL, 'Conv%dD' % ndims)
     conv_kwargs = {'padding': padding, 'activation': activation}
     upsample = getattr(KL, 'UpSampling%dD' % ndims)
 
@@ -796,6 +823,11 @@ def conv_dec(nb_features,
             if conv_dropout > 0:
                 name = '%s_dropout_uparm_%d_%d' % (prefix, level, conv)
                 noise_shape = [None, *[1]*ndims, nb_lvl_feats]
+                versions = tf.__version__.split('.')
+                ver = int(versions[0])
+                rev = int(versions[1])
+                if ver < 2 or (ver == 2 and rev < 2): # < 2.2
+                    noise_shape=None
                 last_tensor = KL.Dropout(conv_dropout, noise_shape=noise_shape)(last_tensor)
 
         # residual block
@@ -835,13 +867,16 @@ def conv_dec(nb_features,
     if final_pred_activation == 'softmax':
         print("using final_pred_activation %s for %s" % (final_pred_activation, model_name))
         name = '%s_prediction' % prefix
-        softmax_lambda_fcn = lambda x: tensorflow.keras.activations.softmax(x, axis=ndims + 1)
+        softmax_lambda_fcn = lambda x: tf.keras.activations.softmax(x, axis=ndims + 1)
         pred_tensor = KL.Lambda(softmax_lambda_fcn, name=name)(last_tensor)
 
     # otherwise create a layer that does nothing.
     else:
         name = '%s_prediction' % prefix
-        pred_tensor = KL.Activation('linear', name=name)(like_tensor)
+        if final_pred_activation is None:
+            pred_tensor = KL.Activation('linear', name=name)(like_tensor)
+        else:
+            pred_tensor = KL.Activation(final_pred_activation, name=name)(like_tensor)
 
     # create the model and retun
     model = Model(inputs=input_tensor, outputs=pred_tensor, name=model_name)
@@ -1003,6 +1038,103 @@ def design_dnn(nb_features, input_shape, nb_levels, conv_size, nb_labels,
     model = Model(inputs=[enc_tensors['%s_input' % prefix]], outputs=[last_tensor], name=model_name)
     return model
 
+
+
+def EncoderNet(nb_features,
+               input_shape,
+               nb_levels,
+               conv_size,
+               name=None,
+               prefix=None,
+               feat_mult=1,
+               pool_size=2,
+               dilation_rate_mult=1,
+               padding='same',
+               activation='elu',
+               layer_nb_feats=None,
+               use_residuals=False,
+               nb_conv_per_level=2,
+               conv_dropout=0,
+               dense_size=256,
+               nb_labels=2,
+               final_activation=None,
+               rescale=None,
+               dropout=None, 
+               batch_norm=None):
+    """
+    Fully Convolutional Encoder-based classifer
+    if nb_labels is 0 assume it is a regression net and use linear activation
+    (if None specified)
+    The end of the encoders/downsampling is flattened and attached to a dense
+    layer with dense_size units, then to the nb_labels output nodes. For other
+    parameters see conv_env documentation
+    """
+
+    # allocate the encoder arm
+    enc_model = conv_enc(nb_features,
+                         input_shape,
+                         nb_levels,
+                         conv_size,
+                         name=name,
+                         feat_mult=feat_mult,
+                         pool_size=pool_size,
+                         padding=padding,
+                         activation=activation,
+                         use_residuals=use_residuals,
+                         nb_conv_per_level=nb_conv_per_level,
+                         conv_dropout=conv_dropout,
+                         batch_norm=batch_norm)
+
+    # run the encoder outputs through a dense layer
+    flat = KL.Flatten()(enc_model.outputs[0])
+    if dropout is not None and dropout > 0:
+        flat = KL.Dropout(dropout, name='dropout_flat')(flat)
+    dense = KL.Dense(dense_size, name='dense')(flat)
+    if dropout is not None and dropout > 0:
+        dense = KL.Dropout(dropout, name='dropout_dense')(dense)
+
+    if nb_labels <= 0:  # if labels <=0 assume a regression net
+        nb_labels = 1
+        if (final_activation is None):
+            final_activation = 'linear'
+    else:  # if labels>=1 assume a classification net
+        if (final_activation is None):
+            final_activation = 'softmax'
+
+    if (rescale is not None):
+        dense = layers.RescaleValues(rescale)(dense)
+    out = KL.Dense(nb_labels, name='output_dense', activation=final_activation)(dense)
+    model = keras.models.Model(inputs=enc_model.inputs, outputs=out)
+    
+    return model
+
+
+def DenseLayerNet(inshape, layer_sizes, nb_labels=2, activation='relu', final_activation='softmax', dropout=None, batch_norm=None):
+    """
+    A densenet that connects a set of dense layers to  a classification
+    output. 
+    if nb_labels is 0 assume it is a regression net and use linear activation
+    (if None specified)
+    """
+    inputs = KL.Input(shape=inshape, name='input')
+    prev_layer = KL.Flatten(name='flat_inputs')(inputs)
+    # to prevent overfitting include some kernel and bias regularization
+    kreg = keras.regularizers.l1_l2(l1=1e-5, l2=1e-4)
+    breg = keras.regularizers.l2(1e-4)
+
+    # connect the list of dense layers to each other
+    for lno, layer_size in enumerate(layer_sizes):
+        prev_layer = KL.Dense(layer_size, name='dense%d' % lno, activation=activation,kernel_regularizer=kreg, bias_regularizer=breg)(prev_layer)
+        if dropout is not None:
+            prev_layer = KL.Dropout(dropout, name='dropout%d'%lno)(prev_layer)
+        if batch_norm is not None:
+            prev_layer = KL.BatchNormalization(name='BatchNorm%d'%lno)(prev_layer)
+            
+    # tie the previous dense layer to a onehot encoded output layer
+    last_layer = KL.Dense(nb_labels, name='last_dense', activation=final_activation)(prev_layer)
+
+    model = keras.models.Model(inputs=inputs, outputs=last_layer)
+    return(model)
 
 
 ###############################################################################
