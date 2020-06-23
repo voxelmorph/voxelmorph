@@ -376,7 +376,7 @@ def latent_stats(model, gen, nb_reps=100, tqdm=tqdm):
     return data
 
 
-def latent_stats_plots(model, gen, nb_reps=100, dim_1=0, dim_2=1, figsize=(15, 7), tqdm=tqdm):
+def latent_stats_plots(model, gen, nb_reps=100, dim_1=0, dim_2=1, figsize=(15, 7), colors=None, tqdm=tqdm):
     """
     Make some debug/info (mostly latent-stats-related) plots
 
@@ -390,7 +390,8 @@ def latent_stats_plots(model, gen, nb_reps=100, dim_1=0, dim_2=1, figsize=(15, 7
     logvar_data = data['logvar']
 
     z = mu_data.shape[0]
-    colors = np.linspace(0, 1, z)
+    if colors is None:
+        colors = np.linspace(0, 1, z)
     x = np.arange(mu_data.shape[1])
     print('VAE plots: colors represent sample index')
 
@@ -403,7 +404,7 @@ def latent_stats_plots(model, gen, nb_reps=100, dim_1=0, dim_2=1, figsize=(15, 7
         datapoints[di, ...] = mu + np.exp(logvar / 2) * eps
     plt.figure(figsize=figsize)
     plt.subplot(1, 2, 1)
-    plt.scatter(datapoints[:, dim_1], datapoints[:, dim_2], c=np.linspace(0, 1, datapoints.shape[0]))
+    plt.scatter(datapoints[:, dim_1], datapoints[:, dim_2], c=colors)
     plt.title('sample dist. nb_reps=%d. colors = sample idx.' % nb_reps)
     plt.xlabel('dim %d' % dim_1)
     plt.ylabel('dim %d' % dim_2)
@@ -419,9 +420,6 @@ def latent_stats_plots(model, gen, nb_reps=100, dim_1=0, dim_2=1, figsize=(15, 7
     plt.title('mean sample z. nb_reps=%d. colors = sorted dim.' % nb_reps)
     plt.xlabel('sorted dims')
     plt.ylabel('mean sample z')
-
-
-
 
 
     # plot

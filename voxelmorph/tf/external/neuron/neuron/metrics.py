@@ -162,6 +162,7 @@ class Dice(object):
                  approx_hard_max=True,
                  vox_weights=None,
                  crop_indices=None,
+                 re_norm=False,
                  area_reg=0.1):  # regularization for bottom of Dice coeff
         """
         input_type is 'prob', or 'max_label'
@@ -183,6 +184,7 @@ class Dice(object):
         self.approx_hard_max = approx_hard_max
         self.area_reg = area_reg
         self.crop_indices = crop_indices
+        self.re_norm = re_norm
 
         if self.crop_indices is not None and vox_weights is not None:
             self.vox_weights = utils.batch_gather(self.vox_weights, self.crop_indices)
@@ -198,11 +200,13 @@ class Dice(object):
 
         if self.input_type == 'prob':
             # We assume that y_true is probabilistic, but just in case:
-            y_true /= K.sum(y_true, axis=-1, keepdims=True)
+            if self.re_norm:
+                y_true = tf.div_no_nan(y_true, K.sum(y_true, axis=-1, keepdims=True))
             y_true = K.clip(y_true, K.epsilon(), 1)
 
             # make sure pred is a probability
-            y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+            if self.re_norm:
+                y_pred = tf.div_no_nan(y_pred, K.sum(y_pred, axis=-1, keepdims=True))
             y_pred = K.clip(y_pred, K.epsilon(), 1)
 
         # Prepare the volumes to operate on
@@ -233,10 +237,10 @@ class Dice(object):
             y_pred_op = y_pred
             y_true_op = y_true
 
-        # reshape data to [batch_size, nb_voxels, nb_labels]
-        flat_shape = tf.stack([-1, K.prod(K.shape(y_true_op)[1:-1]), K.shape(y_true_op)[-1]])
-        y_true_op = K.reshape(y_true_op, flat_shape)
-        y_pred_op = K.reshape(y_pred_op, flat_shape)
+        # reshape to [batch_size, nb_voxels, nb_labels]
+        batch_size = K.shape(y_true)[0]
+        y_pred_op = K.reshape(y_pred_op, [batch_size, -1, K.shape(y_true)[-1]])
+        y_true_op = K.reshape(y_true_op, [batch_size, -1, K.shape(y_true)[-1]])
 
         # compute dice for each entry in batch.
         # dice will now be [batch_size, nb_labels]
@@ -401,6 +405,10 @@ class Nonbg(object):
         y_true_fix = K.variable(yt.flat(ytbg))
         y_pred_fix = K.variable(y_pred.flat(ytbg))
         return self.metric(y_true_fix, y_pred_fix)
+
+###############################################################################
+# simple function losses
+###############################################################################
 
 
 def l1(y_true, y_pred):

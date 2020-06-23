@@ -62,6 +62,11 @@ class RescaleValues(Layer):
         self.resize = resize
         super(RescaleValues, self).__init__(**kwargs)
 
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({'resize': self.resize})
+        return config
+
     def build(self, input_shape):
         super(RescaleValues, self).build(input_shape)  # Be sure to call this somewhere!
 
@@ -100,6 +105,14 @@ class Resize(Layer):
         self.ndims = None
         self.inshape = None
         super(Resize, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'zoom_factor': self.zoom_factor,
+            'interp_method': self.interp_method,
+        })
+        return config
 
     def build(self, input_shape):
         """
@@ -163,6 +176,24 @@ class Resize(Layer):
 Zoom = Resize
 
 
+class MSE(Layer):
+    """ 
+    Keras Layer: mean squared error
+    """
+
+    def __init__(self, **kwargs):
+        super(MSE, self).__init__(**kwargs)
+
+    def build(self, input_shape):
+        super(MSE, self).build(input_shape)  # Be sure to call this somewhere!
+
+    def call(self, x):
+        return K.mean(K.batch_flatten(K.square(x[0] - x[1])), -1)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0][0], )
+
+
 #########################################################
 # Vector fields and spatial transforms
 #########################################################
@@ -194,6 +225,7 @@ class SpatialTransformer(Layer):
                  interp_method='linear',
                  indexing='ij',
                  single_transform=False,
+                 fill_value=None,
                  **kwargs):
         """
         Parameters: 
@@ -202,8 +234,11 @@ class SpatialTransformer(Layer):
             indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian)
                 'xy' indexing will have the first two entries of the flow 
                 (along last axis) flipped compared to 'ij' indexing
+            fill_value (default: None): value to use for points outside the domain.
+                If None, the nearest neighbors will be used.
         """
         self.interp_method = interp_method
+        self.fill_value = fill_value
         self.ndims = None
         self.inshape = None
         self.single_transform = single_transform
@@ -212,6 +247,16 @@ class SpatialTransformer(Layer):
         self.indexing = indexing
 
         super(self.__class__, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'interp_method': self.interp_method,
+            'indexing': self.indexing,
+            'single_transform': self.single_transform,
+            'fill_value': self.fill_value,
+        })
+        return config
 
     def build(self, input_shape):
         """
@@ -295,11 +340,10 @@ class SpatialTransformer(Layer):
 
         # note this is unnecessarily extra graph since at every batch entry we have a tf.eye graph
         trf += tf.eye(self.ndims+1)[:self.ndims,:]  # add identity, hence affine is a shift from identitiy
-
         return affine_to_shift(trf, volshape, shift_center=True)
 
     def _single_transform(self, inputs):
-        return transform(inputs[0], inputs[1], interp_method=self.interp_method)
+        return transform(inputs[0], inputs[1], interp_method=self.interp_method, fill_value=self.fill_value)
 
 
 class VecInt(Layer):
@@ -338,6 +382,18 @@ class VecInt(Layer):
         if ode_args is None:
             self.ode_args = {'rtol':1e-6, 'atol':1e-12}
         super(self.__class__, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'indexing': self.indexing,
+            'method': self.method,
+            'int_steps': self.int_steps,
+            'out_time_pt': self.out_time_pt,
+            'ode_args': self.ode_args,
+            'odeint_fn': self.odeint_fn,
+        })
+        return config
 
     def build(self, input_shape):
         # confirm built
@@ -1033,8 +1089,6 @@ class LocalCrossLinearTrf(keras.layers.Layer):
     def compute_output_shape(self, input_shape):
         return tuple(list(input_shape)[:-1] + [self.output_features])
  
-
-
 
 class LocalParamLayer(Layer):
     """ 
