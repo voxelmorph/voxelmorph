@@ -273,7 +273,7 @@ class VxmAffine(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -382,7 +382,7 @@ class VxmAffineDense(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -734,7 +734,7 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -800,7 +800,7 @@ class VxmAffineSegSemiSupervised(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -889,7 +889,7 @@ class VxmDenseSurfaceSemiSupervised(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -984,7 +984,7 @@ class VxmAffineSurfaceSemiSupervised(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
