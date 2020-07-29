@@ -149,7 +149,7 @@ class VxmDense(LoadableModel):
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img[1:])
+        img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
@@ -1109,9 +1109,9 @@ def upsample_block(x, connection, name=None):
 
 class Unet(tf.keras.Model):
     """
-    A unet architecture that builds off of an input keras model. Layer features can be specified directly
-    as a list of encoder and decoder features or as a single integer along with a number of unet levels.
-    The default network features per layer (when no options are specified) are:
+    A unet architecture that builds off either an input keras model or input shape. Layer features can be
+    specified directly as a list of encoder and decoder features or as a single integer along with a number
+    of unet levels. The default network features per layer (when no options are specified) are:
 
         encoder: [16, 32, 32, 32]
         decoder: [32, 32, 32, 32, 32, 16, 16]
@@ -1120,10 +1120,11 @@ class Unet(tf.keras.Model):
     internal model for more complex networks, and is not meant to be saved/loaded independently.
     """
 
-    def __init__(self, input_model, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1):
+    def __init__(self, inshape=None, input_model=None, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1):
         """
         Parameters:
-            input_model: Input model that feeds directly into the unet before concatenation.
+            inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
+            input_model: Optional input model that feeds directly into the unet before concatenation.
             nb_features: Unet convolutional features. Can be specified via a list of lists with
                 the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
                 the unet features are defined by the default config described in the class documentation.
@@ -1131,6 +1132,16 @@ class Unet(tf.keras.Model):
             feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
         """
+
+        # have the option of specifying input shape or input model
+        if input_model is None:
+            if inshape is None:
+                raise ValueError('inshape must be supplied if input_model is None')
+            unet_input = KL.Input(shape=inshape, name='unet_input')
+            model_inputs = [unet_input]
+        else:
+            unet_input = KL.concatenate(input_model.outputs, name='unet_input_concat')
+            model_inputs = input_model.inputs
 
         # default encoder and decoder layer features if nothing provided
         if nb_features is None:
@@ -1156,7 +1167,7 @@ class Unet(tf.keras.Model):
         nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
         # configure encoder (down-sampling path)
-        enc_layers = [KL.concatenate(input_model.outputs, name='unet_input_concat')]
+        enc_layers = [unet_input]
         last = enc_layers[0]
         for level in range(nb_levels - 1):
             for conv in range(nb_conv_per_level):
@@ -1182,4 +1193,4 @@ class Unet(tf.keras.Model):
             name = 'unet_dec_final_conv_' + str(num)
             last = conv_block(last, nf, name=name)
 
-        return super().__init__(inputs=input_model.inputs, outputs=last)
+        return super().__init__(inputs=model_inputs, outputs=last)
