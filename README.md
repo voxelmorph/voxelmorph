@@ -21,7 +21,7 @@ If you would like to train your own model, you will likely need to customize som
 For a given `/path/to/training/data`, the following script will train the dense network (described in MICCAI 2018 by default) using scan-to-scan registration. Model weights will be saved to a path specified by the `--model-dir` flag.
 
 ```
-python scripts/train.py /path/to/training/data --model-dir /path/to/models/output --gpu 0
+./scripts/tf/train.py /path/to/training/data --model-dir /path/to/models/output --gpu 0
 ```
 
 Scan-to-atlas registration can be enabled by providing an atlas file with the `--atlas atlas.npz` command line flag. If you'd like to train using the original dense CVPR network (no diffeomorphism), use the `--int-steps 0` flag to specify no flow integration steps. Use the `--help` flag to inspect all of the command line options that can be used to fine-tune network architecture and training.
@@ -31,7 +31,7 @@ Scan-to-atlas registration can be enabled by providing an atlas file with the `-
 If you simply want to register two images, you can use the `register.py` script with the desired model file. For example, if we have a model `model.h5` trained to register a subject (moving) to an atlas (fixed), we could run:
 
 ```
-python scripts/register.py moving.nii.gz atlas.nii.gz warped.nii.gz --model model.h5 --gpu 0
+./scripts/tf/register.py --moving moving.nii.gz --fixed atlas.nii.gz --moved warped.npz --model model.h5 --gpu 0
 ```
 
 This will save the moved image to `warped.nii.gz`. To also save the predicted deformation field, use the `--save-warp` flag. Both npz or nifty files can be used as input/output in this script.
@@ -41,7 +41,7 @@ This will save the moved image to `warped.nii.gz`. To also save the predicted de
 To test the quality of a model by computing dice overlap between an atlas segmentation and warped test scan segmentations, run:
 
 ```
-python scripts/test.py --atlas data/atlas.npz --scans data/test_scan.npz --labels data/labels.npz --model models/model.h5 --gpu 0
+./scripts/tf/test.py --model model.h5 --atlas atlas.npz --scans scan01.npz scan02.npz scan03.npz --labels labels.npz
 ```
 
 Just like for the training data, the atlas and test npz files include `vol` and `seg` parameters and the `labels.npz` file contains a list of corresponding anatomical labels to include in the computed dice score.
