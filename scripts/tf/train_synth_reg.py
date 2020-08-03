@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Example script to train a VoxelMorph model on images synthesized from segmentations.
 """
@@ -47,17 +49,9 @@ parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample
 parser.add_argument('--reg-param', type=float, default=1, help='weight of gradient loss (default: 1)')
 args = parser.parse_args()
 
-# tensorflow gpu handling
-device = '/gpu:' + args.gpu
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.allow_soft_placement = True
-tf.keras.backend.set_session(tf.Session(config=config))
-
-# ensure valid batch size given gpu count
-nb_gpus = len(args.gpu.split(','))
-assert np.mod(args.batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_gpus)
+# tensorflow device handling
+device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
+assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_devices)
 
 # prepare model directory
 model_dir = args.model_dir
@@ -151,9 +145,9 @@ with tf.device(device):
     weights = [1, args.reg_param]
 
     # multi-gpu support and callbacks
-    if nb_gpus > 1:
+    if nb_devices > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename, period=args.save_freq)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
         save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=args.save_freq)
 
@@ -174,6 +168,3 @@ with tf.device(device):
         callbacks=callbacks,
         verbose=args.verbose,
     )
-
-    # save final model weights
-    model.save(save_filename.format(epoch=args.epochs))

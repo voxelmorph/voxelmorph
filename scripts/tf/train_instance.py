@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Instance-specific optimization
 """
@@ -31,17 +33,8 @@ parser.add_argument('--image-loss', default='mse', help='image reconstruction lo
 parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient loss (default: 0.01)')
 args = parser.parse_args()
 
-# device handling
-if args.gpu and (args.gpu != '-1'):
-    device = '/gpu:' + args.gpu
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    config.allow_soft_placement = True
-    tf.keras.backend.set_session(tf.Session(config=config))
-else:
-    device = '/cpu:0'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# tensorflow device handling
+device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 # load moving and fixed images
 add_feat_axis = not args.multichannel

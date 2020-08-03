@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -5,6 +6,38 @@ import tensorflow.keras.layers as KL
 
 from . import neuron as ne
 from . import layers
+
+
+def setup_device(gpuid=None):
+    """
+    Configures the appropriate TF device from a cuda device string.
+    Returns the device id and total number of devices.
+    """
+
+    if gpuid is not None and not isinstance(gpuid, str):
+        gpuid = str(gpuid)
+
+    nb_devices = len(gpuid.split(','))
+
+    if gpuid is not None and (gpuid != '-1'):
+        device = '/gpu:' + gpuid
+        os.environ['CUDA_VISIBLE_DEVICES'] = gpuid
+
+        # GPU memory configuration differs between TF 1 and 2
+        if hasattr(tf, 'ConfigProto'):
+            config = tf.ConfigProto()
+            config.gpu_options.allow_growth = True
+            config.allow_soft_placement = True
+            tf.keras.backend.set_session(tf.Session(config=config))
+        else:
+            tf.config.set_soft_device_placement(True)
+            for pd in tf.config.list_physical_devices('GPU'):
+                tf.config.experimental.set_memory_growth(pd, True)
+    else:
+        device = '/cpu:0'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
+    return device, nb_devices
 
 
 def transform(img, trf, interp_method='linear', rescale=None):

@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Example script for training semi-supervised nonlinear registration aided by
 surface point clouds generated from segmentations.
@@ -92,17 +94,9 @@ nfeats = 1 if not args.multichannel else atlas_vol[-1]
 model_dir = args.model_dir
 os.makedirs(model_dir, exist_ok=True)
 
-# tensorflow gpu handling
-device = '/gpu:' + args.gpu
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.allow_soft_placement = True
-tf.keras.backend.set_session(tf.Session(config=config))
-
-# ensure valid batch size given gpu count
-nb_gpus = len(args.gpu.split(','))
-assert np.mod(args.batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_gpus)
+# tensorflow device handling
+device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
+assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -158,9 +152,9 @@ with tf.device(device):
     weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
 
     # multi-gpu support
-    if nb_gpus > 1:
+    if nb_devices > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
         save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
@@ -176,6 +170,3 @@ with tf.device(device):
         callbacks=[save_callback],
         verbose=1
     )
-
-    # save final model weights
-    model.save(save_filename.format(epoch=args.epochs))

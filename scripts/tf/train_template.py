@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Example script to train (unconditional) template creation.
 """
@@ -73,17 +75,9 @@ vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.
 atlas_shape = atlas.shape[1:-1]
 nfeats = atlas.shape[-1]
 
-# tensorflow gpu handling
-device = '/gpu:' + args.gpu
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-config = tf.ConfigProto()
-config.gpu_options.allow_growth = True
-config.allow_soft_placement = True
-tf.keras.backend.set_session(tf.Session(config=config))
-
-# ensure valid batch size given gpu count
-nb_gpus = len(args.gpu.split(','))
-assert np.mod(args.batch_size, nb_gpus) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_gpus)
+# tensorflow device handling
+device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
+assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -128,9 +122,9 @@ with tf.device(device):
     weights = [args.image_loss_weight, 1 - args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight]
 
     # multi-gpu support
-    if nb_gpus > 1:
+    if nb_devices > 1:
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_gpus)
+        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
         save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
 
@@ -146,6 +140,3 @@ with tf.device(device):
         steps_per_epoch=args.steps_per_epoch,
         verbose=1
     )
-
-    # save final model weights
-    model.save(save_filename.format(epoch=args.epochs))

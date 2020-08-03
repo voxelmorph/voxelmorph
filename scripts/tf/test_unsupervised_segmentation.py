@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Example script to test a segmentation network trained in an unsupervised fashion,
 using a probabilistic atlas and unlabeled scans.
@@ -98,17 +100,8 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
 
     return funcs
 
-# device handling
-if args.gpu and (args.gpu != '-1'):
-    device = '/gpu:' + args.gpu
-    os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    config.allow_soft_placement = True
-    tf.keras.backend.set_session(tf.Session(config=config))
-else:
-    device = '/cpu:0'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# tensorflow device handling
+device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 with tf.device(device):
 
