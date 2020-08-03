@@ -7,7 +7,7 @@ import sys
 # of one another, so we don't import them as submodules but instead as
 # individual modules by modifying sys.path.
 
-subdirs = ['pytools-lib', 'neuron', 'SynthSeg']
+subdirs = ['SynthSeg']
 
 # add external subdirs to sys.path
 basedir = os.path.join(os.path.dirname(__file__), 'external')
