@@ -38,7 +38,7 @@ parser.add_argument('--epochs', type=int, default=1500, help='number of training
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
 parser.add_argument('--load-model', help='optional model file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 parser.add_argument('--cudnn-nondet',  action='store_true', help='disable cudnn determinism - might slow down training')
 
 # network architecture parameters
@@ -49,7 +49,7 @@ parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample
 parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
+parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='weight', default=0.01, help='weight of deformation loss (default: 0.01)')
 args = parser.parse_args()
 
@@ -134,7 +134,7 @@ else:
     weights = [1]
 
 # prepare deformation loss
-losses  += [vxm.losses.Grad('l2').loss]
+losses  += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights += [args.weight]
 
 # training loops

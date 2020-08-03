@@ -188,6 +188,8 @@ class VxmDense(LoadableModel):
         if self.resize:
             pos_flow = self.resize(pos_flow)
 
+        preint_flow = pos_flow
+
         # negate flow for bidirectional model
         neg_flow = -pos_flow if self.bidir else None
 
@@ -207,7 +209,7 @@ class VxmDense(LoadableModel):
 
         # return non-integrated flow field if training
         if not registration:
-            return (y_source, y_target, flow_field) if self.bidir else (y_source, flow_field)
+            return (y_source, y_target, preint_flow) if self.bidir else (y_source, preint_flow)
         else:
             return y_source, pos_flow
 

@@ -32,7 +32,7 @@ parser.add_argument('--epochs', type=int, default=1500, help='number of training
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
 parser.add_argument('--load-weights', help='optional weights file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
@@ -47,7 +47,7 @@ parser.add_argument('--num-labels', type=float, help='number of labels to sample
 parser.add_argument('--align-segs', action='store_true', help='only align segmentations')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
+parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient or KL loss (default: 0.01)')
 parser.add_argument('--dt-sigma', type=float, default=1.0, help='surface noise parameter (default: 1.0)')
 parser.add_argument('--kl-lambda', type=float, default=10, help='prior lambda regularization for KL loss (default: 10)')
@@ -143,7 +143,7 @@ with tf.device(device):
         flow_shape = model.outputs[-1].shape[1:-1]
         losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
     else:
-        losses += [vxm.losses.Grad('l2').loss]
+        losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
     weights += [args.lambda_weight]
 
     # prepare sdt loss

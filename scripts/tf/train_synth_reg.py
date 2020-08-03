@@ -141,7 +141,7 @@ with tf.device(device):
         pred = x[..., depth:]
         return 1 + vxm.losses.Dice().loss(true, pred)
 
-    losses  = [data_loss, vxm.losses.Grad('l2').loss]
+    losses  = [data_loss, vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
     weights = [1, args.reg_param]
 
     # multi-gpu support and callbacks

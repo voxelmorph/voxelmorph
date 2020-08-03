@@ -29,7 +29,7 @@ parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency 
 parser.add_argument('--lr', type=float, default=0.1, help='learning rate (default: 0.1)')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
+parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient loss (default: 0.01)')
 args = parser.parse_args()
 
@@ -58,7 +58,7 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    losses  = [image_loss_func, vxm.losses.Grad('l2').loss]
+    losses  = [image_loss_func, vxm.losses.Grad('l2', loss_mult=2).loss]
     weights = [1, args.lambda_weight]
 
     # train

@@ -35,14 +35,14 @@ parser.add_argument('--epochs', type=int, default=1500, help='number of training
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
 parser.add_argument('--load-weights', help='optional weights file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
 parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or nccc (default: mse)')
+parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--image-loss-weight', type=float, default=1.0, help='relative weight of transformed atlas loss (default: 1.0)')
 parser.add_argument('--mean-loss-weight', type=float, default=1.0, help='weight of mean stream loss (default: 1.0)')
 parser.add_argument('--grad-loss-weight', type=float, default=0.01, help='weight of gradient loss (lamba) (default: 0.01)')
@@ -127,7 +127,7 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    losses  = [image_loss_func, vxm.losses.MSE().loss, vxm.losses.Grad('l2').loss, vxm.losses.MSE().loss]
+    losses  = [image_loss_func, vxm.losses.MSE().loss, vxm.losses.Grad('l2', loss_mult=2).loss, vxm.losses.MSE().loss]
     weights = [args.image_loss_weight, args.mean_loss_weight, args.grad_loss_weight, args.deform_loss_weight]
 
     # multi-gpu support

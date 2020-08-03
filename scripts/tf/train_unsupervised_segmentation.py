@@ -35,7 +35,7 @@ parser.add_argument('--epochs', type=int, default=1500, help='number of training
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
 parser.add_argument('--load-weights', help='optional weights file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 0.00001)')
+parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 
 # network architecture parameters
 parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
@@ -119,7 +119,7 @@ with tf.device(device):
 
     grad_weight = args.grad_loss_weight if warp_atlas else 0
 
-    losses  = [loss, vxm.losses.Grad('l2').loss]
+    losses  = [loss, vxm.losses.Grad('l2', loss_mult=2).loss]
     weights = [1.0, grad_weight]
 
     # multi-gpu support

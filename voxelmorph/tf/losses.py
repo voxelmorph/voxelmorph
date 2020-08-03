@@ -125,11 +125,15 @@ class Grad:
     blur_sigma should be a list of sigma values, one for each dimension
     note that if blur_sigma is specified, inshape must also be 
     (with the number of channels)
-    If blur_sigma is a scalar, assume isotropic blurring for all dimensions
+    If blur_sigma is a scalar, assume isotropic blurring for all dimensions.
+    loss_mult can be used to scale the loss value - this is recommended if
+    the gradient is computed on a downsampled vector field (where loss_mult
+    is equal to the downsample factor).
     """
 
-    def __init__(self, penalty='l1', blur_sigma=None, inshape=None):
+    def __init__(self, penalty='l1', blur_sigma=None, inshape=None, loss_mult=None):
         self.penalty = penalty
+        self.loss_mult = loss_mult
         if blur_sigma is not None:
             import sandbox as nes  # ugly bandaid but avoids crashes for now. 
             assert inshape is not None, 'vxm.losses.Grad: if specifying a blur_sigma must also specify inshape'
@@ -179,10 +183,12 @@ class Grad:
             dif = [conv_fn(f, self.blur_kernel, (ndims+2)*[1],'SAME') for f in dif]
 
         df = [tf.reduce_mean(K.batch_flatten(f), axis=-1) for f in dif]
-        return tf.add_n(df) / len(df)
+        grad = tf.add_n(df) / len(df)
 
+        if self.loss_mult is not None:
+            grad *= self.loss_mult
 
-
+        return grad
 
 
 class KL:
