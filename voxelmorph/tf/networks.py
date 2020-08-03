@@ -35,6 +35,7 @@ class VxmDense(LoadableModel):
             use_probs=False,
             src_feats=1,
             trg_feats=1,
+            unet_half_res=False,
             input_model=None):
         """ 
         Parameters:
@@ -52,6 +53,7 @@ class VxmDense(LoadableModel):
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
+            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. Default is False.
             input_model: Model to replace default input layer before concatenation. Default is None.
         """
 
@@ -73,7 +75,8 @@ class VxmDense(LoadableModel):
             nb_features=nb_unet_features,
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult,
-            nb_conv_per_level=nb_unet_conv_per_level
+            nb_conv_per_level=nb_unet_conv_per_level,
+            half_res=unet_half_res
         )
 
         # transform unet output into a flow field
@@ -94,9 +97,12 @@ class VxmDense(LoadableModel):
             flow_params = flow_mean
             flow = flow_mean
 
-        # optionally resize for integration
-        if int_steps > 0 and int_downsize > 1:
-            flow = layers.RescaleTransform(1 / int_downsize, name='flow_resize')(flow)
+        if not unet_half_res:
+            # optionally resize for integration
+            if int_steps > 0 and int_downsize > 1:
+                flow = layers.RescaleTransform(1 / int_downsize, name='flow_resize')(flow)
+
+        preint_flow = flow
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
@@ -121,7 +127,7 @@ class VxmDense(LoadableModel):
             y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
 
         # initialize the keras model
-        outputs = [y_source, y_target, flow_params] if bidir else [y_source, flow_params]
+        outputs = [y_source, y_target, preint_flow] if bidir else [y_source, preint_flow]
         super().__init__(name='vxm_dense', inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
@@ -395,14 +401,13 @@ class InstanceTrainer(LoadableModel):
     @store_config_args
     def __init__(self, inshape, warp):
         source = tf.keras.Input(shape=inshape)
-        target = tf.keras.Input(shape=inshape)
         nullwarp = tf.keras.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
         flow_layer = vxm.layers.LocalParamWithInput(shape=warp.shape[1:])
         flow = flow_layer(nullwarp)
         y = vxm.layers.SpatialTransformer()([source, flow])
 
         # initialize the keras model
-        super().__init__(name='instance_net', inputs=[source, target, nullwarp], outputs=[y, flow])
+        super().__init__(name='instance_net', inputs=[source, nullwarp], outputs=[y, flow])
 
         # initialize weights with original predicted warp
         flow_layer.set_weights(warp)
@@ -1120,7 +1125,7 @@ class Unet(tf.keras.Model):
     internal model for more complex networks, and is not meant to be saved/loaded independently.
     """
 
-    def __init__(self, inshape=None, input_model=None, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1):
+    def __init__(self, inshape=None, input_model=None, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1, half_res=False):
         """
         Parameters:
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
@@ -1131,6 +1136,7 @@ class Unet(tf.keras.Model):
             nb_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
             feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
+            half_res: Skip the last decoder upsampling. Default is False.
         """
 
         # have the option of specifying input shape or input model
@@ -1159,6 +1165,10 @@ class Unet(tf.keras.Model):
         elif nb_levels is not None:
             raise ValueError('cannot use nb_levels if nb_features is not an integer')
 
+        ndims = len(unet_input.get_shape()) - 2
+        assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+        MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
+
         # extract any surplus (full resolution) decoder convolutions
         enc_nf, dec_nf = nb_features
         nb_dec_convs = len(enc_nf)
@@ -1167,26 +1177,27 @@ class Unet(tf.keras.Model):
         nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
         # configure encoder (down-sampling path)
-        enc_layers = [unet_input]
-        last = enc_layers[0]
+        enc_layers = []
+        last = unet_input
         for level in range(nb_levels - 1):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
-                strides = 2 if conv == (nb_conv_per_level - 1) else 1
                 name = 'unet_enc_conv_%d_%d' % (level, conv)
-                last = conv_block(last, nf, strides=strides, name=name)
+                last = conv_block(last, nf, name=name)
             enc_layers.append(last)
+            # temporarily use maxpool since downsampling doesn't exist in keras
+            last = MaxPooling(2, name='unet_enc_pooling_%d' % level)(last)
 
         # configure decoder (up-sampling path)
-        last = enc_layers.pop()
         for level in range(nb_levels - 1):
             real_level = nb_levels - level - 2
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 name = 'unet_dec_conv_%d_%d' % (real_level, conv)
                 last = conv_block(last, nf, name=name)
-            name = 'unet_dec_upsample_' + str(real_level)
-            last = upsample_block(last, enc_layers.pop(), name=name)
+            if not half_res or level < (nb_levels - 2):
+                name = 'unet_dec_upsample_' + str(real_level)
+                last = upsample_block(last, enc_layers.pop(), name=name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
