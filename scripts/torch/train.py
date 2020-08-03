@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 """
 Example script to train a VoxelMorph model.
 

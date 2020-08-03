@@ -6,10 +6,9 @@ Example script to register two volumes with VoxelMorph models.
 Please make sure to use trained models appropriately. Let's say we have a model trained to register a
 scan (moving) to an atlas (fixed). To register a scan to the atlas and save the warp field, run:
 
-    python register.py moving.nii.gz fixed.nii.gz --dense-model model.h5 --moved moved.nii.gz --warp warp.nii.gz
+    register.py --moving moving.nii.gz --fixed fixed.nii.gz --model model.h5 --moved moved.nii.gz --warp warp.nii.gz
 
-The source and target input images are expected to be affinely registered, but if not, an initial linear registration
-can be run by specifing an affine model with the --affine-model flag, which expects an affine model file as input.
+The source and target input images are expected to be affinely registered.
 """
 
 import os
@@ -43,7 +42,7 @@ fixed = fixed[np.newaxis]
 
 with tf.device(device):
     # load model and predict
-    warp = vxm.networks.VxmDense.load(args.dense_model).register(moving, fixed)
+    warp = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
     moved = vxm.tf.utils.transform(moving, warp)
 
 # save warp

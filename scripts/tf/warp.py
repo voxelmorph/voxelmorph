@@ -3,7 +3,7 @@
 """
 Example script to apply a deformation to an image. Usage is:
 
-python warp.py moving.nii.gz warp.nii.gz moved.nii.gz
+    warp.py --moving moving.nii.gz --warp warp.nii.gz --moved moved.nii.gz
 
 Interpolation method can be specified with the --interp flag.
 """

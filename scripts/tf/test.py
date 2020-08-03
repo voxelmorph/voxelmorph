@@ -5,7 +5,7 @@ Example script for testing quality of trained vxm models. This script iterates o
 images and corresponding segmentations, registers them to an atlas, propagates segmentations
 to the atlas, and computes the dice overlap. Example usage is:
 
-python scripts/tf/test.py \
+    test.py \
     --model models/model.h5 \
     --atlas data/atlas.npz \
     --scans data/test_scan.npz \
