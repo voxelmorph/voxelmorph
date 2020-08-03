@@ -17,7 +17,10 @@ def setup_device(gpuid=None):
     if gpuid is not None and not isinstance(gpuid, str):
         gpuid = str(gpuid)
 
-    nb_devices = len(gpuid.split(','))
+    if gpuid is not None:
+        nb_devices = len(gpuid.split(','))
+    else:
+        nb_devices = 1
 
     if gpuid is not None and (gpuid != '-1'):
         device = '/gpu:' + gpuid
