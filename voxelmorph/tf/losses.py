@@ -359,8 +359,8 @@ class NMI:
         I_a_permute = K.permute_dimensions(I_a_patch, (0,2,1))
         pab = K.batch_dot(I_a_permute, I_b_patch)  # should be the right size now, nb_labels x nb_bins
         pab /= patch_size**3
-        pa = tf.reduce_mean(I_a_patch, 1, keep_dims=True)
-        pb = tf.reduce_mean(I_b_patch, 1, keep_dims=True)
+        pa = tf.reduce_mean(I_a_patch, 1, keepdims=True)
+        pb = tf.reduce_mean(I_b_patch, 1, keepdims=True)
 
         papb = K.batch_dot(K.permute_dimensions(pa, (0,2,1)), pb) + K.epsilon()
         return K.mean(K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1))
@@ -404,8 +404,8 @@ class NMI:
         I_a_permute = K.permute_dimensions(I_a, (0,2,1))
         pab = K.batch_dot(I_a_permute, I_b)  # should be the right size now, nb_labels x nb_bins
         pab /= nb_voxels
-        pa = tf.reduce_mean(I_a, 1, keep_dims=True)
-        pb = tf.reduce_mean(I_b, 1, keep_dims=True)
+        pa = tf.reduce_mean(I_a, 1, keepdims=True)
+        pb = tf.reduce_mean(I_b, 1, keepdims=True)
 
         papb = K.batch_dot(K.permute_dimensions(pa, (0,2,1)), pb) + K.epsilon()
         return K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1)
