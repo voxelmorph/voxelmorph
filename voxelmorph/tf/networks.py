@@ -666,7 +666,7 @@ class Transform(tf.keras.Model):
     Simple transform model to apply dense or affine transforms.
     """
 
-    def __init__(self, inshape, affine=False, interp_method='linear', rescale=None, nb_feats=1):
+    def __init__(self, inshape, affine=False, interp_method='linear', rescale=None, fill_value=None, nb_feats=1):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -688,7 +688,8 @@ class Transform(tf.keras.Model):
         trf_scaled = trf_input if rescale is None else layers.RescaleTransform(rescale)(trf_input)
 
         # transform and initialize the keras model
-        y_source = layers.SpatialTransformer(interp_method=interp_method, name='transformer')([scan_input, trf_scaled])
+        trf_layer = layers.SpatialTransformer(interp_method=interp_method, name='transformer', fill_value=fill_value)
+        y_source = trf_layer([scan_input, trf_scaled])
         super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
 
 
