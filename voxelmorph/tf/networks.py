@@ -1,14 +1,27 @@
-import numpy as np
+"""
+tensorflow/keras networks for voxelmorph
+
+If you use this code, please cite one of the voxelmorph papers:
+https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
+
+License: GPLv3
+"""
+
+# internal python imports
 from collections.abc import Iterable
 
+# third party imports
+import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 import tensorflow.keras.layers as KL
 import tensorflow.keras.initializers as KI
 
+# local imports
+import neurite as ne
 from .. import default_unet_features
 from . import layers
-from . import neuron as ne
+# TODO: change full module imports as opposed to specific function imports
 from .modelio import LoadableModel, store_config_args
 from .utils import value_at_location, point_spatial_transformer
 
@@ -160,298 +173,7 @@ class VxmDense(LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class InstanceTrainer(LoadableModel):
-    """
-    VoxelMorph network to perform instance-specific optimization.
-    """
-
-    @store_config_args
-    def __init__(self, inshape, warp):
-        source = tf.keras.Input(shape=inshape)
-        nullwarp = tf.keras.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
-        flow_layer = vxm.layers.LocalParamWithInput(shape=warp.shape[1:])
-        flow = flow_layer(nullwarp)
-        y = vxm.layers.SpatialTransformer()([source, flow])
-
-        # initialize the keras model
-        super().__init__(name='instance_net', inputs=[source, nullwarp], outputs=[y, flow])
-
-        # initialize weights with original predicted warp
-        flow_layer.set_weights(warp)
-
-
-class ProbAtlasSegmentation(LoadableModel):
-    """
-    VoxelMorph network to segment images by warping a probabilistic atlas.
-    """
-
-    @store_config_args
-    def __init__(self,
-        inshape,
-        nb_labels,
-        nb_unet_features=None,
-        init_mu=None,
-        init_sigma=None,
-        warp_atlas=True,
-        stat_post_warp=True,
-        stat_nb_feats=16,
-        network_stat_weight=0.001,
-        **kwargs):
-        """ 
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            nb_labels: Number of labels in probabilistic atlas.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            init_mu: Optional initialization for gaussian means. Default is None.
-            init_sigma: Optional initialization for gaussian sigmas. Default is None.
-            stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
-            stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
-            network_stat_weight: Relative weight of the stats learned by the network. Default is 0.001.
-            kwargs: Forwarded to the internal VxmDense model.
-        """
-
-        # ensure correct dimensionality
-        ndims = len(inshape)
-        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-
-        # build warp network
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, src_feats=nb_labels, **kwargs)
-
-        # extract necessary layers from the network
-        # important to note that we're warping the atlas to the image in this case and
-        # we'll swap the input order later
-        atlas, image = vxm_model.inputs
-        warped_atlas = vxm_model.references.y_source if warp_atlas else atlas
-        flow = vxm_model.references.pos_flow
-
-        # compute stat using the warped atlas (or not)
-        if stat_post_warp:
-            assert warp_atlas, 'must enable warp_atlas if computing stat post warp'
-            combined = KL.concatenate([warped_atlas, image], name='post_warp_concat')
-        else:
-            # use last convolution in the unet before the flow convolution
-            combined = vxm_model.references.unet_model.layers[-2].output
-
-        # convolve into nlabel-stat volume
-        conv = conv_block(combined, stat_nb_feats)
-        conv = conv_block(conv, nb_labels)
-
-        Conv = getattr(KL, 'Conv%dD' % ndims)
-        weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
-
-        # convolve into mu and sigma volumes
-        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        
-        # pool to get 'final' stat
-        stat_mu = KL.GlobalMaxPooling3D(name='mu_pooling')(stat_mu_vol)
-        stat_logssq = KL.GlobalMaxPooling3D(name='logssq_pooling')(stat_logssq_vol)
-
-        # combine mu with initialization
-        if init_mu is not None: 
-            init_mu = np.array(init_mu)
-            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu, name='comb_mu')(stat_mu)
-        
-        # combine sigma with initialization
-        if init_sigma is not None: 
-            init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
-            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq, name='comb_sigma')(stat_logssq)
-
-        # unnorm loglike
-        def unnorm_loglike(I, mu, logsigmasq, use_log=True):
-            P = tf.distributions.Normal(mu, K.exp(logsigmasq/2))
-            return P.log_prob(I) if use_log else P.prob(I)
-        uloglhood = KL.Lambda(lambda x:unnorm_loglike(*x), name='unsup_likelihood')([image, stat_mu, stat_logssq])
-
-        # compute data loss as a layer, because it's a bit easier than outputting a ton of things
-        def logsum(prob_ll, atl):
-            # safe computation using the log sum exp trick (NOTE: this does not normalize p)
-            # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
-            logpdf = prob_ll + K.log(atl + K.epsilon())
-            alpha = tf.reduce_max(logpdf, -1, keepdims=True)
-            return alpha + tf.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
-        loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
-
-        # initialize the keras model
-        super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
-
-        # cache pointers to layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
-        self.references.vxm_model = vxm_model
-        self.references.uloglhood = uloglhood
-        self.references.stat_mu = stat_mu
-        self.references.stat_logssq = stat_logssq
-
-    def get_gaussian_warp_model(self):
-        """
-        Extracts a predictor model from the ProbAtlasSegmentation model that directly
-        outputs the gaussian stats and warp field.
-        """
-        outputs = [
-            self.references.uloglhood,
-            self.references.stat_mu,
-            self.references.stat_logssq,
-            self.outputs[-1]
-        ]
-        return tf.keras.Model(self.inputs, outputs)
-
-
-class TemplateCreation(LoadableModel):
-    """
-    VoxelMorph network to generate an unconditional template image.
-    """
-
-    @store_config_args
-    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
-        """ 
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            mean_cap: Cap for mean stream. Default is 100.
-            atlas_feats: Number of atlas/template features. Default is 1.
-            src_feats: Number of source image features. Default is 1.
-            kwargs: Forwarded to the internal VxmDense model.
-        """
-
-        # configure inputs
-        atlas_input = tf.keras.Input(shape=[*inshape, atlas_feats], name='atlas_input')
-        source_input = tf.keras.Input(shape=[*inshape, src_feats], name='source_input')
-
-        # pre-warp (atlas) model
-        atlas_layer = layers.LocalParamWithInput(name='atlas', shape=(*inshape, 1), mult=1.0, initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))
-        atlas_tensor = atlas_layer(atlas_input)
-        warp_input_model = tf.keras.Model([atlas_input, source_input], outputs=[atlas_tensor, source_input])
-
-        # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
-
-        # extract tensors from stacked model
-        y_source = vxm_model.references.y_source
-        y_target = vxm_model.references.y_target
-        pos_flow = vxm_model.references.pos_flow
-        neg_flow = vxm_model.references.neg_flow
-
-        # get mean stream of negative flow
-        mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
-
-        # initialize the keras model
-        super().__init__(inputs=[atlas_input, source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
-
-        # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
-        self.references.atlas_layer = atlas_layer
-        self.references.atlas_tensor = atlas_tensor
-
-
-class ConditionalTemplateCreation(LoadableModel):
-    """
-    VoxelMorph network to generate an conditional template image.
-    """
-
-    @store_config_args
-    def __init__(self,
-        inshape,
-        pheno_input_shape,
-        nb_unet_features=None,
-        src_feats=1,
-        conv_image_shape=None,
-        conv_size=3,
-        conv_nb_levels=0,
-        conv_nb_features=32,
-        extra_conv_layers=3,
-        use_mean_stream=True,
-        mean_cap=100,
-        templcondsi=False,
-        templcondsi_init=None,
-        **kwargs):
-        """ 
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            pheno_input_shape: Pheno data input shape. e.g. (2)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            src_feats: Number of source (atlas) features. Default is 1.
-            conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
-            conv_size: Atlas generator convolutional kernel size. Default is 3.
-            conv_nb_levels: Number of levels in atlas generator unet. Default is 0.
-            conv_nb_features: Number of features in atlas generator convolutions. Default is 32.
-            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
-            use_mean_stream: Return mean stream layer for training. Default is True.
-            mean_cap: Cap for mean stream. Default is 100.
-            templcondsi: Default is False.
-            templcondsi_init: Default is None.
-            kwargs: Forwarded to the internal VxmDense model.
-        """
-
-        if conv_image_shape is None:
-            conv_image_shape = (*inshape, conv_nb_features)
-
-        # build initial dense pheno to image shape model
-        pheno_input = KL.Input(pheno_input_shape, name='pheno_input')
-        pheno_dense = KL.Dense(np.prod(conv_image_shape), activation='elu')(pheno_input)
-        pheno_reshaped = KL.Reshape(conv_image_shape, name='pheno_reshape')(pheno_dense)
-        pheno_init_model = tf.keras.models.Model(pheno_input, pheno_reshaped)
-
-        # build model to decode reshaped pheno
-        pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
-                                                 nb_labels=conv_nb_features, final_pred_activation='linear',
-                                                 input_model=pheno_init_model, name='atlas_decoder')
-
-        # add extra convolutions
-        Conv = getattr(KL, 'Conv%dD' % len(inshape))
-        last = pheno_decoder_model.output
-        for n in range(extra_conv_layers):
-            last = Conv(conv_nb_features, kernel_size=conv_size, padding='same', name='atlas_extra_conv_%d' % n)(last)
-
-        # final convolution to get atlas features
-        atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
-                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7),
-                         bias_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))(last)
-
-        # image input layers
-        atlas_input = tf.keras.Input((*inshape, src_feats), name='atlas_input')
-        source_input = tf.keras.Input((*inshape, src_feats), name='source_input')
-
-        if templcondsi:
-            atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
-            # change first channel to be result from seg with another add layer
-            tmp_layer = KL.Lambda(lambda x: K.softmax(x[..., 1:]))(atlas_tensor)
-            conv_layer = Conv(1, kernel_size=1, padding='same', use_bias=False, name='atlas_gen',
-                kernel_initializer=KI.RandomNormal(mean=0, stddev=1e-5))
-            x_img = conv_layer(tmp_layer)
-            if templcondsi_init is not None:
-                weights = conv_layer.get_weights()
-                weights[0] = templcondsi_init.reshape(weights[0].shape)
-                conv_layer.set_weights(weights)
-            atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][...,1:]]), name='atlas')([x_img, atlas_tensor])
-        else:
-            atlas_tensor = KL.Add(name='atlas')([atlas_input, atlas_gen])
-
-        # build complete pheno to atlas model
-        pheno_model = tf.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas_tensor)
-
-        inputs = [pheno_decoder_model.input, atlas_input, source_input]
-        warp_input_model = tf.keras.Model(inputs=inputs, outputs=[atlas_tensor, source_input])
-
-        # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
-
-        # extract tensors from stacked model
-        y_source = vxm_model.references.y_source
-        pos_flow = vxm_model.references.pos_flow
-        neg_flow = vxm_model.references.neg_flow
-
-        if use_mean_stream:
-            # get mean stream from negative flow
-            mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
-            outputs = [y_source, mean_stream, pos_flow, pos_flow]
-        else:
-            outputs = [y_source, pos_flow, pos_flow]
-
-        # initialize the keras model
-        super().__init__(inputs=inputs, outputs=outputs)
-
-
-class VxmDenseSegSemiSupervised(LoadableModel):
+class VxmDenseSemiSupervisedSeg(LoadableModel):
     """
     VoxelMorph network for (semi-supervised) nonlinear registration between two images.
     """
@@ -511,7 +233,7 @@ class VxmDenseSegSemiSupervised(LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class VxmDenseSurfaceSemiSupervised(LoadableModel):
+class VxmDenseSemiSupervisedPointCloud(LoadableModel):
     """
     VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
     """
@@ -661,12 +383,320 @@ class VxmDenseSynth(LoadableModel):
         self.references.dense_model = dense_model
 
 
+###############################################################################
+# Instance Trainers
+###############################################################################
+
+class InstanceDense(LoadableModel):
+    """
+    VoxelMorph network to perform instance-specific optimization.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, warp):
+        source = tf.keras.Input(shape=inshape)
+        nullwarp = tf.keras.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
+        flow_layer = ne.layers.LocalParamWithInput(shape=warp.shape[1:])
+        flow = flow_layer(nullwarp)
+        y = vxm.layers.SpatialTransformer()([source, flow])
+
+        # initialize the keras model
+        super().__init__(name='instance_net', inputs=[source, nullwarp], outputs=[y, flow])
+
+        # initialize weights with original predicted warp
+        flow_layer.set_weights(warp)
+
+
+###############################################################################
+# Probabilistic atlas-based segmentation
+###############################################################################
+
+class ProbAtlasSegmentation(LoadableModel):
+    """
+    VoxelMorph network to segment images by warping a probabilistic atlas.
+    """
+
+    @store_config_args
+    def __init__(self,
+        inshape,
+        nb_labels,
+        nb_unet_features=None,
+        init_mu=None,
+        init_sigma=None,
+        warp_atlas=True,
+        stat_post_warp=True,
+        stat_nb_feats=16,
+        network_stat_weight=0.001,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            nb_labels: Number of labels in probabilistic atlas.
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            init_mu: Optional initialization for gaussian means. Default is None.
+            init_sigma: Optional initialization for gaussian sigmas. Default is None.
+            stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
+            stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
+            network_stat_weight: Relative weight of the stats learned by the network. Default is 0.001.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        # ensure correct dimensionality
+        ndims = len(inshape)
+        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # build warp network
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, src_feats=nb_labels, **kwargs)
+
+        # extract necessary layers from the network
+        # important to note that we're warping the atlas to the image in this case and
+        # we'll swap the input order later
+        atlas, image = vxm_model.inputs
+        warped_atlas = vxm_model.references.y_source if warp_atlas else atlas
+        flow = vxm_model.references.pos_flow
+
+        # compute stat using the warped atlas (or not)
+        if stat_post_warp:
+            assert warp_atlas, 'must enable warp_atlas if computing stat post warp'
+            combined = KL.concatenate([warped_atlas, image], name='post_warp_concat')
+        else:
+            # use last convolution in the unet before the flow convolution
+            combined = vxm_model.references.unet_model.layers[-2].output
+
+        # convolve into nlabel-stat volume
+        conv = _conv_block(combined, stat_nb_feats)
+        conv = _conv_block(conv, nb_labels)
+
+        Conv = getattr(KL, 'Conv%dD' % ndims)
+        weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
+
+        # convolve into mu and sigma volumes
+        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+        
+        # pool to get 'final' stat
+        stat_mu = KL.GlobalMaxPooling3D(name='mu_pooling')(stat_mu_vol)
+        stat_logssq = KL.GlobalMaxPooling3D(name='logssq_pooling')(stat_logssq_vol)
+
+        # combine mu with initialization
+        if init_mu is not None: 
+            init_mu = np.array(init_mu)
+            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu, name='comb_mu')(stat_mu)
+        
+        # combine sigma with initialization
+        if init_sigma is not None: 
+            init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
+            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq, name='comb_sigma')(stat_logssq)
+
+        # unnorm loglike
+        def unnorm_loglike(I, mu, logsigmasq, use_log=True):
+            P = tf.distributions.Normal(mu, K.exp(logsigmasq/2))
+            return P.log_prob(I) if use_log else P.prob(I)
+        uloglhood = KL.Lambda(lambda x:unnorm_loglike(*x), name='unsup_likelihood')([image, stat_mu, stat_logssq])
+
+        # compute data loss as a layer, because it's a bit easier than outputting a ton of things
+        def logsum(prob_ll, atl):
+            # safe computation using the log sum exp trick (NOTE: this does not normalize p)
+            # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
+            logpdf = prob_ll + K.log(atl + K.epsilon())
+            alpha = tf.reduce_max(logpdf, -1, keepdims=True)
+            return alpha + tf.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
+        loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
+
+        # initialize the keras model
+        super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
+
+        # cache pointers to layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.vxm_model = vxm_model
+        self.references.uloglhood = uloglhood
+        self.references.stat_mu = stat_mu
+        self.references.stat_logssq = stat_logssq
+
+    def get_gaussian_warp_model(self):
+        """
+        Extracts a predictor model from the ProbAtlasSegmentation model that directly
+        outputs the gaussian stats and warp field.
+        """
+        outputs = [
+            self.references.uloglhood,
+            self.references.stat_mu,
+            self.references.stat_logssq,
+            self.outputs[-1]
+        ]
+        return tf.keras.Model(self.inputs, outputs)
+
+
+###############################################################################
+# Template Creation Networks
+###############################################################################
+
+class TemplateCreation(LoadableModel):
+    """
+    VoxelMorph network to generate an unconditional template image.
+    """
+
+    @store_config_args
+    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            mean_cap: Cap for mean stream. Default is 100.
+            atlas_feats: Number of atlas/template features. Default is 1.
+            src_feats: Number of source image features. Default is 1.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        # configure inputs
+        atlas_input = tf.keras.Input(shape=[*inshape, atlas_feats], name='atlas_input')
+        source_input = tf.keras.Input(shape=[*inshape, src_feats], name='source_input')
+
+        # pre-warp (atlas) model
+        atlas_layer = ne.layers.LocalParamWithInput(name='atlas', shape=(*inshape, 1), mult=1.0, initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))
+        atlas_tensor = atlas_layer(atlas_input)
+        warp_input_model = tf.keras.Model([atlas_input, source_input], outputs=[atlas_tensor, source_input])
+
+        # warp model
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
+
+        # extract tensors from stacked model
+        y_source = vxm_model.references.y_source
+        y_target = vxm_model.references.y_target
+        pos_flow = vxm_model.references.pos_flow
+        neg_flow = vxm_model.references.neg_flow
+
+        # get mean stream of negative flow
+        mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
+
+        # initialize the keras model
+        super().__init__(inputs=[atlas_input, source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
+
+        # cache pointers to important layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.atlas_layer = atlas_layer
+        self.references.atlas_tensor = atlas_tensor
+
+
+class ConditionalTemplateCreation(LoadableModel):
+    """
+    VoxelMorph network to generate an conditional template image.
+    """
+
+    @store_config_args
+    def __init__(self,
+        inshape,
+        pheno_input_shape,
+        nb_unet_features=None,
+        src_feats=1,
+        conv_image_shape=None,
+        conv_size=3,
+        conv_nb_levels=0,
+        conv_nb_features=32,
+        extra_conv_layers=3,
+        use_mean_stream=True,
+        mean_cap=100,
+        templcondsi=False,
+        templcondsi_init=None,
+        **kwargs):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            pheno_input_shape: Pheno data input shape. e.g. (2)
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            src_feats: Number of source (atlas) features. Default is 1.
+            conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
+            conv_size: Atlas generator convolutional kernel size. Default is 3.
+            conv_nb_levels: Number of levels in atlas generator unet. Default is 0.
+            conv_nb_features: Number of features in atlas generator convolutions. Default is 32.
+            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
+            use_mean_stream: Return mean stream layer for training. Default is True.
+            mean_cap: Cap for mean stream. Default is 100.
+            templcondsi: Default is False.
+            templcondsi_init: Default is None.
+            kwargs: Forwarded to the internal VxmDense model.
+        """
+
+        if conv_image_shape is None:
+            conv_image_shape = (*inshape, conv_nb_features)
+
+        # build initial dense pheno to image shape model
+        pheno_input = KL.Input(pheno_input_shape, name='pheno_input')
+        pheno_dense = KL.Dense(np.prod(conv_image_shape), activation='elu')(pheno_input)
+        pheno_reshaped = KL.Reshape(conv_image_shape, name='pheno_reshape')(pheno_dense)
+        pheno_init_model = tf.keras.models.Model(pheno_input, pheno_reshaped)
+
+        # build model to decode reshaped pheno
+        pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
+                                                 nb_labels=conv_nb_features, final_pred_activation='linear',
+                                                 input_model=pheno_init_model, name='atlas_decoder')
+
+        # add extra convolutions
+        Conv = getattr(KL, 'Conv%dD' % len(inshape))
+        last = pheno_decoder_model.output
+        for n in range(extra_conv_layers):
+            last = Conv(conv_nb_features, kernel_size=conv_size, padding='same', name='atlas_extra_conv_%d' % n)(last)
+
+        # final convolution to get atlas features
+        atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
+                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7),
+                         bias_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))(last)
+
+        # image input layers
+        atlas_input = tf.keras.Input((*inshape, src_feats), name='atlas_input')
+        source_input = tf.keras.Input((*inshape, src_feats), name='source_input')
+
+        if templcondsi:
+            atlas_tensor = KL.Add(name='atlas_tmp')([atlas_input, pout])
+            # change first channel to be result from seg with another add layer
+            tmp_layer = KL.Lambda(lambda x: K.softmax(x[..., 1:]))(atlas_tensor)
+            conv_layer = Conv(1, kernel_size=1, padding='same', use_bias=False, name='atlas_gen',
+                kernel_initializer=KI.RandomNormal(mean=0, stddev=1e-5))
+            x_img = conv_layer(tmp_layer)
+            if templcondsi_init is not None:
+                weights = conv_layer.get_weights()
+                weights[0] = templcondsi_init.reshape(weights[0].shape)
+                conv_layer.set_weights(weights)
+            atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][...,1:]]), name='atlas')([x_img, atlas_tensor])
+        else:
+            atlas_tensor = KL.Add(name='atlas')([atlas_input, atlas_gen])
+
+        # build complete pheno to atlas model
+        pheno_model = tf.keras.models.Model([pheno_decoder_model.input, atlas_input], atlas_tensor)
+
+        inputs = [pheno_decoder_model.input, atlas_input, source_input]
+        warp_input_model = tf.keras.Model(inputs=inputs, outputs=[atlas_tensor, source_input])
+
+        # warp model
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
+
+        # extract tensors from stacked model
+        y_source = vxm_model.references.y_source
+        pos_flow = vxm_model.references.pos_flow
+        neg_flow = vxm_model.references.neg_flow
+
+        if use_mean_stream:
+            # get mean stream from negative flow
+            mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
+            outputs = [y_source, mean_stream, pos_flow, pos_flow]
+        else:
+            outputs = [y_source, pos_flow, pos_flow]
+
+        # initialize the keras model
+        super().__init__(inputs=inputs, outputs=outputs)
+
+
+###############################################################################
+# Utility/Core Networks
+###############################################################################
+
 class Transform(tf.keras.Model):
     """
     Simple transform model to apply dense or affine transforms.
     """
 
-    def __init__(self, inshape, affine=False, interp_method='linear', rescale=None, fill_value=None, nb_feats=1):
+    def __init__(self, inshape, affine=False, interp_method='linear',
+                    rescale=None, fill_value=None, nb_feats=1):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -685,38 +715,16 @@ class Transform(tf.keras.Model):
         else:
             trf_input = tf.keras.Input((*inshape, ndims), name='trf_input')
 
-        trf_scaled = trf_input if rescale is None else layers.RescaleTransform(rescale)(trf_input)
+        trf_scaled = trf_input 
+        if rescale is not None:
+            trf_scaled = layers.RescaleTransform(rescale)(trf_input)
 
         # transform and initialize the keras model
-        trf_layer = layers.SpatialTransformer(interp_method=interp_method, name='transformer', fill_value=fill_value)
+        trf_layer = layers.SpatialTransformer(interp_method=interp_method,
+                                              name='transformer',
+                                              fill_value=fill_value)
         y_source = trf_layer([scan_input, trf_scaled])
         super().__init__(inputs=[scan_input, trf_input], outputs=y_source)
-
-
-def conv_block(x, nfeat, strides=1, name=None):
-    """
-    Specific convolutional block followed by leakyrelu for unet.
-    """
-    ndims = len(x.get_shape()) - 2
-    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-    Conv = getattr(KL, 'Conv%dD' % ndims)
-
-    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides, name=name)(x)
-    name = name + '_activation' if name else None
-    return KL.LeakyReLU(0.2, name=name)(convolved)
-
-
-def upsample_block(x, connection, name=None):
-    """
-    Specific upsampling and concatenation layer for unet.
-    """
-    ndims = len(x.get_shape()) - 2
-    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-    UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
-    
-    upsampled = UpSampling(name=name)(x)
-    name = name + '_concat' if name else None
-    return KL.concatenate([upsampled, connection], name=name)
 
 
 class Unet(tf.keras.Model):
@@ -790,7 +798,7 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
                 name = 'unet_enc_conv_%d_%d' % (level, conv)
-                last = conv_block(last, nf, name=name)
+                last = _conv_block(last, nf, name=name)
             enc_layers.append(last)
             # temporarily use maxpool since downsampling doesn't exist in keras
             last = MaxPooling(2, name='unet_enc_pooling_%d' % level)(last)
@@ -801,14 +809,45 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 name = 'unet_dec_conv_%d_%d' % (real_level, conv)
-                last = conv_block(last, nf, name=name)
+                last = _conv_block(last, nf, name=name)
             if not half_res or level < (nb_levels - 2):
                 name = 'unet_dec_upsample_' + str(real_level)
-                last = upsample_block(last, enc_layers.pop(), name=name)
+                last = _upsample_block(last, enc_layers.pop(), name=name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
             name = 'unet_dec_final_conv_' + str(num)
-            last = conv_block(last, nf, name=name)
+            last = _conv_block(last, nf, name=name)
 
         return super().__init__(inputs=model_inputs, outputs=last)
+
+
+###############################################################################
+# Private functions
+###############################################################################
+
+def _conv_block(x, nfeat, strides=1, name=None):
+    """
+    Specific convolutional block followed by leakyrelu for unet.
+    """
+    ndims = len(x.get_shape()) - 2
+    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+    Conv = getattr(KL, 'Conv%dD' % ndims)
+
+    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides, name=name)(x)
+    name = name + '_activation' if name else None
+    return KL.LeakyReLU(0.2, name=name)(convolved)
+
+
+def _upsample_block(x, connection, name=None):
+    """
+    Specific upsampling and concatenation layer for unet.
+    """
+    ndims = len(x.get_shape()) - 2
+    assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+    UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
+    
+    upsampled = UpSampling(name=name)(x)
+    name = name + '_concat' if name else None
+    return KL.concatenate([upsampled, connection], name=name)
+
