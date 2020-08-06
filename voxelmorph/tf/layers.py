@@ -1,3 +1,15 @@
+"""
+tensorflow/keras layers for voxelmorph
+
+If you use this code, please cite one of the voxelmorph papers:
+https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
+
+License: GPLv3
+"""
+
+# internal python imports
+import os
+
 
 # third party
 import numpy as np
@@ -5,34 +17,276 @@ import tensorflow as tf
 from tensorflow import keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Layer
-import neuron as ne
+
 
 # local utils
+import neurite as ne
+# TODO: simply import utils and use utils.is_affine, etc...
 from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity, affine_identity_to_shift
+from .utils import transform, resize, integrate_vec, affine_to_shift
 
 
-# make the following neuron layers directly available from vxm
-SpatialTransformer = ne.layers.SpatialTransformer
-LocalParam = ne.layers.LocalParam
+class SpatialTransformer(Layer):
+    """
+    N-D Spatial Transformer Tensorflow / Keras Layer
 
+    The Layer can handle both affine and dense transforms. 
+    Both transforms are meant to give a 'shift' from the current position.
+    Therefore, a dense transform gives displacements (not absolute locations) at each voxel,
+    and an affine transform gives the *difference* of the affine matrix from 
+    the identity matrix (unless specified otherwise).
 
-class Rescale(Layer):
-    """ 
-    Rescales a layer by some factor.
+    If you find this function useful, please cite:
+      Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
+      Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
+      MICCAI 2018.
+
+    Originally, this code was based on voxelmorph code, which 
+    was in turn transformed to be dense with the help of (affine) STN code 
+    via https://github.com/kevinzakka/spatial-transformer-network
+
+    Since then, we've re-written the code to be generalized to any 
+    dimensions, and along the way wrote grid and interpolation functions
     """
 
-    def __init__(self, scale_factor, **kwargs):
-        self.scale_factor = scale_factor
-        super().__init__(**kwargs)
+    def __init__(self,
+                 interp_method='linear',
+                 indexing='ij',
+                 single_transform=False,
+                 fill_value=None,
+                 add_identity=True,
+                 shift_center=True,
+                 **kwargs):
+        """
+        Parameters: 
+            interp_method: 'linear' or 'nearest'
+            single_transform: whether a single transform supplied for the whole batch
+            indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian)
+                'xy' indexing will have the first two entries of the flow 
+                (along last axis) flipped compared to 'ij' indexing
+            fill_value (default: None): value to use for points outside the domain.
+                If None, the nearest neighbors will be used.
+            add_identity (default: True): whether the identity matrix is added
+                to affine transforms.
+            shift_center (default: True): whether the grid is shifted to the center
+                of the image when converting affine transforms to warp fields.
+        """
+        self.interp_method = interp_method
+        self.fill_value = fill_value
+        self.add_identity = add_identity
+        self.shift_center = shift_center
+        self.ndims = None
+        self.inshape = None
+        self.single_transform = single_transform
+
+        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
+        self.indexing = indexing
+
+        super(self.__class__, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'interp_method': self.interp_method,
+            'indexing': self.indexing,
+            'single_transform': self.single_transform,
+            'fill_value': self.fill_value,
+            'add_identity': self.add_identity,
+            'shift_center': self.shift_center,
+        })
+        return config
 
     def build(self, input_shape):
-        super().build(input_shape)
+        """
+        input_shape should be a list for two inputs:
+        input1: image.
+        input2: transform Tensor
+            if affine:
+                should be a N x N+1 matrix
+                *or* a N*N+1 tensor (which will be reshape to N x (N+1) and an identity row added)
+            if not affine:
+                should be a *vol_shape x N
+        """
 
-    def call(self, x):
-        return x * self.scale_factor
+        if len(input_shape) > 2:
+            raise Exception('Spatial Transformer must be called on a list of length 2.'
+                            'First argument is the image, second is the transform.')
+        
+        # set up number of dimensions
+        self.ndims = len(input_shape[0]) - 2
+        self.inshape = input_shape
+        vol_shape = input_shape[0][1:-1]
+        trf_shape = input_shape[1][1:]
 
-    def compute_output_shape(self, input_shape):
-        return input_shape
+        # the transform is an affine iff:
+        # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
+        # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
+        #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
+        self.is_affine = len(trf_shape) == 1 or (len(trf_shape) == 2 and \
+            trf_shape[0] in (self.ndims, self.ndims+1) and trf_shape[1] == self.ndims+1)
+
+        # check sizes
+        if self.is_affine and len(trf_shape) == 1:
+            ex = self.ndims * (self.ndims + 1)
+            if trf_shape[0] != ex:
+                raise Exception('Expected flattened affine of len %d but got %d'
+                                % (ex, trf_shape[0]))
+
+        if not self.is_affine:
+            if trf_shape[-1] != self.ndims:
+                raise Exception('Offset flow field size expected: %d, found: %d' 
+                                % (self.ndims, trf_shape[-1]))
+
+        # confirm built
+        self.built = True
+
+    def call(self, inputs):
+        """
+        Parameters
+            inputs: list with two entries
+        """
+
+        # check shapes
+        assert len(inputs) == 2, "inputs has to be len 2, found: %d" % len(inputs)
+        vol = inputs[0]
+        trf = inputs[1]
+
+        # necessary for multi_gpu models...
+        vol = K.reshape(vol, [-1, *self.inshape[0][1:]])
+        trf = K.reshape(trf, [-1, *self.inshape[1][1:]])
+
+        # convert matrix to warp field
+        if self.is_affine:
+            ncols = self.ndims + 1
+            nrows = self.ndims
+            if np.prod(trf.shape.as_list()[1:]) == (self.ndims + 1) ** 2:
+                nrows += 1
+            if len(trf.shape[1:]) == 1:
+                trf = tf.reshape(trf, shape=(-1, nrows, ncols))
+            if self.add_identity:
+                trf += tf.eye(nrows, ncols, batch_shape=(tf.shape(trf)[0],))
+            fun = lambda x: affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
+            trf = tf.map_fn(fun, trf, dtype=tf.float32)
+
+        # prepare location shift
+        if self.indexing == 'xy':  # shift the first two dimensions
+            trf_split = tf.split(trf, trf.shape[-1], axis=-1)
+            trf_lst = [trf_split[1], trf_split[0], *trf_split[2:]]
+            trf = tf.concat(trf_lst, -1)
+
+        # map transform across batch
+        if self.single_transform:
+            fn = lambda x: self._single_transform([x, trf[0,:]])
+            return tf.map_fn(fn, vol, dtype=tf.float32)
+        else:
+            return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
+
+    def _single_transform(self, inputs):
+        return transform(inputs[0], inputs[1], interp_method=self.interp_method, fill_value=self.fill_value)
+
+
+class VecInt(Layer):
+    """
+    Vector Integration Layer
+
+    Enables vector integration via several methods 
+    (ode or quadrature for time-dependent vector fields, 
+    scaling and squaring for stationary fields)
+
+    If you find this function useful, please cite:
+      Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
+      Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
+      MICCAI 2018.
+    """
+
+    def __init__(self, indexing='ij', method='ss', int_steps=7, out_time_pt=1, 
+                 ode_args=None,
+                 odeint_fn=None, **kwargs):
+        """        
+        Parameters:
+            method can be any of the methods in neuron.utils.integrate_vec
+            indexing can be 'xy' (switches first two dimensions) or 'ij'
+            int_steps is the number of integration steps
+            out_time_pt is time point at which to output if using odeint integration
+        """
+
+        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
+        self.indexing = indexing
+        self.method = method
+        self.int_steps = int_steps
+        self.inshape = None
+        self.out_time_pt = out_time_pt
+        self.odeint_fn = odeint_fn  # if none then will use a tensorflow function
+        self.ode_args = ode_args
+        if ode_args is None:
+            self.ode_args = {'rtol':1e-6, 'atol':1e-12}
+        super(self.__class__, self).__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'indexing': self.indexing,
+            'method': self.method,
+            'int_steps': self.int_steps,
+            'out_time_pt': self.out_time_pt,
+            'ode_args': self.ode_args,
+            'odeint_fn': self.odeint_fn,
+        })
+        return config
+
+    def build(self, input_shape):
+        # confirm built
+        self.built = True
+        
+        trf_shape = input_shape
+        if isinstance(input_shape[0], (list, tuple)):
+            trf_shape = input_shape[0]
+        self.inshape = trf_shape
+
+        if trf_shape[-1] != len(trf_shape) - 2:
+            raise Exception('transform ndims %d does not match expected ndims %d' \
+                % (trf_shape[-1], len(trf_shape) - 2))
+
+    def call(self, inputs):
+        if not isinstance(inputs, (list, tuple)):
+            inputs = [inputs]
+        loc_shift = inputs[0]
+
+        # necessary for multi_gpu models...
+        loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
+        if hasattr(inputs[0], '_keras_shape'):
+            loc_shift._keras_shape = inputs[0]._keras_shape
+        
+        # prepare location shift
+        if self.indexing == 'xy':  # shift the first two dimensions
+            loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
+            loc_shift_lst = [loc_shift_split[1], loc_shift_split[0], *loc_shift_split[2:]]
+            loc_shift = tf.concat(loc_shift_lst, -1)
+
+        if len(inputs) > 1:
+            assert self.out_time_pt is None, 'out_time_pt should be None if providing batch_based out_time_pt'
+
+        # map transform across batch
+        out = tf.map_fn(self._single_int, [loc_shift] + inputs[1:], dtype=tf.float32)
+        if hasattr(inputs[0], '_keras_shape'):
+            out._keras_shape = inputs[0]._keras_shape
+        return out
+
+    def _single_int(self, inputs):
+
+        vel = inputs[0]
+        out_time_pt = self.out_time_pt
+        if len(inputs) == 2:
+            out_time_pt = inputs[1]
+        return integrate_vec(vel, method=self.method,
+                      nb_steps=self.int_steps,
+                      ode_args=self.ode_args,
+                      out_time_pt=out_time_pt,
+                      odeint_fn=self.odeint_fn)
+       
+
+# full wording.
+VecIntegration = VecInt
 
 
 class RescaleTransform(Layer):
@@ -73,10 +327,10 @@ class RescaleTransform(Layer):
             if self.zoom_factor < 1:
                 # resize
                 trf = ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
-                return Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
+                return ne.layers.RescaleValues(self.zoom_factor, name=self.name + '_rescale')(trf)
             else:
                 # multiply first to save memory (multiply in smaller space)
-                trf = Rescale(self.zoom_factor, name=self.name + '_rescale')(trf)
+                trf = ne.layers.RescaleValues(self.zoom_factor, name=self.name + '_rescale')(trf)
                 return ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
 
     def _single_affine_rescale(self, trf):
@@ -171,73 +425,6 @@ class ComposeTransform(Layer):
             return (input_shape[0], self.ndims * (self.ndims + 1))
         else:
             return (input_shape[0], *self.volshape, self.ndims)
-
-
-class GaussianBlur(Layer):
-    """ 
-    Applies gaussian blur to an input image.
-    """
-
-    def __init__(self, level, **kwargs):
-        if level < 1:
-            raise ValueError('Gaussian blur level must not be less than 1')
-        self.sigma = (level - 1) ** 2
-        super().__init__(**kwargs)
-
-    def build(self, input_shape):
-        ndims = len(input_shape) - 2
-        kernel = ne.utils.gaussian_kernel([self.sigma] * ndims)
-        kernel = tf.reshape(kernel, kernel.shape.as_list() + [1, 1])
-        convnd = getattr(tf.nn, 'conv%dd' % ndims)
-        self.conv = lambda x : convnd(tf.expand_dims(x, -1), kernel, [1] * (ndims + 2), padding='SAME')
-        self.nfeat = input_shape[-1]
-
-    def call(self, x):
-        return x if self.sigma == 0 else tf.concat([self.conv(x[..., n]) for n in range(self.nfeat)], -1)
-
-    def compute_output_shape(self, input_shape):
-        return input_shape
-
-
-class LocalParamWithInput(Layer):
-    """ 
-    Update 9/29/2019 - TODO: should try ne.layers.LocalParam() again after update.
-
-    The neuron.layers.LocalParam has an issue where _keras_shape gets lost upon calling get_output :(
-
-    tried using call() but this requires an input (or i don't know how to fix it)
-    the fix was that after the return, for every time that tensor would be used i would need to do something like
-    new_vec._keras_shape = old_vec._keras_shape
-
-    which messed up the code. Instead, we'll do this quick version where we need an input, but we'll ignore it.
-
-    this doesn't have the _keras_shape issue since we built on the input and use call()
-    """
-
-    def __init__(self, shape, initializer='RandomNormal', mult=1.0, **kwargs):
-        self.shape = shape
-        self.initializer = initializer
-        self.biasmult = mult
-        print('LocalParamWithInput: Consider using neuron.layers.LocalParam()')
-        super().__init__(**kwargs)
-
-    def build(self, input_shape):
-        self.kernel = self.add_weight(name='kernel', 
-                                      shape=self.shape,  # input_shape[1:]
-                                      initializer=self.initializer,
-                                      trainable=True)
-        super().build(input_shape)  # Be sure to call this somewhere!
-
-    def call(self, x):
-        # want the x variable for it's keras properties and the batch.
-        xslice = K.batch_flatten(x)[:, 0:1]
-        b = xslice * tf.zeros((1,)) + tf.ones((1,))
-        # b = K.batch_flatten(0 * x)[:, 0:1] + 1
-        params = K.flatten(self.kernel * self.biasmult)[tf.newaxis, ...]
-        return K.reshape(K.dot(b, params), [-1, *self.shape])
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], *self.shape)
 
 
 class AffineToDense(Layer):
