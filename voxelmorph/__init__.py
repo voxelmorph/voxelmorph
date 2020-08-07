@@ -21,3 +21,4 @@ else:
     from .tf import layers
     from .tf import networks
     from .tf import losses
+    from .tf import utils
