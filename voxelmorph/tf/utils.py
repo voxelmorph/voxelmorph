@@ -19,6 +19,7 @@ import tensorflow.keras.layers as KL
 
 # local imports
 import neurite as ne
+from . import layers
 
 
 def setup_device(gpuid=None):
@@ -87,9 +88,9 @@ def resize(vol, zoom_factor, interp_method='linear'):
     new_shape = [int(f) for f in new_shape]
 
     lin = [tf.linspace(0., vol_shape[d]-1., new_shape[d]) for d in range(ndims)]
-    grid = ndgrid(*lin)
+    grid = ne.utils.ndgrid(*lin)
 
-    return interpn(vol, grid, interp_method=interp_method)
+    return ne.utils.interpn(vol, grid, interp_method=interp_method)
 
 
 zoom = resize
@@ -140,14 +141,14 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
 
     # list of volume ndgrid
     # N-long list, each entry of shape volshape
-    mesh = volshape_to_meshgrid(volshape, indexing=indexing)  
+    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)  
     mesh = [tf.cast(f, 'float32') for f in mesh]
     
     if shift_center:
         mesh = [mesh[f] - (volshape[f]-1)/2 for f in range(len(volshape))]
 
     # add an all-ones entry and transform into a large matrix
-    flat_mesh = [flatten(f) for f in mesh]
+    flat_mesh = [ne.utils.flatten(f) for f in mesh]
     flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype='float32'))
     mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
 
@@ -194,11 +195,11 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     nb_dims = len(volshape)
 
     # location should be mesh and delta
-    mesh = volshape_to_meshgrid(volshape, indexing=indexing)  # volume mesh
+    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)  # volume mesh
     loc = [tf.cast(mesh[d], 'float32') + loc_shift[..., d] for d in range(nb_dims)]
 
     # test single
-    return interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
+    return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
 
 
 def compose(disp_1, disp_2, indexing='ij'):
