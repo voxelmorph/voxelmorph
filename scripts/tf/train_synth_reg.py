@@ -67,7 +67,7 @@ if log_dir:
     os.makedirs(log_dir, exist_ok=True)
 
 # extract shape and training labels
-all_labels, dataset = vxm.tf.SynthSeg.utils.get_list_labels(labels_folder=args.data_dir)
+all_labels, dataset = vxm.tf.synthseg.utils.get_list_labels(labels_folder=args.data_dir)
 hot_labels = np.load(args.labels) if args.labels else all_labels
 inshape = dataset[0].shape
 
@@ -102,7 +102,7 @@ def synth_generator(files, all_labels, warp_shape, bias_shape, batch_size=1, sam
         same_subj: Whether to generate source and target from the same segmentation. Default is False.
         vel_std: Maximum sampling SD for velocity fields. Default is 6.
     """
-    gen = vxm.tf.SynthSeg.build_model_input_generator(files, all_labels, warp_shape, bias_shape,
+    gen = vxm.tf.synthseg.build_model_input_generator(files, all_labels, warp_shape, bias_shape,
         nonlin_std_dev=vel_std, batch_size=2*batch_size, same_subj=same_subj)
     split = lambda x: (x[:batch_size,...], x[batch_size:,...])
     zeros = None

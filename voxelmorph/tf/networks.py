@@ -21,6 +21,7 @@ import tensorflow.keras.initializers as KI
 import neurite as ne
 from .. import default_unet_features
 from . import layers
+from . import synthseg
 # TODO: change full module imports as opposed to specific function imports
 from .modelio import LoadableModel, store_config_args
 from .utils import value_at_location, point_spatial_transformer
@@ -338,10 +339,10 @@ class VxmDenseSynth(LoadableModel):
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
             kwargs: Forwarded to the internal VxmDense model.
         """
-        from SynthSeg.labels_to_image_model import labels_to_image_model
 
         # brain generation
-        make_im_model = lambda id: labels_to_image_model(inshape, inshape, all_labels, hot_labels, id=id,
+        make_im_model = lambda id: synthseg.labels_to_image_model.labels_to_image_model(
+            inshape, inshape, all_labels, hot_labels, id=id,
             apply_affine_trans=False, apply_nonlin_trans=True, nonlin_shape_factor=0.0625, bias_shape_factor=0.025
         )
         bg_model_1, self.warp_shape, self.bias_shape = make_im_model(0)
