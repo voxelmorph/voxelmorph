@@ -468,7 +468,7 @@ class AffineToDense(Layer):
             trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
 
         trf += tf.eye(self.ndims + 1)[:self.ndims, :]  # add identity, hence affine is a shift from identity
-        return ne.utils.affine_to_shift(trf, self.volshape, shift_center=True)
+        return affine_to_shift(trf, self.volshape, shift_center=True)
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.volshape, self.ndims)
