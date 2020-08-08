@@ -125,9 +125,9 @@ class VxmDense(LoadableModel):
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
-            pos_flow = ne.layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
+            pos_flow = layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
             if bidir:
-                neg_flow = ne.layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
+                neg_flow = layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
