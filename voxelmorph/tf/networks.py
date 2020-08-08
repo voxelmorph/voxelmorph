@@ -21,6 +21,7 @@ import tensorflow.keras.initializers as KI
 import neurite as ne
 from .. import default_unet_features
 from . import layers
+from . import synthseg
 # TODO: change full module imports as opposed to specific function imports
 from .modelio import LoadableModel, store_config_args
 from .utils import value_at_location, point_spatial_transformer
@@ -124,9 +125,9 @@ class VxmDense(LoadableModel):
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
-            pos_flow = ne.layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
+            pos_flow = layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
             if bidir:
-                neg_flow = ne.layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
+                neg_flow = layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
@@ -338,10 +339,10 @@ class VxmDenseSynth(LoadableModel):
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
             kwargs: Forwarded to the internal VxmDense model.
         """
-        from SynthSeg.labels_to_image_model import labels_to_image_model
 
         # brain generation
-        make_im_model = lambda id: labels_to_image_model(inshape, inshape, all_labels, hot_labels, id=id,
+        make_im_model = lambda id: synthseg.labels_to_image_model.labels_to_image_model(
+            inshape, inshape, all_labels, hot_labels, id=id,
             apply_affine_trans=False, apply_nonlin_trans=True, nonlin_shape_factor=0.0625, bias_shape_factor=0.025
         )
         bg_model_1, self.warp_shape, self.bias_shape = make_im_model(0)
@@ -393,18 +394,25 @@ class InstanceDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, warp):
-        source = tf.keras.Input(shape=inshape)
-        nullwarp = tf.keras.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
-        flow_layer = ne.layers.LocalParamWithInput(shape=warp.shape[1:])
-        flow = flow_layer(nullwarp)
+    def __init__(self, inshape, feats=1):
+
+        source = tf.keras.Input(shape=(*inshape, feats))
+        flow_layer = ne.layers.LocalParamWithInput(shape=(*inshape, len(inshape)))
+        flow = flow_layer(source)
         y = vxm.layers.SpatialTransformer()([source, flow])
 
         # initialize the keras model
-        super().__init__(name='instance_net', inputs=[source, nullwarp], outputs=[y, flow])
+        super().__init__(name='instance_dense', inputs=[source], outputs=[y, flow])
 
-        # initialize weights with original predicted warp
-        flow_layer.set_weights(warp)
+        # cache pointers to important layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.flow_layer = flow_layer
+
+    def set_flow(self, warp):
+        '''
+        Sets the networks flow field weights.
+        '''
+        self.references.flow_layer.set_weights(warp)
 
 
 ###############################################################################
