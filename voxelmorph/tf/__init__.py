@@ -1,4 +1,3 @@
-import neuron
 from . import synthseg
 
 from . import layers

@@ -6,7 +6,7 @@ import tensorflow.keras.backend as K
 import numpy.random as npr
 #from sklearn import preprocessing
 
-from neuron import layers as nrn_layers
+from neurite import layers as nrn_layers
 from .utils import add_axis, gauss_kernel, format_target_res, get_nonlin_field_shape, get_bias_field_shape, get_shapes
 
 
