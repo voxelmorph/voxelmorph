@@ -394,18 +394,25 @@ class InstanceDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, warp):
-        source = tf.keras.Input(shape=inshape)
-        nullwarp = tf.keras.Input(shape=warp.shape[1:])  # this is basically ignored by LocalParamWithInput
-        flow_layer = ne.layers.LocalParamWithInput(shape=warp.shape[1:])
-        flow = flow_layer(nullwarp)
+    def __init__(self, inshape, feats=1):
+
+        source = tf.keras.Input(shape=(*inshape, feats))
+        flow_layer = ne.layers.LocalParamWithInput(shape=(*inshape, len(inshape)))
+        flow = flow_layer(source)
         y = vxm.layers.SpatialTransformer()([source, flow])
 
         # initialize the keras model
-        super().__init__(name='instance_net', inputs=[source, nullwarp], outputs=[y, flow])
+        super().__init__(name='instance_dense', inputs=[source], outputs=[y, flow])
 
-        # initialize weights with original predicted warp
-        flow_layer.set_weights(warp)
+        # cache pointers to important layers and tensors for future reference
+        self.references = LoadableModel.ReferenceContainer()
+        self.references.flow_layer = flow_layer
+
+    def set_flow(self, warp):
+        '''
+        Sets the networks flow field weights.
+        '''
+        self.references.flow_layer.set_weights(warp)
 
 
 ###############################################################################
