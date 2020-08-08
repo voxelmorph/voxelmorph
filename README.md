@@ -1,15 +1,13 @@
-# voxelmorph
+# voxelmorph: Learning-Based Image Registration  
 
-Unsupervised Learning with CNNs for Image Registration  
-This repository incorporates several variants, first presented at CVPR2018 (initial unsupervised learning) and then MICCAI2018  (probabilistic & diffeomorphic formulation)
+**voxelmorph** is a library for learning-based tools related to alignment/registration, and in 
+general modelling with deformations.
+
 
 keywords: machine learning, convolutional neural networks, alignment, mapping, registration
 
-**NOTE:** The `master` branch is still in testing. If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.
-
-## RecentUpdates
-
-See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
+**NOTE:** The `master` branch is still in testing as we roll out a major refactoring of the library.   
+If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.
 
 
 # Instructions
@@ -70,9 +68,9 @@ In the original MICCAI code, the parameters were applied after the scaling of th
 If you use voxelmorph or some part of the code, please cite (see [bibtex](citations.bib)):
 
   * For the atlas formation model:  
-
+  
     **Learning Conditional Deformable Templates with Convolutional Networks**  
-  [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)
+  [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)  
   NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
 
   * For the diffeomorphic or probabilistic model:
