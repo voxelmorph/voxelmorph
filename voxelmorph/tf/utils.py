@@ -62,39 +62,6 @@ def setup_device(gpuid=None):
 # deformation utilities
 ###############################################################################
 
-def resize(vol, zoom_factor, interp_method='linear'):
-    """
-    if zoom_factor is a list, it will determine the ndims, in which case vol has to be of length ndims of ndims + 1
-
-    if zoom_factor is an integer, then vol must be of length ndims + 1
-
-    """
-
-    if isinstance(zoom_factor, (list, tuple)):
-        ndims = len(zoom_factor)
-        vol_shape = vol.shape[:ndims]
-        
-        assert len(vol_shape) in (ndims, ndims+1), \
-            "zoom_factor length %d does not match ndims %d" % (len(vol_shape), ndims)
-
-    else:
-        vol_shape = vol.shape[:-1]
-        ndims = len(vol_shape)
-        zoom_factor = [zoom_factor] * ndims
-    if not isinstance(vol_shape[0], int):
-        vol_shape = vol_shape.as_list()
-
-    new_shape = [vol_shape[f] * zoom_factor[f] for f in range(ndims)]
-    new_shape = [int(f) for f in new_shape]
-
-    lin = [tf.linspace(0., vol_shape[d]-1., new_shape[d]) for d in range(ndims)]
-    grid = ne.utils.ndgrid(*lin)
-
-    return ne.utils.interpn(vol, grid, interp_method=interp_method)
-
-
-zoom = resize
-
 
 def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
     """
