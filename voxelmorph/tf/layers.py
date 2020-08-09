@@ -23,7 +23,7 @@ from tensorflow.keras.layers import Layer
 import neurite as ne
 # TODO: simply import utils and use utils.is_affine, etc...
 from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity, affine_identity_to_shift
-from .utils import transform, resize, integrate_vec, affine_to_shift
+from .utils import transform, integrate_vec, affine_to_shift
 
 
 class SpatialTransformer(Layer):
