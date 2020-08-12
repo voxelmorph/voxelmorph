@@ -16,6 +16,7 @@ import tensorflow as tf
 from tensorflow.keras import backend as K
 import voxelmorph as vxm
 
+
 # parse the commandline
 parser = argparse.ArgumentParser()
 parser.add_argument('image', help='input image to test')
@@ -30,7 +31,6 @@ parser.add_argument('--posteriors', help='save posteriors to output vol file')
 parser.add_argument('--warp', help='save warp to output vol file')
 parser.add_argument('--stats', help='save stats to output npz file')
 args = parser.parse_args()
-
 
 # load reference atlas (group labels in tissue types if necessary)
 atlas_full = vxm.py.utils.load_volfile(args.atlas, add_batch_axis=True)
@@ -47,6 +47,7 @@ inshape = atlas.shape[1:-1]
 
 # load input scan
 image, affine = vxm.py.utils.load_volfile(args.image, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
+
 
 # define an isolated method of computing posteriors
 def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
@@ -99,6 +100,7 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
         funcs = funcs.append(K.function([input_atlas, ull, input_flow], [posterior, warped]))
 
     return funcs
+
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)

@@ -89,6 +89,7 @@ with tf.device(device):
     warp_shape = model.warp_shape
     bias_shape = model.bias_shape
 
+
 # define a generator
 def synth_generator(files, all_labels, warp_shape, bias_shape, batch_size=1, same_subj=False, vel_std=6):
     """
@@ -112,6 +113,7 @@ def synth_generator(files, all_labels, warp_shape, bias_shape, batch_size=1, sam
         if zeros is None:
             zeros = np.zeros(in1[0].shape)
         yield (*in1, *in2), (zeros, zeros)
+
 
 # construct a generator
 generator = synth_generator(

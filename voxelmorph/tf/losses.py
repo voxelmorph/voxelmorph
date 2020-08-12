@@ -5,7 +5,6 @@ import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
 
 
-
 class NCC:
     """
     Local (over window) normalized cross correlation loss.

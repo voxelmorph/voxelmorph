@@ -306,7 +306,7 @@ def surf_semisupervised(
         for li, label in enumerate(labels):  # if only one label, get surface points here
             atlas_surface_pts_ = std_to_surf(atlas_sdt[li], nb_surface_pts_sel[li])[np.newaxis, ...]
             # get the surface point stack indexes for this element
-            srf_idx = slice(int(np.sum(nb_surface_pts_sel[:li])), int(np.sum(nb_surface_pts_sel[:li+1])))
+            srf_idx = slice(int(np.sum(nb_surface_pts_sel[:li])), int(np.sum(nb_surface_pts_sel[:li + 1])))
             atlas_surface_pts[:, srf_idx, :-1] = np.repeat(atlas_surface_pts_, batch_size, 0)
             atlas_surface_pts[:, srf_idx,  -1] = li
 

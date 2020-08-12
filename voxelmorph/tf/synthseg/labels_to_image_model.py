@@ -4,7 +4,7 @@ import tensorflow as tf
 import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
 import numpy.random as npr
-#from sklearn import preprocessing
+# from sklearn import preprocessing
 
 from neurite import layers as nrn_layers
 from .utils import add_axis, gauss_kernel, format_target_res, get_nonlin_field_shape, get_bias_field_shape, get_shapes
@@ -27,7 +27,7 @@ def labels_to_image_model(labels_shape,
                           normalise=True,
                           out_div_32=False,
                           convert_back=False,
-                          id=0, # For different layer names if several models.
+                          id=0,  # For different layer names if several models.
                           rand_blur=True):
     """
         This function builds a keras/tensorflow model to generate brain images from supplied labels.
@@ -151,7 +151,7 @@ def labels_to_image_model(labels_shape,
             vel_field = nonlin_field_in
             vel_field = nrn_layers.Resize(zoom, interp_method='linear', name=f'resize_vel_{id}')(vel_field)
             def_field = nrn_layers.VecInt(int_steps=5)(vel_field)
-            #def_field = nrn_layers.RescaleValues(int_at)(def_field)
+            # def_field = nrn_layers.RescaleValues(int_at)(def_field)
             def_field = nrn_layers.Resize(int_at, interp_method='linear', name=f'resize_def_{id}')(def_field)
             trans_inputs.append(def_field)
 
@@ -182,7 +182,7 @@ def labels_to_image_model(labels_shape,
         sigma = KL.Lambda(lambda x: tf.random.uniform((n_dims,), minval=1e-6, maxval=1))([])
         f = lambda x: x[0] / x[1]**2
         kernel = KL.Lambda(lambda x: tf.map_fn(f, x, dtype='float32'))([c_grid, sigma])
-        kernel = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0) ))(kernel)
+        kernel = KL.Lambda(lambda x: tf.exp( -tf.reduce_sum(x, axis=0)))(kernel)
         kernel = KL.Lambda(lambda x: x[..., None, None] / tf.reduce_sum(x))(kernel)
     else:
         if (target_res is None) | (labels_res == target_res):
