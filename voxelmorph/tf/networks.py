@@ -748,7 +748,15 @@ class Unet(tf.keras.Model):
     internal model for more complex networks, and is not meant to be saved/loaded independently.
     """
 
-    def __init__(self, inshape=None, input_model=None, nb_features=None, nb_levels=None, feat_mult=1, nb_conv_per_level=1, half_res=False):
+    def __init__(self,
+                 inshape=None,
+                 input_model=None,
+                 nb_features=None,
+                 nb_levels=None,
+                 max_pool=2,
+                 feat_mult=1,
+                 nb_conv_per_level=1,
+                 half_res=False):
         """
         Parameters:
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
@@ -799,6 +807,9 @@ class Unet(tf.keras.Model):
         dec_nf = dec_nf[:nb_dec_convs]
         nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
+        if isinstance(max_pool, int):
+            max_pool = [max_pool]*nb_levels
+
         # configure encoder (down-sampling path)
         enc_layers = []
         last = unet_input
@@ -808,8 +819,9 @@ class Unet(tf.keras.Model):
                 name = 'unet_enc_conv_%d_%d' % (level, conv)
                 last = _conv_block(last, nf, name=name)
             enc_layers.append(last)
+            
             # temporarily use maxpool since downsampling doesn't exist in keras
-            last = MaxPooling(2, name='unet_enc_pooling_%d' % level)(last)
+            last = MaxPooling(max_pool[level], name='unet_enc_pooling_%d' % level)(last)
 
         # configure decoder (up-sampling path)
         for level in range(nb_levels - 1):
@@ -820,7 +832,7 @@ class Unet(tf.keras.Model):
                 last = _conv_block(last, nf, name=name)
             if not half_res or level < (nb_levels - 2):
                 name = 'unet_dec_upsample_' + str(real_level)
-                last = _upsample_block(last, enc_layers.pop(), name=name)
+                last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level], name=name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
@@ -847,7 +859,7 @@ def _conv_block(x, nfeat, strides=1, name=None):
     return KL.LeakyReLU(0.2, name=name)(convolved)
 
 
-def _upsample_block(x, connection, name=None):
+def _upsample_block(x, connection, factor=2, name=None):
     """
     Specific upsampling and concatenation layer for unet.
     """
@@ -855,7 +867,7 @@ def _upsample_block(x, connection, name=None):
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
     
-    upsampled = UpSampling(name=name)(x)
+    upsampled = UpSampling(size=(factor,) * ndims, name=name)(x)
     name = name + '_concat' if name else None
     return KL.concatenate([upsampled, connection], name=name)
 
