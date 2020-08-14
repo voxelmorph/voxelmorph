@@ -99,10 +99,10 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
         affine_matrix = tf.reshape(affine_matrix, [nb_dims, nb_dims + 1])
 
     if not (affine_matrix.shape[0] in [nb_dims, nb_dims + 1] and affine_matrix.shape[1] == (nb_dims + 1)):
-        raise Exception('Affine matrix shape should match'
-                        '%d+1 x %d+1 or ' % (nb_dims, nb_dims)
-                        '%d x %d+1.' % (nb_dims, nb_dims)
-                        'Got: ' + str(affine_matrix.shape))
+        shape1 = '(%d x %d)' % (nb_dims + 1, nb_dims + 1)
+        shape2 = '(%d x %s)' % (nb_dims, nb_dims + 1)
+        true_shape = str(affine_matrix.shape)
+        raise Exception('Affine shape should match %s or %s, but got: %s' % (shape1, shape2, true_shape))
 
     # list of volume ndgrid
     # N-long list, each entry of shape volshape
