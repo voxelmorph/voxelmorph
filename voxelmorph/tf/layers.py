@@ -24,6 +24,7 @@ import neurite as ne
 # TODO: simply import utils and use utils.is_affine, etc...
 from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity, affine_identity_to_shift
 from .utils import transform, integrate_vec, affine_to_shift
+from . import utils
 
 
 class SpatialTransformer(Layer):
@@ -412,7 +413,7 @@ class ComposeTransform(Layer):
             return tf.map_fn(self._single_dense_compose, [input_1, input_2], dtype=tf.float32)
 
     def _single_dense_compose(self, inputs):
-        return ne.utils.compose(inputs[0], inputs[1])
+        return utils.compose(inputs[0], inputs[1])
 
     def _single_affine_compose(self, inputs):
         affine_1 = affine_shift_to_identity(inputs[0])
