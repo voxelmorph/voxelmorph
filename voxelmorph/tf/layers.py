@@ -298,6 +298,10 @@ class RescaleTransform(Layer):
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
         super().__init__(**kwargs)
+        self.init_config = {'zoom_factor': zoom_factor, 'interp_method': interp_method, **kwargs}
+
+    def get_config(self):
+        return self.init_config
 
     def build(self, input_shape):
 
