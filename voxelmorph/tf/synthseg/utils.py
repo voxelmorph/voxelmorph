@@ -917,7 +917,7 @@ def get_list_labels(path_label_list=None, labels_folder=None, save_label_list=No
         for lab_idx, path in enumerate(labels_paths):
             print_loop_info(lab_idx, n_labels, 10)
             y = load_volfile(path, squeeze=True, dtype='int32')
-            datasets.append( np.squeeze(y) )
+            datasets.append(np.squeeze(y))
         label_list = np.unique(datasets)
 
     else:
@@ -978,6 +978,7 @@ def load_volfile(datafile, im_only=True, squeeze=True, dtype=None):
     if squeeze:
         image = np.squeeze(image)
     return image if im_only else (image, vox2ras, header)
+
 
 def save_volfile(image, affine, header, path, res=None, dtype=None, n_dims=3):
     if dtype is not None:
@@ -1139,4 +1140,3 @@ if __name__ == '__main__':
 
     # mask_dataset_with_labels(images, labels, result)
     convert_images_in_folder_to_nifty('/home/benjamin/PycharmProjects/brain_generator/models/t1_origs/test120/T1mix_ex')
-

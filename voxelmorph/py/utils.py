@@ -294,8 +294,8 @@ def vol_to_sdt_batch(X_label, sdt=True, sdt_vol_resize=1):
 
     # assume X_label is [batch_size, *vol_shape, 1]
     assert X_label.shape[-1] == 1, 'implemented assuming size is [batch_size, *vol_shape, 1]'
-    X_lst = [f[...,0] for f in X_label] # get rows
-    X_dt_lst =  [vol_to_sdt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
+    X_lst = [f[...,0] for f in X_label]  # get rows
+    X_dt_lst = [vol_to_sdt(f, sdt=sdt, sdt_vol_resize=sdt_vol_resize) for f in X_lst]  # distance transform
     X_dt = np.stack(X_dt_lst, 0)[..., np.newaxis]
     return X_dt
 
@@ -342,4 +342,4 @@ def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr
     sf_pts = edge_to_surface_pts(X_edges, nb_surface_pts=nb_surface_pts)
 
     # can't just correct by surface_pts_upsample_factor because of how interpolation works...
-    return np.stack([sf_pts[..., f] *  (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)
+    return np.stack([sf_pts[..., f] * (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)

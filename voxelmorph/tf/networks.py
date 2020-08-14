@@ -870,4 +870,3 @@ def _upsample_block(x, connection, factor=2, name=None):
     upsampled = UpSampling(size=(factor,) * ndims, name=name)(x)
     name = name + '_concat' if name else None
     return KL.concatenate([upsampled, connection], name=name)
-

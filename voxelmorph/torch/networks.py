@@ -48,7 +48,7 @@ class Unet(nn.Module):
         elif nb_levels is not None:
             raise ValueError('cannot use nb_levels if nb_features is not an integer')
         else:
-           self.enc_nf, self.dec_nf = nb_features
+            self.enc_nf, self.dec_nf = nb_features
 
         self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
 

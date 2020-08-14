@@ -123,8 +123,8 @@ class SpatialTransformer(Layer):
         # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
         # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
-        self.is_affine = len(trf_shape) == 1 or (len(trf_shape) == 2 and \
-            trf_shape[0] in (self.ndims, self.ndims+1) and trf_shape[1] == self.ndims+1)
+        is_matrix = len(trf_shape) == 2 and trf_shape[0] in (self.ndims, self.ndims+1) and trf_shape[1] == self.ndims+1
+        self.is_affine = len(trf_shape) == 1 or is_matrix
 
         # check sizes
         if self.is_affine and len(trf_shape) == 1:
@@ -245,7 +245,7 @@ class VecInt(Layer):
         self.inshape = trf_shape
 
         if trf_shape[-1] != len(trf_shape) - 2:
-            raise Exception('transform ndims %d does not match expected ndims %d' \
+            raise Exception('transform ndims %d does not match expected ndims %d'
                 % (trf_shape[-1], len(trf_shape) - 2))
 
     def call(self, inputs):
@@ -299,6 +299,10 @@ class RescaleTransform(Layer):
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
         super().__init__(**kwargs)
+        self.init_config = {'zoom_factor': zoom_factor, 'interp_method': interp_method, **kwargs}
+
+    def get_config(self):
+        return self.init_config
 
     def build(self, input_shape):
 
