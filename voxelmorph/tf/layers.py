@@ -448,7 +448,7 @@ class AffineToDense(Layer):
         shape = input_shape[1:]
 
         if len(shape) == 1:
-            ex = self.ndims * (self.ndims + 1)
+            ex = self.ndims * (self.ndims + 1)            
             if shape[0] != ex:
                 raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
 
