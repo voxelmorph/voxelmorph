@@ -7,11 +7,8 @@ keywords: machine learning, convolutional neural networks, alignment, mapping, r
 ## Recent Updates
 
  - Due to popular demand, we added a preliminary **pytorch** version; please see the [pytorch](pytorch) folder.  
- **Note:** we will soon be updating a new **voxelmorph** version that will integrate both `keras/tensorflow` and `pytorch` versions.
 
  - New core [tutorial](https://www.kaggle.com/adalca/learn2reg) provides intuition to voxelmorph!
-
- - See our [learning method to automatically build atlases](http://voxelmorph.mit.edu/atlas_creation/) using VoxelMorph, to appear at NeurIPS2019.
 
 
 # Instructions
