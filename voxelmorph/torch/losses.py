@@ -9,8 +9,8 @@ class NCC:
     Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, window=None):
-        self.window = window
+    def __init__(self, win=None):
+        self.win = win
 
     def loss(self, y_true, y_pred):
 
@@ -24,14 +24,6 @@ class NCC:
 
         # set window size
         win = [9] * ndims if self.win is None else self.win
-
-        # get convolution function
-        conv_fn = getattr(F, 'conv%dd' % ndims)
-
-        # compute CC squares
-        I2 = I * I
-        J2 = J * J
-        IJ = I * J
 
         # compute filters
         sum_filt = torch.ones([1, 1, *win]).to("cuda")
@@ -47,8 +39,28 @@ class NCC:
         else:
             stride = (1,1,1)
             padding = (pad_no, pad_no, pad_no)
-        
-        I_var, J_var, cross = compute_local_sums(I, J, sum_filt, stride, padding, win)
+
+        # get convolution function
+        conv_fn = getattr(F, 'conv%dd' % ndims)
+
+        # compute CC squares
+        I2 = I * I
+        J2 = J * J
+        IJ = I * J
+
+        I_sum = conv_fn(I, sum_filt, stride=stride, padding=padding)
+        J_sum = conv_fn(J, sum_filt, stride=stride, padding=padding)
+        I2_sum = conv_fn(I2, sum_filt, stride=stride, padding=padding)
+        J2_sum = conv_fn(J2, sum_filt, stride=stride, padding=padding)
+        IJ_sum = conv_fn(IJ, sum_filt, stride=stride, padding=padding)
+
+        win_size = np.prod(win)
+        u_I = I_sum / win_size
+        u_J = J_sum / win_size
+
+        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size
+        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
+        J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
 
         cc = cross * cross / (I_var * J_var + 1e-5)
 

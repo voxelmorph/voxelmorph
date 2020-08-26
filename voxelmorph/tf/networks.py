@@ -840,7 +840,7 @@ class Unet(tf.keras.Model):
             name = 'unet_dec_final_conv_' + str(num)
             last = _conv_block(last, nf, name=name)
 
-        return super().__init__(inputs=model_inputs, outputs=last)
+        super().__init__(inputs=model_inputs, outputs=last)
 
 
 ###############################################################################
