@@ -394,12 +394,12 @@ class InstanceDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, feats=1):
+    def __init__(self, inshape, feats=1, mult=1):
 
         source = tf.keras.Input(shape=(*inshape, feats))
-        flow_layer = ne.layers.LocalParamWithInput(shape=(*inshape, len(inshape)))
+        flow_layer = ne.layers.LocalParamWithInput(shape=(*inshape, len(inshape)), mult=mult)
         flow = flow_layer(source)
-        y = vxm.layers.SpatialTransformer()([source, flow])
+        y = layers.SpatialTransformer()([source, flow])
 
         # initialize the keras model
         super().__init__(name='instance_dense', inputs=[source], outputs=[y, flow])
@@ -756,6 +756,7 @@ class Unet(tf.keras.Model):
                  max_pool=2,
                  feat_mult=1,
                  nb_conv_per_level=1,
+                 do_res=False,
                  half_res=False):
         """
         Parameters:
@@ -817,7 +818,7 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
                 name = 'unet_enc_conv_%d_%d' % (level, conv)
-                last = _conv_block(last, nf, name=name)
+                last = _conv_block(last, nf, name=name, do_res=do_res)
             enc_layers.append(last)
             
             # temporarily use maxpool since downsampling doesn't exist in keras
@@ -829,7 +830,7 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 name = 'unet_dec_conv_%d_%d' % (real_level, conv)
-                last = _conv_block(last, nf, name=name)
+                last = _conv_block(last, nf, name=name, do_res=do_res)
             if not half_res or level < (nb_levels - 2):
                 name = 'unet_dec_upsample_' + str(real_level)
                 last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level], name=name)
@@ -846,7 +847,7 @@ class Unet(tf.keras.Model):
 # Private functions
 ###############################################################################
 
-def _conv_block(x, nfeat, strides=1, name=None):
+def _conv_block(x, nfeat, strides=1, name=None, do_res=False):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -856,6 +857,15 @@ def _conv_block(x, nfeat, strides=1, name=None):
 
     convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides, name=name)(x)
     name = name + '_activation' if name else None
+
+    if do_res:
+        # assert nfeat == x.get_shape()[-1], 'for residual number of features should be constant'
+        add_layer = x
+        print('note: this is a weird thing to do, since its not really residual training anymore')
+        if nfeat != x.get_shape().as_list()[-1]:
+            add_layer = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', name='resfix_'+name)(x)
+        convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
+
     return KL.LeakyReLU(0.2, name=name)(convolved)
 
 
