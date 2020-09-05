@@ -757,7 +757,8 @@ class Unet(tf.keras.Model):
                  feat_mult=1,
                  nb_conv_per_level=1,
                  do_res=False,
-                 half_res=False):
+                 half_res=False,
+                 name=None):
         """
         Parameters:
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
@@ -770,6 +771,9 @@ class Unet(tf.keras.Model):
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
             half_res: Skip the last decoder upsampling. Default is False.
         """
+
+        # save model name
+        model_name = name
 
         # have the option of specifying input shape or input model
         if input_model is None:
@@ -840,7 +844,7 @@ class Unet(tf.keras.Model):
             name = 'unet_dec_final_conv_' + str(num)
             last = _conv_block(last, nf, name=name)
 
-        super().__init__(inputs=model_inputs, outputs=last)
+        super().__init__(inputs=model_inputs, outputs=last, name=model_name)
 
 
 ###############################################################################
