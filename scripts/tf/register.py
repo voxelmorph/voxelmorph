@@ -37,6 +37,9 @@ add_feat_axis = not args.multichannel
 moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
 fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
+inshape = moving.shape[1:-1]
+nb_feats = moving.shape[-1]
+
 with tf.device(device):
     # load model and predict
     warp = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
