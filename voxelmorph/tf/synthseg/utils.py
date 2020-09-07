@@ -557,7 +557,7 @@ def correct_labels(labels_dir, list_incorrect_labels, list_correct_labels, resul
                 # save new labels
                 save_volfile(im, vox2ras, header, path_new_labels)
             elif '.npz' in filename:
-                np.savez_compressed(path_new_labels, vol_data=im.astype('int'))
+                np.savez_compressed(path_new_labels, vol=im.astype('int'))
             else:
                 raise ValueError('only support nii.gz, mgz or npz files')
 
@@ -854,7 +854,7 @@ def get_image_info(image_path, return_image=False):
     elif '.npz' in image_path or '.npy' in image_path:
         im = np.load(image_path)
         if image_path.endswith('.npz'):
-            im = im['vol_data']
+            im = im['vol']
         vox2ras = np.eye(4)
         header = nib.Nifti1Header()
     else:
@@ -958,7 +958,7 @@ def load_volfile(datafile, im_only=True, squeeze=True, dtype=None):
     """
     load volume file
     formats: nii, nii.gz, mgz, npz
-    if it's a npz (compressed numpy), assume variable names 'vol_data'
+    if it's a npz (compressed numpy), assume variable names 'vol'
     """
     assert datafile.endswith(('.nii', '.nii.gz', '.mgz', '.npz', '.npy')), 'Unknown data file: %s' % datafile
 
@@ -970,7 +970,7 @@ def load_volfile(datafile, im_only=True, squeeze=True, dtype=None):
     else:
         image = np.load(datafile)
         if datafile.endswith('.npz'):
-            image = image['vol_data']
+            image = image['vol']
         vox2ras = np.eye(4)
         header = nib.Nifti1Header()
     if dtype:
@@ -984,7 +984,7 @@ def save_volfile(image, affine, header, path, res=None, dtype=None, n_dims=3):
     if dtype is not None:
         image = image.astype(dtype=dtype)
     if '.npz' in path:
-        np.savez_compressed(path, vol_data=image)
+        np.savez_compressed(path, vol=image)
     else:
         if header is None:
             header = nib.Nifti1Header()

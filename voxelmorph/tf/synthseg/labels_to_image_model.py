@@ -8,7 +8,7 @@ import numpy.random as npr
 
 from neurite import layers as nrn_layers
 from .utils import add_axis, gauss_kernel, format_target_res, get_nonlin_field_shape, get_bias_field_shape, get_shapes
-
+from .. import layers
 
 def labels_to_image_model(labels_shape,
                           crop_shape,
@@ -150,13 +150,13 @@ def labels_to_image_model(labels_shape,
             zoom = [o / d / int_at for o, d in zip(output_shape, def_field_size)] 
             vel_field = nonlin_field_in
             vel_field = nrn_layers.Resize(zoom, interp_method='linear', name=f'resize_vel_{id}')(vel_field)
-            def_field = nrn_layers.VecInt(int_steps=5)(vel_field)
+            def_field = layers.VecInt(int_steps=5)(vel_field)
             # def_field = nrn_layers.RescaleValues(int_at)(def_field)
             def_field = nrn_layers.Resize(int_at, interp_method='linear', name=f'resize_def_{id}')(def_field)
             trans_inputs.append(def_field)
 
         # apply deformations
-        labels = nrn_layers.SpatialTransformer(interp_method='nearest', name=f'trans_{id}')(trans_inputs)
+        labels = layers.SpatialTransformer(interp_method='nearest', name=f'trans_{id}')(trans_inputs)
     labels = KL.Lambda(lambda x: tf.cast(x, dtype='int32'))(labels)
 
     # sample from normal distribution
