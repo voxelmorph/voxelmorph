@@ -85,7 +85,7 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # build the model
-    model = vxm.networks.VxmDenseSegSemiSupervised(
+    model = vxm.networks.VxmDenseSemiSupervisedSeg(
         inshape=inshape,
         nb_unet_features=[enc_nf, dec_nf],
         nb_labels=len(train_labels),
