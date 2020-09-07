@@ -402,25 +402,64 @@ class InstanceDense(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, feats=1, mult=1):
+    def __init__(self, inshape, nb_feats=1, mult=1000, int_steps=7, int_downsize=2):
+        """ 
+        Parameters:
+            inshape: Input shape of moving image. e.g. (192, 192, 192)
+            nb_feats: Number of source image features. Default is 1.
+            mult: Bias multiplier for local parameter layer. Default is 1000.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
+                is not downsampled when this value is 1.
+        """
 
-        source = tf.keras.Input(shape=(*inshape, feats))
-        flow_layer = ne.layers.LocalParamWithInput(shape=(*inshape, len(inshape)), mult=mult)
-        flow = flow_layer(source)
-        y = layers.SpatialTransformer()([source, flow])
+        # downsample warp shape
+        ds_warp_shape = [int(dim / float(int_downsize)) for dim in inshape]
+
+        source = tf.keras.Input(shape=(*inshape, nb_feats))
+        flow_layer = ne.layers.LocalParamWithInput(shape=(*ds_warp_shape, len(inshape)), mult=mult)
+        preint_flow = flow_layer(source)
+        
+        # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
+        pos_flow = preint_flow
+        if int_steps > 0:
+            pos_flow = layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
+
+            # resize to final resolution
+            if int_downsize > 1:
+                pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
+
+        # warp image with flow field
+        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
 
         # initialize the keras model
-        super().__init__(name='instance_dense', inputs=[source], outputs=[y, flow])
+        super().__init__(name='vxm_instance_dense', inputs=[source], outputs=[y_source, preint_flow])
 
         # cache pointers to important layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
+        self.references.pos_flow = pos_flow
         self.references.flow_layer = flow_layer
+        self.references.mult = mult
 
     def set_flow(self, warp):
         '''
-        Sets the networks flow field weights.
+        Sets the networks flow field weights. Scales the warp to
+        accommodate the local weight multiplier.
         '''
+        warp = warp / self.references.mult
         self.references.flow_layer.set_weights(warp)
+
+    def get_registration_model(self):
+        """
+        Returns a reconfigured model to predict only the final transform.
+        """
+        return tf.keras.Model(self.inputs, self.references.pos_flow)
+
+    def register(self, src):
+        """
+        Predicts the transform from src to trg tensors.
+        """
+        return self.get_registration_model().predict(src)
 
 
 ###############################################################################

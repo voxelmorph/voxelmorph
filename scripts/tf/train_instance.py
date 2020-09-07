@@ -15,18 +15,23 @@ import tensorflow as tf
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('moving', help='moving image (source) filename')
-parser.add_argument('fixed', help='fixed image (target) filename')
-parser.add_argument('moved', help='registered image output filename')
-parser.add_argument('--model', help='pretrained nonlinear vxm model')
-parser.add_argument('--save-warp', help='output warp filename')
+parser.add_argument('--moving', required=True, help='moving image (source) filename')
+parser.add_argument('--fixed', required=True, help='fixed image (target) filename')
+parser.add_argument('--moved', required=True, help='registered image output filename')
+parser.add_argument('--model', help='initialize with prediction from pretrained vxm model')
+parser.add_argument('--warp', help='output warp filename')
 parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-parser.add_argument('--epochs', type=int, default=1, help='number of training epochs (default: 1)')
+parser.add_argument('--epochs', type=int, default=2, help='number of training epochs (default: 2)')
 parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
-parser.add_argument('--lr', type=float, default=0.01, help='learning rate (default: 0.01)')
+parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.001)')
+
+# network architecture parameters
+parser.add_argument('--int-steps', type=int, default=7, help='number of integration steps (default: 7)')
+parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample factor for integration (default: 2)')
+parser.add_argument('--multiplier', type=float, default=1000, help='local weight multiplier (default: 1000)')
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
@@ -45,14 +50,19 @@ with tf.device(device):
 
     # initialize instance network
     inshape = moving.shape[1:-1]
-    feats = moving.shape[-1]
-    model = vxm.networks.InstanceTrainer(inshape, feats=feats)
+    nb_feats = moving.shape[-1]
+    model = vxm.networks.InstanceDense(
+        inshape,
+        nb_feats=nb_feats,
+        mult=args.multiplier,
+        int_steps=args.int_steps,
+        int_downsize=args.int_downsize
+    )
 
     # load model and predict
     if args.model is not None:
-        warp_predictor = vxm.networks.VxmDense.load(args.model).get_predictor_model()
-        _, orig_warp = warp_predictor.predict([moving, fixed])
-        model.set_flow(orig_warp)
+        initialization = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
+        model.set_flow(initialization)
 
     # prepare image loss
     if args.image_loss == 'ncc':
@@ -66,7 +76,7 @@ with tf.device(device):
     weights = [1, args.lambda_weight]
 
     # train
-    zeros = np.zeros((1, *inshape, len(inshape)), astype='float32')
+    zeros = np.zeros((1, *inshape, len(inshape)), dtype='float32')
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
     model.fit(
         [moving],
@@ -78,11 +88,12 @@ with tf.device(device):
     )
 
     # get warped image and deformation field
-    moved, warp = model.predict([moving])
+    warp = model.register(moving)
+    moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
 
 # save moved image
 vxm.py.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)
 
 # save warp
-if args.save_warp:
-    vxm.py.utils.save_volfile(warp.squeeze(), args.save_warp, fixed_affine)
+if args.warp:
+    vxm.py.utils.save_volfile(warp.squeeze(), args.warp, fixed_affine)
