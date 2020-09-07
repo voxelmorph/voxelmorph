@@ -141,7 +141,15 @@ class VxmDense(LoadableModel):
             y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
 
         # initialize the keras model
-        outputs = [y_source, y_target, preint_flow] if bidir else [y_source, preint_flow]
+        outputs = [y_source, y_target] if bidir else [y_source]
+
+        if use_probs:
+            # compute loss on flow probabilities
+            outputs += [flow_params]
+        else:
+            # compute smoothness loss on pre-integrated warp
+            outputs += [preint_flow]
+
         super().__init__(name='vxm_dense', inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
