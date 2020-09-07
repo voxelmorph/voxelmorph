@@ -34,16 +34,13 @@ device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 # load moving and fixed images
 add_feat_axis = not args.multichannel
-moving = vxm.py.utils.load_volfile(args.moving, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_feat_axis=add_feat_axis, ret_affine=True)
-
-moving = moving[np.newaxis]
-fixed = fixed[np.newaxis]
+moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
+fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
 with tf.device(device):
     # load model and predict
     warp = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
-    moved = vxm.tf.utils.transform(moving, warp)
+    moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
 
 # save warp
 if args.warp:
