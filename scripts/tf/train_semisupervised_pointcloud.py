@@ -108,7 +108,7 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 with tf.device(device):
 
     # build the model
-    model = vxm.networks.VxmDenseSurfaceSemiSupervised(
+    model = vxm.networks.VxmDenseSemiSupervisedPointCloud(
         inshape=inshape,
         nb_unet_features=[enc_nf, dec_nf],
         nb_surface_points=args.surf_points,
