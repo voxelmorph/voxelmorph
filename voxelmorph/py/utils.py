@@ -1,10 +1,15 @@
+# internal python imports
 import os
-import numpy as np
-import scipy
 import csv
 import functools
 
+# third party imports
+import numpy as np
+import scipy
 from skimage import measure
+
+# local/our imports
+import pystrum.pynd.ndutils as nd
 
 
 def default_unet_features():
@@ -343,3 +348,49 @@ def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr
 
     # can't just correct by surface_pts_upsample_factor because of how interpolation works...
     return np.stack([sf_pts[..., f] * (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)
+
+
+def jacobian_determinant(disp):
+    """
+    jacobian determinant of a displacement field.
+    NB: to compute the spatial gradients, we use np.gradient.
+
+    Parameters:
+        disp: 2D or 3D displacement field of size [*vol_shape, nb_dims], 
+              where vol_shape is of len nb_dims
+
+    Returns:
+        jacobian determinant (scalar)
+    """
+
+    # check inputs
+    volshape = disp.shape[:-1]
+    nb_dims = len(volshape)
+    assert len(volshape) in (2, 3), 'flow has to be 2D or 3D'
+
+    # compute grid
+    grid_lst = nd.volsize2ndgrid(volshape)
+    grid = np.stack(grid_lst, len(volshape))
+
+    # compute gradients
+    J = np.gradient(disp + grid)
+
+    # 3D glow
+    if nb_dims == 3:
+        dx = J[0]
+        dy = J[1]
+        dz = J[2]
+
+        # compute jacobian components
+        Jdet0 = dx[..., 0] * (dy[..., 1] * dz[..., 2] - dy[..., 2] * dz[..., 1])
+        Jdet1 = dx[..., 1] * (dy[..., 0] * dz[..., 2] - dy[..., 2] * dz[..., 0])
+        Jdet2 = dx[..., 2] * (dy[..., 0] * dz[..., 1] - dy[..., 1] * dz[..., 0])
+
+        return Jdet0 - Jdet1 + Jdet2
+
+    else: # must be 2 
+        
+        dfdx = J[0]
+        dfdy = J[1] 
+        
+        return dfdx[..., 0] * dfdy[..., 1] - dfdy[..., 0] * dfdx[..., 1]
