@@ -114,7 +114,9 @@ class Dice:
 
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
         bottom = tf.reduce_sum(y_true + y_pred, vol_axes)
-        dice = tf.reduce_mean(tf.div_no_nan(top, bottom))
+
+        div_no_nan = tf.math.divide_no_nan if hasattr(tf.math, 'divide_no_nan') else tf.div_no_nan
+        dice = tf.reduce_mean(div_no_nan(top, bottom))
         return -dice
 
 
