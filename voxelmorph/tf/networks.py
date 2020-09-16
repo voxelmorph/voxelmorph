@@ -50,7 +50,8 @@ class VxmDense(LoadableModel):
             src_feats=1,
             trg_feats=1,
             unet_half_res=False,
-            input_model=None):
+            input_model=None,
+            name='vxm_dense'):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -69,6 +70,7 @@ class VxmDense(LoadableModel):
             trg_feats: Number of target image features. Default is 1.
             unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. Default is False.
             input_model: Model to replace default input layer before concatenation. Default is None.
+            name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
         """
 
         # ensure correct dimensionality
@@ -77,8 +79,8 @@ class VxmDense(LoadableModel):
 
         if input_model is None:
             # configure default input layers if an input model is not provided
-            source = tf.keras.Input(shape=(*inshape, src_feats), name='source_input')
-            target = tf.keras.Input(shape=(*inshape, trg_feats), name='target_input')
+            source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
+            target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
             input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
         else:
             source, target = input_model.outputs[:2]
@@ -90,13 +92,14 @@ class VxmDense(LoadableModel):
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult,
             nb_conv_per_level=nb_unet_conv_per_level,
-            half_res=unet_half_res
+            half_res=unet_half_res,
+            name='%s_unet' % name
         )
 
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
         flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                    kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='flow')(unet_model.output)
+                    kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='%s_flow' % name)(unet_model.output)
 
         # optionally include probabilities
         if use_probs:
@@ -104,9 +107,9 @@ class VxmDense(LoadableModel):
             flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
                             kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-10),
                             bias_initializer=KI.Constant(value=-10),
-                            name='log_sigma')(unet_model.output)
-            flow_params = KL.concatenate([flow_mean, flow_logsigma], name='prob_concat')
-            flow = ne.layers.SampleNormalLogVar(name="z_sample")([flow_mean, flow_logsigma])
+                            name='%s_log_sigma' % name)(unet_model.output)
+            flow_params = KL.concatenate([flow_mean, flow_logsigma], name='%s_prob_concat' % name)
+            flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)([flow_mean, flow_logsigma])
         else:
             flow_params = flow_mean
             flow = flow_mean
@@ -114,31 +117,31 @@ class VxmDense(LoadableModel):
         if not unet_half_res:
             # optionally resize for integration
             if int_steps > 0 and int_downsize > 1:
-                flow = layers.RescaleTransform(1 / int_downsize, name='flow_resize')(flow)
+                flow = layers.RescaleTransform(1 / int_downsize, name='%s_flow_resize' % name)(flow)
 
         preint_flow = flow
 
         # optionally negate flow for bidirectional model
         pos_flow = flow
         if bidir:
-            neg_flow = ne.layers.Negate(name='neg_flow')(flow)
+            neg_flow = ne.layers.Negate(name='%s_neg_flow' % name)(flow)
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
-            pos_flow = layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
+            pos_flow = layers.VecInt(method='ss', name='%s_flow_int' % name, int_steps=int_steps)(pos_flow)
             if bidir:
-                neg_flow = layers.VecInt(method='ss', name='neg_flow_int', int_steps=int_steps)(neg_flow)
+                neg_flow = layers.VecInt(method='ss', name='%s_neg_flow_int' % name, int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
+                pos_flow = layers.RescaleTransform(int_downsize, name='%s_diffflow' % name)(pos_flow)
                 if bidir:
-                    neg_flow = layers.RescaleTransform(int_downsize, name='neg_diffflow')(neg_flow)
+                    neg_flow = layers.RescaleTransform(int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
 
         # warp image with flow field
-        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
+        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
         if bidir:
-            y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='neg_transformer')([target, neg_flow])
+            y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='%s_neg_transformer' % name)([target, neg_flow])
 
         # initialize the keras model
         outputs = [y_source, y_target] if bidir else [y_source]
@@ -150,7 +153,7 @@ class VxmDense(LoadableModel):
             # compute smoothness loss on pre-integrated warp
             outputs += [preint_flow]
 
-        super().__init__(name='vxm_dense', inputs=input_model.inputs, outputs=outputs)
+        super().__init__(name=name, inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
@@ -805,7 +808,7 @@ class Unet(tf.keras.Model):
                  nb_conv_per_level=1,
                  do_res=False,
                  half_res=False,
-                 name=None):
+                 name='unet'):
         """
         Parameters:
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
@@ -817,19 +820,17 @@ class Unet(tf.keras.Model):
             feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
             half_res: Skip the last decoder upsampling. Default is False.
+            name: Model name - also used as layer name prefix. Default is 'unet'.
         """
-
-        # save model name
-        model_name = name
 
         # have the option of specifying input shape or input model
         if input_model is None:
             if inshape is None:
                 raise ValueError('inshape must be supplied if input_model is None')
-            unet_input = KL.Input(shape=inshape, name='unet_input')
+            unet_input = KL.Input(shape=inshape, name='%s_input' % name)
             model_inputs = [unet_input]
         else:
-            unet_input = KL.concatenate(input_model.outputs, name='unet_input_concat')
+            unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
             model_inputs = input_model.inputs
 
         # default encoder and decoder layer features if nothing provided
@@ -868,30 +869,30 @@ class Unet(tf.keras.Model):
         for level in range(nb_levels - 1):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
-                name = 'unet_enc_conv_%d_%d' % (level, conv)
-                last = _conv_block(last, nf, name=name, do_res=do_res)
+                layer_name = '%s_enc_conv_%d_%d' % (name, level, conv)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res)
             enc_layers.append(last)
             
             # temporarily use maxpool since downsampling doesn't exist in keras
-            last = MaxPooling(max_pool[level], name='unet_enc_pooling_%d' % level)(last)
+            last = MaxPooling(max_pool[level], name='%s_enc_pooling_%d' % (name, level))(last)
 
         # configure decoder (up-sampling path)
         for level in range(nb_levels - 1):
             real_level = nb_levels - level - 2
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
-                name = 'unet_dec_conv_%d_%d' % (real_level, conv)
-                last = _conv_block(last, nf, name=name, do_res=do_res)
+                layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res)
             if not half_res or level < (nb_levels - 2):
-                name = 'unet_dec_upsample_' + str(real_level)
-                last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level], name=name)
+                layer_name = '%s_dec_upsample_%d' % (name, real_level)
+                last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level], name=layer_name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
-            name = 'unet_dec_final_conv_' + str(num)
-            last = _conv_block(last, nf, name=name)
+            layer_name = '%s_dec_final_conv_%d' % (name, num)
+            last = _conv_block(last, nf, name=layer_name)
 
-        super().__init__(inputs=model_inputs, outputs=last, name=model_name)
+        super().__init__(inputs=model_inputs, outputs=last, name=name)
 
 
 ###############################################################################
