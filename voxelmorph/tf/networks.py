@@ -191,7 +191,14 @@ class VxmDenseSemiSupervisedSeg(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, nb_labels, nb_unet_features=None, int_steps=7, int_downsize=2, seg_downsize=2):
+    def __init__(self,
+        inshape,
+        nb_labels,
+        nb_unet_features=None,
+        int_steps=7,
+        int_downsize=2,
+        seg_downsize=2,
+        **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -201,10 +208,11 @@ class VxmDenseSemiSupervisedSeg(LoadableModel):
             int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
                 is not downsampled when this value is 1.
             seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
+            kwargs: Forwarded to the internal VxmDense model.
         """
 
         # configure base voxelmorph network
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, int_steps=int_steps, int_downsize=int_downsize)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, int_steps=int_steps, int_downsize=int_downsize, **kwargs)
 
         # configure downsampled seg input layer
         inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
@@ -753,14 +761,20 @@ class Transform(tf.keras.Model):
     Simple transform model to apply dense or affine transforms.
     """
 
-    def __init__(self, inshape, affine=False, interp_method='linear',
-                    rescale=None, fill_value=None, nb_feats=1):
+    def __init__(self,
+        inshape,
+        affine=False,
+        interp_method='linear',
+        rescale=None,
+        fill_value=None,
+        nb_feats=1):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             affine: Enable affine transform. Default is False.
-            rescale: Transform rescale factor. Default in None.
             interp_method: Interpolation method. Can be 'linear' or 'nearest'. Default is 'linear'.
+            rescale: Transform rescale factor. Default is None.
+            fill_value: Fill value for SpatialTransformer. Default is None.
             nb_feats: Number of source image features. Default is 1.
         """
 
@@ -771,11 +785,10 @@ class Transform(tf.keras.Model):
         if affine:
             trf_input = tf.keras.Input((ndims * (ndims + 1),), name='trf_input')
         else:
-            trf_input = tf.keras.Input((*inshape, ndims), name='trf_input')
+            trf_shape = inshape if rescale is None else [int(d / rescale) for d in inshape]
+            trf_input = tf.keras.Input((*trf_shape, ndims), name='trf_input')
 
-        trf_scaled = trf_input 
-        if rescale is not None:
-            trf_scaled = layers.RescaleTransform(rescale)(trf_input)
+        trf_scaled = trf_input if rescale is None else layers.RescaleTransform(rescale)(trf_input)
 
         # transform and initialize the keras model
         trf_layer = layers.SpatialTransformer(interp_method=interp_method,
