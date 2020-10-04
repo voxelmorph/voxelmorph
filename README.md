@@ -3,12 +3,6 @@
 **voxelmorph** is a library for learning-based tools related to alignment/registration, and in 
 general modelling with deformations.
 
-
-keywords: machine learning, convolutional neural networks, alignment, mapping, registration
-
-**NOTE:** The `master` branch is still in testing as we roll out a major refactoring of the library.   
-If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.
-
 # Tutorial
 
 Visit the [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) to learn about VoxelMorph and Learning-based Registration
@@ -105,7 +99,11 @@ IEEE TMI: Transactions on Medical Imaging. 2019.
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 
-# Notes on Data
+# Notes:
+- **keywords**: machine learning, convolutional neural networks, alignment, mapping, registration  
+- The `master` branch is still in testing as we roll out a major refactoring of the library.     
+- If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.  
+- **data in papers**: 
 In our initial papers, we used publicly available data, but unfortunately we cannot redistribute it (due to the constraints of those datasets). We do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. 
 
 We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
