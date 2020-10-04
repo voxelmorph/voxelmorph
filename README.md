@@ -9,6 +9,10 @@ keywords: machine learning, convolutional neural networks, alignment, mapping, r
 **NOTE:** The `master` branch is still in testing as we roll out a major refactoring of the library.   
 If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.
 
+# Tutorial
+
+Visit the [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) to learn about VoxelMorph and Learning-based Registration
+
 
 # Instructions
 
