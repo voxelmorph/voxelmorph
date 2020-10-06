@@ -603,11 +603,10 @@ class TemplateCreation(LoadableModel):
     """
 
     @store_config_args
-    def __init__(self, inshape, np_atlas, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
+    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            np_atlas: the initial numpy array representing the atlas
             nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
             mean_cap: Cap for mean stream. Default is 100.
             atlas_feats: Number of atlas/template features. Default is 1.
@@ -616,13 +615,12 @@ class TemplateCreation(LoadableModel):
         """
 
         # configure inputs
+        atlas_input = tf.keras.Input(shape=[*inshape, atlas_feats], name='atlas_input')
         source_input = tf.keras.Input(shape=[*inshape, src_feats], name='source_input')
 
         # pre-warp (atlas) model
         atlas_layer = ne.layers.LocalParamWithInput(name='atlas', shape=(*inshape, 1), mult=1.0, initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))
-        atlas_tensor = atlas_layer(source_input)
-        atlas_layer.set_weights([np_atlas])
-
+        atlas_tensor = atlas_layer(atlas_input)
         warp_input_model = tf.keras.Model([atlas_input, source_input], outputs=[atlas_tensor, source_input])
 
         # warp model
@@ -644,30 +642,6 @@ class TemplateCreation(LoadableModel):
         self.references = LoadableModel.ReferenceContainer()
         self.references.atlas_layer = atlas_layer
         self.references.atlas_tensor = atlas_tensor
-        self.references.pos_flow = pos_flow
-        self.references.neg_flow = neg_flow
-        self.references.vxm_model = vxm_model
-
-    def get_registration_model(self):
-        """
-        Returns a reconfigured model to predict only the final transform.
-        """
-        return tf.keras.Model(self.inputs, self.references.pos_flow)
-
-    def register(self, src, trg):
-        """
-        Predicts the transform from src to trg tensors.
-        """
-        return self.get_registration_model().predict([src, trg])
-
-    def apply_transform(self, src, trg, img, interp_method='linear', fill_value=None):
-        """
-        Predicts the transform from src to trg and applies it to the img tensor.
-        """
-        warp_model = self.get_registration_model()
-        img_input = tf.keras.Input(shape=img.shape[1:])
-        y_img = layers.SpatialTransformer(interp_method=interp_method, fill_value=fill_value)([img_input, warp_model.output])
-        return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
 class ConditionalTemplateCreation(LoadableModel):
