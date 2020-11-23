@@ -615,13 +615,17 @@ class TemplateCreation(LoadableModel):
         """
 
         # configure inputs
-        atlas_input = tf.keras.Input(shape=[*inshape, atlas_feats], name='atlas_input')
         source_input = tf.keras.Input(shape=[*inshape, src_feats], name='source_input')
 
         # pre-warp (atlas) model
-        atlas_layer = ne.layers.LocalParamWithInput(name='atlas', shape=(*inshape, 1), mult=1.0, initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))
-        atlas_tensor = atlas_layer(atlas_input)
-        warp_input_model = tf.keras.Model([atlas_input, source_input], outputs=[atlas_tensor, source_input])
+        atlas_layer = ne.layers.LocalParamWithInput(
+            shape=(*inshape, atlas_feats),
+            mult=1.0,
+            initializer=KI.RandomNormal(mean=0.0, stddev=1e-7),
+            name='atlas'
+        )
+        atlas_tensor = atlas_layer(source_input)
+        warp_input_model = tf.keras.Model(inputs=[source_input], outputs=[atlas_tensor, source_input])
 
         # warp model
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
@@ -636,12 +640,50 @@ class TemplateCreation(LoadableModel):
         mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
 
         # initialize the keras model
-        super().__init__(inputs=[atlas_input, source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
+        super().__init__(inputs=[source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
 
         # cache pointers to important layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
         self.references.atlas_layer = atlas_layer
         self.references.atlas_tensor = atlas_tensor
+        self.references.vxm_model = vxm_model
+        self.references.pos_flow = pos_flow
+        self.references.neg_flow = neg_flow
+
+    def set_atlas(self, atlas):
+        """
+        Sets the atlas weights.
+        """
+        if atlas.shape[1]:
+            atlas = np.reshape(atlas, atlas.shape[1:])
+        self.references.atlas_layer.set_weights([atlas])
+
+    def get_atlas(self):
+        """
+        Sets the atlas weights.
+        """
+        return self.references.atlas_layer.get_weights()[0].squeeze()
+
+    def get_registration_model(self):
+        """
+        Returns a reconfigured model to predict only the final transform.
+        """
+        return tf.keras.Model(self.inputs, self.references.pos_flow)
+
+    def register(self, src, trg):
+        """
+        Predicts the transform from src to trg tensors.
+        """
+        return self.get_registration_model().predict([src, trg])
+
+    def apply_transform(self, src, trg, img, interp_method='linear', fill_value=None):
+        """
+        Predicts the transform from src to trg and applies it to the img tensor.
+        """
+        warp_model = self.get_registration_model()
+        img_input = tf.keras.Input(shape=img.shape[1:])
+        y_img = layers.SpatialTransformer(interp_method=interp_method, fill_value=fill_value)([img_input, warp_model.output])
+        return tf.keras.Model(inputs=(*warp_model.inputs, img_input), outputs=y_img).predict([src, trg, img])
 
 
 class ConditionalTemplateCreation(LoadableModel):
