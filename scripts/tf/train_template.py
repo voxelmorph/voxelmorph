@@ -12,6 +12,8 @@ import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
 
+tf.compat.v1.disable_eager_execution()
+
 
 # parse the commandline
 parser = argparse.ArgumentParser()
@@ -37,7 +39,7 @@ parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder fi
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--image-loss-weight', type=float, default=1.0, help='relative weight of transformed atlas loss (default: 1.0)')
+parser.add_argument('--image-loss-weight', type=float, default=0.5, help='relative weight of transformed atlas loss (default: 1.0)')
 parser.add_argument('--mean-loss-weight', type=float, default=1.0, help='weight of mean stream loss (default: 1.0)')
 parser.add_argument('--grad-loss-weight', type=float, default=0.01, help='weight of gradient loss (lamba) (default: 0.01)')
 
@@ -61,15 +63,15 @@ if args.atlas:
     atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol', add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
-    print('creating input atlas by averaging scans')
+    print('creating input atlas by averaging first 100 scans')
     atlas = 0
     atlas_scans = train_vol_names[:100]
     for scan in atlas_scans:
         atlas += vxm.py.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
     atlas /= len(atlas_scans)
 
-# save input atlas for the record
-vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz'))
+# save average input atlas for the record
+vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'orig_atlas.npz'))
 
 # get atlas shape (might differ from image input shape)
 atlas_shape = atlas.shape[1:-1]
@@ -84,7 +86,7 @@ enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 # configure generator
-generator = vxm.generators.template_creation(train_vol_names, atlas, bidir=True, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
+generator = vxm.generators.template_creation(train_vol_names, bidir=True, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
 
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
@@ -101,7 +103,7 @@ with tf.device(device):
     )
 
     # set initial atlas weights
-    model.references.atlas_layer.set_weights([atlas[0, ...]])
+    model.set_atlas(atlas)
 
     # load initial weights (if provided)
     if args.load_weights:
@@ -140,3 +142,5 @@ with tf.device(device):
         steps_per_epoch=args.steps_per_epoch,
         verbose=1
     )
+
+    vxm.py.utils.save_volfile(model.get_atlas(), os.path.join(model_dir, 'final_atlas.npz'))

@@ -171,25 +171,28 @@ def semisupervised(vol_names, labels, atlas_file=None, downsize=2):
         yield (invols, outvols)
 
 
-def template_creation(vol_names, atlas, bidir=False, batch_size=1, **kwargs):
+def template_creation(vol_names, bidir=False, batch_size=1, **kwargs):
     """
     Generator for unconditional template creation.
 
     Parameters:
         vol_names: List of volume files to load.
-        atlas: Atlas input volume data.
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
         kwargs: Forwarded to the internal volgen generator.
     """
-    shape = atlas.shape[1:-1]
-    zeros = np.zeros((batch_size, *shape, len(shape)))
-    atlas = np.repeat(atlas, batch_size, axis=0)
+    zeros = None
     gen = volgen(vol_names, batch_size=batch_size, **kwargs)
     while True:
         scan = next(gen)[0]
-        invols  = [atlas, scan]  # TODO: this is opposite of the normal ordering and might be confusing
-        outvols = [scan, atlas, zeros, zeros] if bidir else [scan, zeros, zeros]
+
+        # cache zeros
+        if zeros is None:
+            shape = scan.shape[1:-1]
+            zeros = np.zeros((1, *shape, len(shape)))
+
+        invols  = [scan]
+        outvols = [scan, zeros, zeros, zeros] if bidir else [scan, zeros, zeros]
         yield (invols, outvols)
 
 
