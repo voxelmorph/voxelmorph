@@ -21,7 +21,7 @@ import tensorflow.keras.initializers as KI
 import neurite as ne
 from .. import default_unet_features
 from . import layers
-from . import synthseg
+from . import synthmorph
 # TODO: change full module imports as opposed to specific function imports
 from .modelio import LoadableModel, store_config_args
 from .utils import value_at_location, point_spatial_transformer
@@ -344,53 +344,40 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
 
 class VxmDenseSynth(LoadableModel):
     """
-    VoxelMorph network for registering segmentations.
+    SynthMorph network for learning registration from images with arbitrary contrasts synthesized from label maps.
     """
 
     @store_config_args
-    def __init__(self, inshape, all_labels, hot_labels, nb_unet_features=None, int_steps=5, **kwargs):
+    def __init__(self, inshape, in_labels, out_labels, vm_args={}, ss_args={}):
         """
         Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            all_labels: List of all labels included in training segmentations.
-            hot_labels: List of labels to output as one-hot maps.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            kwargs: Forwarded to the internal VxmDense model.
+            inshape: Input shape, e.g. (192, 192, 192).
+            in_labels: List of all labels included in training segmentations.
+            out_labels: List of labels to encode in output one-hot maps.
+            vm_args: Keyword arguments passed to the internal VxmDense network.
+            ss_args: Keyword arguments passed to the internal SynthSeg model.
         """
 
-        # brain generation
-        make_im_model = lambda id: synthseg.labels_to_image_model.labels_to_image_model(
-            inshape, inshape, all_labels, hot_labels, id=id,
-            apply_affine_trans=False, apply_nonlin_trans=True, nonlin_shape_factor=0.0625, bias_shape_factor=0.025
+        # synthesis
+        make_ss_model = lambda i: synthmorph.labels_to_image_model(
+            inshape, in_labels, out_labels, id=i, **ss_args,
         )
-        bg_model_1, self.warp_shape, self.bias_shape = make_im_model(0)
-        bg_model_2 = make_im_model(1)[0]
-        image_1, labels_1 = bg_model_1.outputs[:2]
-        image_2, labels_2 = bg_model_2.outputs[:2]
+        ss_model_1 = make_ss_model(0)
+        ss_model_2 = make_ss_model(1)
+        image_1, labels_1 = ss_model_1.outputs
+        image_2, labels_2 = ss_model_2.outputs
 
         # build brain generation input model
-        inputs = bg_model_1.inputs + bg_model_2.inputs
-        unet_input_model = tf.keras.Model(inputs=inputs, outputs=[image_1, image_2])
+        inputs = ss_model_1.inputs + ss_model_2.inputs
+        input_model = tf.keras.Model(inputs=inputs, outputs=(image_1, image_2))
 
         # attach dense voxelmorph network and extract flow field layer
-        dense_model = VxmDense(
-            inshape,
-            nb_unet_features=nb_unet_features,
-            int_steps=int_steps,
-            input_model=unet_input_model,
-            **kwargs
-        )
+        dense_model = VxmDense(inshape, input_model=input_model, **vm_args)
         flow = dense_model.references.pos_flow
 
-        # one-hot encoding
-        one_hot_func = lambda x: tf.one_hot(x[..., 0], len(hot_labels), dtype='float32')
-        one_hot_1 = KL.Lambda(one_hot_func)(labels_1)
-        one_hot_2 = KL.Lambda(one_hot_func)(labels_2)
-
         # transformation
-        pred = layers.SpatialTransformer(interp_method='linear', name='pred')([one_hot_1, flow])
-        concat = KL.Concatenate(axis=-1, name='concat')([one_hot_2, pred])
+        pred = layers.SpatialTransformer(interp_method='linear', name='pred')([labels_1, flow])
+        concat = KL.Concatenate(name='concat')([labels_2, pred])
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=[concat, flow])
@@ -398,8 +385,8 @@ class VxmDenseSynth(LoadableModel):
         # cache pointers to important layers and tensors for future reference
         self.references = LoadableModel.ReferenceContainer()
         self.references.flow = flow
-        self.references.bg_model_1 = bg_model_1
-        self.references.bg_model_1 = bg_model_1
+        self.references.ss_model_1 = ss_model_1
+        self.references.ss_model_2 = ss_model_2
         self.references.dense_model = dense_model
 
 

@@ -106,6 +106,43 @@ def save_volfile(array, filename, affine=None):
         raise ValueError('unknown filetype for %s' % filename)
 
 
+def load_labels(arg):
+    """
+    Load label maps and return a list of unique labels as well as all maps.
+
+    Parameters:
+        arg: Path to folder containing label maps or string for globbing.
+
+    Returns:
+        np.array: List of unique labels.
+        list: List of label maps, each as a np.array.
+    """
+    # List files.
+    import glob
+    if os.path.isdir(arg):
+        ext = ('*.nii.gz', '*.nii', '*.mgz', '*.npy', '*.npz')
+        files = sum((glob.glob(os.path.join(arg, x)) for x in ext), [])
+    else:
+        files = glob.glob(arg)
+
+    # Load labels.
+    if len(files) == 0:
+        raise ValueError(f'no labels found for argument "{files}"')
+    label_maps = []
+    shape = None
+    for f in files:
+        x = np.squeeze(load_volfile(f))
+        if shape is None:
+            shape = x.shape
+        if not np.issubdtype(x.dtype, np.integer):
+            raise ValueError(f'file "{f}" has non-integral data type')
+        if not np.all(x.shape == shape):
+            raise ValueError(f'shape {x.shape} of file "{f}" is not {shape}')
+        label_maps.append(x)
+
+    return np.unique(label_maps), label_maps
+
+
 def load_pheno_csv(filename, training_files=None):
     """
     Loads an attribute csv file into a dictionary. Each line in the csv should represent

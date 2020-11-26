@@ -1,4 +1,4 @@
-from . import synthseg
+from . import synthmorph
 
 from . import layers
 from . import networks
