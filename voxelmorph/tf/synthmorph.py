@@ -167,10 +167,7 @@ def labels_to_image_model(
     image = KL.Add(name=f'add_means_{id}')([image, means])
 
     # Blur.
-    if blur_modulate:
-        blur_draw = lambda _: tf_draw_kernel([blur_std_dev] * num_dim)
-    else:
-        blur_draw = lambda _: [ne.utils.gaussian_kernel(blur_std_dev)] * num_dim
+    blur_draw = lambda _: ne.utils.gaussian_kernel([blur_std_dev] * num_dim, separate=True, random=blur_modulate)
     kernels = KL.Lambda(lambda x: tf.map_fn(blur_draw, x, dtype=['float32'] * num_dim))(image)
     blur_apply = lambda x: ne.utils.separable_conv(x[0], x[1])
     image = KL.Lambda(lambda x: tf.map_fn(blur_apply, x, dtype='float32'), name=f'apply_blur_{id}')([image, kernels])
@@ -262,21 +259,6 @@ def tf_normalize(x):
     m = tf.reduce_min(x)
     M = tf.reduce_max(x)
     return tf.compat.v1.div_no_nan(x - m, M - m)
-
-
-def tf_draw_kernel(max_sigma, width=None):
-    '''Draw list of 1D Gaussian kernels.'''
-    if not isinstance(max_sigma, (list, tuple)):
-        max_sigma = [max_sigma]
-    if width is None:
-        width = 2 * np.round(3 * max(max_sigma)) + 1
-    center = (width - 1) / 2
-    grid = np.arange(width) - center
-    grid = -0.5 * (grid ** 2)
-    grid = tf.constant(grid, dtype='float32')
-    sigma = [tf.random.uniform((1,), minval=1e-6, maxval=x) for x in max_sigma]
-    kernel = [tf.exp(grid / x ** 2) for x in sigma]
-    return [x / tf.reduce_sum(x) for x in kernel]
 
 
 def tf_perlin(out_shape, scales, max_std=1, modulate=True):
