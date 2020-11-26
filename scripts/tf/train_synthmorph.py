@@ -13,24 +13,6 @@ import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
 
-def generator(label_maps, batch_size=1, same_subj=False):
-    in_shape = label_maps[0].shape
-    num_dim = len(in_shape)
-    void = np.zeros((batch_size, *in_shape, num_dim), dtype='float32')
-    rand = np.random.default_rng()
-    prop = dict(replace=False, shuffle=False)
-    while True:
-        ind = rand.integers(len(label_maps), size=2*batch_size)
-        x = [label_maps[i] for i in ind]
-        if same_subj:
-            x = x[:batch_size] * 2
-        x = np.stack(x)[..., None]
-        axes = rand.choice(num_dim, size=rand.integers(num_dim + 1), **prop)
-        x = np.flip(x, axis=axes+1)
-        src = x[:batch_size, ...]
-        trg = x[batch_size:, ...]
-        yield [src, trg], [void] * 2
-
 # parse command line
 p = argparse.ArgumentParser()
 
@@ -97,7 +79,12 @@ elif arg.out_labels.endswith('.pickle'):
         out_labels = pickle.load(f)
 else:
     out_labels = in_labels
-gen = generator(label_maps, batch_size=arg.batch_size, same_subj=arg.same_subj)
+gen = vxm.generators.synthmorph(
+    label_maps,
+    batch_size=arg.batch_size,
+    same_subj=arg.same_subj,
+    flip=True,
+)
 in_shape = label_maps[0].shape
 
 # custom loss
