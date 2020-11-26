@@ -172,7 +172,7 @@ def labels_to_image_model(
     else:
         blur_draw = lambda _: [ne.utils.gaussian_kernel(blur_std_dev)] * num_dim
     kernels = KL.Lambda(lambda x: tf.map_fn(blur_draw, x, dtype=['float32'] * num_dim))(image)
-    blur_apply = lambda x: tf_apply_1d_filter(x[0], x[1])
+    blur_apply = lambda x: ne.utils.separable_conv(x[0], x[1])
     image = KL.Lambda(lambda x: tf.map_fn(blur_apply, x, dtype='float32'), name=f'apply_blur_{id}')([image, kernels])
 
     # Background voodoo.
@@ -295,37 +295,3 @@ def tf_perlin(out_shape, scales, max_std=1, modulate=True):
         zoom = [o / s for o, s in zip(out_shape, sample_shape)]
         out += gauss if scale == 1 else ne.utils.resize(gauss, zoom[:-1])
     return out
-
-
-def tf_apply_1d_filter(x, kernels, axis=None):
-    '''Apply a list of 1D kernels along axes of an ND or (N+1)D tensor, i.e.
-    with or without a trailing feature dimension but without batch dimension. By
-    default, the K kernels will applied along the first K axes.'''
-    if not isinstance(kernels, (tuple, list)):
-        kernels = [kernels]
-    if np.isscalar(axis):
-        axis = [axis]
-    if axis is None:
-        axis = range(0, len(kernels))
-    assert len(kernels) == len(axis), 'number of kernels and axes differ'
-    # Append feature dimension if missing.
-    num_dim = len(x.shape)
-    no_features = len(kernels) == num_dim
-    if no_features:
-        num_dim += 1
-        x = x[...,None]
-    # Change feature to batch dimension, append a dummy feature dimension.
-    ind = np.arange(len(x.shape))
-    forward = (ind[-1], *ind[:-1])
-    backward = (*ind[1:], ind[0])
-    x = tf.transpose(x, perm=forward)[...,None]
-    for ax, k in zip(axis, kernels):
-        width = np.prod(k.shape.as_list())
-        shape = np.ones(num_dim + 1)
-        shape[ax] = width
-        k = tf.reshape(k, shape=shape)
-        x = tf.nn.convolution(x, k, padding='SAME')
-    # Remove dummy feature dimension and restore features from batch dimension.
-    x = tf.transpose(x[...,0], perm=backward)
-    return x[...,0] if no_features else x
-
