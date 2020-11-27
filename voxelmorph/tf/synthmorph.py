@@ -205,7 +205,7 @@ def labels_to_image_model(
     # Intensity manipulations.
     image = KL.Lambda(lambda x: tf.clip_by_value(x, 0, 255), name=f'clip_{id}')(image)
     if normalize:
-        image = KL.Lambda(lambda x: tf.map_fn(tf_normalize, x))(image)
+        image = KL.Lambda(lambda x: tf.map_fn(ne.utils.minmax_norm, x))(image)
     if gamma_std_dev > 0:
         gamma_apply = lambda x: tf.pow(x, tf.exp(tf.random.normal((1,), stddev=gamma_std_dev)))
         image = KL.Lambda(lambda x: tf.map_fn(gamma_apply, x, dtype='float32'), name=f'gamma_{id}')(image)
@@ -250,10 +250,3 @@ def labels_to_image_model(
         outputs.append(def_field)
 
     return tf.keras.Model(inputs=labels_input, outputs=outputs)
-
-
-def tf_normalize(x):
-    '''Min-max normalize tensor.'''
-    m = tf.reduce_min(x)
-    M = tf.reduce_max(x)
-    return tf.compat.v1.div_no_nan(x - m, M - m)
