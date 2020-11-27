@@ -21,22 +21,19 @@ import tensorflow.keras.initializers as KI
 import neurite as ne
 from .. import default_unet_features
 from . import layers
-from .utils.synthmorph import draw_perlin
-# TODO: change full module imports as opposed to specific function imports
-from .modelio import LoadableModel, store_config_args
-from .utils import value_at_location, point_spatial_transformer
+from . import utils
+from . import modelio
 
-
-# make ModelCheckpointParallel directly available from vxm
+# make directly available from vxm
 ModelCheckpointParallel = ne.callbacks.ModelCheckpointParallel
 
 
-class VxmDense(LoadableModel):
+class VxmDense(modelio.LoadableModel):
     """
     VoxelMorph network for (unsupervised) nonlinear registration between two images.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self,
             inshape,
             nb_unet_features=None,
@@ -156,7 +153,7 @@ class VxmDense(LoadableModel):
         super().__init__(name=name, inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.unet_model = unet_model
         self.references.y_source = y_source
         self.references.y_target = y_target if bidir else None
@@ -185,12 +182,12 @@ class VxmDense(LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class VxmDenseSemiSupervisedSeg(LoadableModel):
+class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
     """
     VoxelMorph network for (semi-supervised) nonlinear registration between two images.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self,
         inshape,
         nb_labels,
@@ -228,7 +225,7 @@ class VxmDenseSemiSupervisedSeg(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = vxm_model.references.pos_flow
 
     def get_registration_model(self):
@@ -253,12 +250,12 @@ class VxmDenseSemiSupervisedSeg(LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class VxmDenseSemiSupervisedPointCloud(LoadableModel):
+class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
     """
     VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self,
         inshape,
         nb_surface_points,
@@ -280,7 +277,7 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
 
         sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
         surface_points_shape = [nb_surface_points, len(inshape) + 1]
-        single_pt_trf = lambda x: point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
+        single_pt_trf = lambda x: utils.point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
 
         # vxm model
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
@@ -296,7 +293,7 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
 
         # get value of dt_input *at* warped_atlas_surface
         subj_dt_input = tf.keras.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
-        subj_dt_value = KL.Lambda(value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+        subj_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
 
         if surf_bidir:
             # go the other way and warp subject to atlas
@@ -304,7 +301,7 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
             warped_subj_surf_pts = KL.Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
 
             atl_dt_input = tf.keras.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
-            atl_dt_value = KL.Lambda(value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+            atl_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
 
             inputs  = [*vxm_model.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
             outputs = [*vxm_model.outputs, subj_dt_value, atl_dt_value]
@@ -317,7 +314,7 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = pos_flow
 
     def get_registration_model(self):
@@ -342,13 +339,13 @@ class VxmDenseSemiSupervisedPointCloud(LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class SynthMorphDense(LoadableModel):
+class SynthMorphDense(modelio.LoadableModel):
     """
     SynthMorph model for learning subject-to-subject registration from images
     with arbitrary contrasts synthesized from label maps.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self, inshape, labels_in, labels_out, reg_args={}, gen_args={}):
         """
         Parameters:
@@ -379,7 +376,7 @@ class SynthMorphDense(LoadableModel):
         super().__init__(inputs=inputs, outputs=[maps, flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.flow = flow
         self.references.gen_model_1 = gen_model_1
         self.references.gen_model_2 = gen_model_2
@@ -390,12 +387,12 @@ class SynthMorphDense(LoadableModel):
 # Instance Trainers
 ###############################################################################
 
-class InstanceDense(LoadableModel):
+class InstanceDense(modelio.LoadableModel):
     """
     VoxelMorph network to perform instance-specific optimization.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self, inshape, nb_feats=1, mult=1000, int_steps=7, int_downsize=2):
         """ 
         Parameters:
@@ -430,7 +427,7 @@ class InstanceDense(LoadableModel):
         super().__init__(name='vxm_instance_dense', inputs=[source], outputs=[y_source, preint_flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = pos_flow
         self.references.flow_layer = flow_layer
         self.references.mult = mult
@@ -460,12 +457,12 @@ class InstanceDense(LoadableModel):
 # Probabilistic atlas-based segmentation
 ###############################################################################
 
-class ProbAtlasSegmentation(LoadableModel):
+class ProbAtlasSegmentation(modelio.LoadableModel):
     """
     VoxelMorph network to segment images by warping a probabilistic atlas.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self,
         inshape,
         nb_labels,
@@ -556,7 +553,7 @@ class ProbAtlasSegmentation(LoadableModel):
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.vxm_model = vxm_model
         self.references.uloglhood = uloglhood
         self.references.stat_mu = stat_mu
@@ -580,12 +577,12 @@ class ProbAtlasSegmentation(LoadableModel):
 # Template Creation Networks
 ###############################################################################
 
-class TemplateCreation(LoadableModel):
+class TemplateCreation(modelio.LoadableModel):
     """
     VoxelMorph network to generate an unconditional template image.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
         """ 
         Parameters:
@@ -622,17 +619,17 @@ class TemplateCreation(LoadableModel):
         super().__init__(inputs=[atlas_input, source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = LoadableModel.ReferenceContainer()
+        self.references = modelio.LoadableModel.ReferenceContainer()
         self.references.atlas_layer = atlas_layer
         self.references.atlas_tensor = atlas_tensor
 
 
-class ConditionalTemplateCreation(LoadableModel):
+class ConditionalTemplateCreation(modelio.LoadableModel):
     """
     VoxelMorph network to generate an conditional template image.
     """
 
-    @store_config_args
+    @modelio.store_config_args
     def __init__(self,
         inshape,
         pheno_input_shape,
@@ -1004,7 +1001,7 @@ class SynthMorphGeneration(tf.keras.Model):
         if warp_std_dev > 0:
             # Velocity field.
             vel_scale = np.asarray(warp_shape_factor) / 2
-            vel_draw = lambda x: draw_perlin(vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
+            vel_draw = lambda x: utils.synthmorph.draw_perlin(vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
             vel_field = KL.Lambda(lambda x: tf.map_fn(vel_draw, x, dtype='float32'), name=f'vel_{id}')(labels) # One per batch.
             # Deformation field.
             def_field = layers.VecInt(int_steps=5, name=f'vec_int_{id}')(vel_field)
@@ -1082,7 +1079,7 @@ class SynthMorphGeneration(tf.keras.Model):
         # Bias field.
         bias_scale = bias_shape_factor
         bias_shape = (*out_shape, 1)
-        bias_draw = lambda x: draw_perlin(bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
+        bias_draw = lambda x: utils.synthmorph.draw_perlin(bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
         bias_field = KL.Lambda(lambda x: tf.map_fn(bias_draw, x, dtype='float32'))(labels) # One per batch.
         bias_field = KL.Lambda(lambda x: tf.exp(x), name=f'bias_{id}')(bias_field)
         image = KL.multiply([bias_field, image], name=f'apply_bias_{id}')
