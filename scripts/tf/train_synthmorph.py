@@ -70,22 +70,22 @@ if log_dir:
     os.makedirs(log_dir, exist_ok=True)
 
 # labels and label maps
-in_labels, label_maps = vxm.py.utils.load_labels(arg.label_dir)
+labels_in, label_maps = vxm.py.utils.load_labels(arg.label_dir)
 if arg.out_labels.endswith('.npy'):
-    out_labels = np.load(arg.out_labels)
-elif arg.out_labels.endswith('.pickle'):
+    labels_out = np.load(arg.out_labels)
+elif arg.labels_out.endswith('.pickle'):
     import pickle
-    with open(arg.out_labels, 'rb') as f:
-        out_labels = pickle.load(f)
+    with open(arg.labels_out, 'rb') as f:
+        labels_out = pickle.load(f)
 else:
-    out_labels = in_labels
+    labels_out = labels_in
 gen = vxm.generators.synthmorph(
     label_maps,
     batch_size=arg.batch_size,
     same_subj=arg.same_subj,
     flip=True,
 )
-in_shape = label_maps[0].shape
+inshape = label_maps[0].shape
 
 # custom loss
 def data_loss(_, x):
@@ -104,13 +104,13 @@ if nb_devices > 1:
     context = tf.distribute.MirroredStrategy().scope()
 
 # build model
-arg_vm = dict(
+reg_args = dict(
     int_steps=arg.int_steps,
     int_downsize=2,
     unet_half_res=True,
     nb_unet_features=(arg.enc, arg.dec),
 )
-arg_ss = dict(
+gen_args = dict(
     warp_std_dev=arg.vel_std,
     warp_shape_factor=arg.vel_scales,
     blur_std_dev=arg.blur_std,
@@ -119,12 +119,12 @@ arg_ss = dict(
     gamma_std_dev=arg.gamma,
 )
 with context:
-    model = vxm.networks.VxmDenseSynth(
-        in_shape,
-        in_labels,
-        out_labels,
-        arg_vm,
-        arg_ss,
+    model = vxm.networks.SynthMorphDense(
+        inshape,
+        labels_in,
+        labels_out,
+        reg_args=reg_args,
+        gen_args=gen_args,
     )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr),
