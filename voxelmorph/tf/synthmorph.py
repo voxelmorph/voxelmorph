@@ -1,5 +1,3 @@
-import os
-import glob
 import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
@@ -121,7 +119,7 @@ def labels_to_image_model(
     if warp_std_dev > 0:
         # Velocity field.
         vel_scale = np.asarray(warp_shape_factor) / 2
-        vel_draw = lambda x: tf_perlin(vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
+        vel_draw = lambda x: utils.synthmorph.draw_perlin(vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
         vel_field = KL.Lambda(lambda x: tf.map_fn(vel_draw, x, dtype='float32'), name=f'vel_{id}')(labels) # One per batch.
         # Deformation field.
         def_field = layers.VecInt(int_steps=5, name=f'vec_int_{id}')(vel_field)
@@ -199,7 +197,7 @@ def labels_to_image_model(
     # Bias field.
     bias_scale = bias_shape_factor
     bias_shape = (*out_shape, 1)
-    bias_draw = lambda x: tf_perlin(bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
+    bias_draw = lambda x: utils.synthmorph.draw_perlin(bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
     bias_field = KL.Lambda(lambda x: tf.map_fn(bias_draw, x, dtype='float32'))(labels) # One per batch.
     bias_field = KL.Lambda(lambda x: tf.exp(x), name=f'bias_{id}')(bias_field)
     image = KL.multiply([bias_field, image], name=f'apply_bias_{id}')
@@ -259,21 +257,3 @@ def tf_normalize(x):
     m = tf.reduce_min(x)
     M = tf.reduce_max(x)
     return tf.compat.v1.div_no_nan(x - m, M - m)
-
-
-def tf_perlin(out_shape, scales, max_std=1, modulate=True):
-    '''Generate Perlin noise by drawing from Gaussian distributions at different
-    resolutions, upsampling and summing. Scale 2 means half resolution. Expects
-    features as last dimension.'''
-    out_shape = np.asarray(out_shape, dtype='int32')
-    if np.isscalar(scales):
-        scales = [scales]
-    out = tf.zeros(out_shape)
-    for scale in scales:
-        sample_shape = np.ceil(out_shape[:-1] / scale).astype(int)
-        sample_shape = (*sample_shape, out_shape[-1])
-        std = tf.random.uniform((1,), maxval=max_std) if modulate else max_std
-        gauss = tf.random.normal(sample_shape, stddev=std)
-        zoom = [o / s for o, s in zip(out_shape, sample_shape)]
-        out += gauss if scale == 1 else ne.utils.resize(gauss, zoom[:-1])
-    return out
