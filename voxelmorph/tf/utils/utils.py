@@ -19,7 +19,7 @@ import tensorflow.keras.layers as KL
 
 # local imports
 import neurite as ne
-from . import layers
+from .. import layers
 
 
 def setup_device(gpuid=None):
