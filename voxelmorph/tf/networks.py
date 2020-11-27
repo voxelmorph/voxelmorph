@@ -357,7 +357,7 @@ class SynthMorphDense(modelio.LoadableModel):
         """
 
         # synthesis
-        build_gen = lambda i: SynthMorphGeneration(
+        build_gen = lambda i: SynthMorphGenerative(
             inshape, labels_in, labels_out, id=i, **gen_args,
         )
         gen_model_1, gen_model_2 = map(build_gen, (0, 1))
@@ -888,7 +888,7 @@ class Unet(tf.keras.Model):
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
 
-class SynthMorphGeneration(tf.keras.Model):
+class SynthMorphGenerative(tf.keras.Model):
     """
     Generative model for augmenting label maps and synthesizing images from them.
     """
