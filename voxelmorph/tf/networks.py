@@ -546,7 +546,7 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
             # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
             logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
-            return alpha + tf.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
+            return alpha + tf.math.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
         loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
 
         # initialize the keras model
