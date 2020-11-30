@@ -4,9 +4,18 @@
 Trains a segmentation network in an unsupervised fashion, using a probabilistic
 atlas and unlabeled scans.
 
-Unsupervised deep learning for Bayesian brain MRI segmentation
-A.V. Dalca, E. Yu, P. Golland, B. Fischl, M.R. Sabuncu, J.E. Iglesias
-Under Review. arXiv https://arxiv.org/abs/1904.11319
+If you use this code, please cite the following
+    Unsupervised deep learning for Bayesian brain MRI segmentation
+    A.V. Dalca, E. Yu, P. Golland, B. Fischl, M.R. Sabuncu, J.E. Iglesias
+    MICCAI 2019. arXiv https://arxiv.org/abs/1904.11319
+
+Copyright 2020 Adrian V. Dalca
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 """
 
 import os
