@@ -4,7 +4,8 @@
 Example script for training a SynthMorph model on images synthesized from label maps.
 Requires TensorFlow 2.0 and Python 3.7 (or later).
 
-If you use this code, please cite the following
+If you use this code, please cite the following:
+
     M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca. 
     Learning image registration without images.
     arXiv preprint arXiv:2004.10282, 2020. https://arxiv.org/abs/2004.10282
@@ -54,7 +55,6 @@ p.add_argument('--save-freq', type=int, default=10, help='number of epochs betwe
 p.add_argument('--reg-param', type=float, default=1, help='weight of regularization loss (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-p.add_argument('--init-model', type=str, default=None, help='h5 model file to initialize with (default: None)')
 p.add_argument('--verbose', type=int, default=0, help='0 silent, 1 progress, 2 one line/epoch (default: 0)')
 p.add_argument('--profile', type=str, default='0', help='batches to profile (default: off)')
 
@@ -76,19 +76,18 @@ if arg.sub_dir:
 os.makedirs(arg.model_dir, exist_ok=True)
 
 # prepare logging directory
-log_dir = arg.log_dir
-if log_dir:
+if arg.log_dir:
     if arg.sub_dir:
-        log_dir = os.path.join(log_dir, arg.sub_dir)
-    os.makedirs(log_dir, exist_ok=True)
+        arg.log_dir = os.path.join(arg.log_dir, arg.sub_dir)
+    os.makedirs(arg.log_dir, exist_ok=True)
 
 # labels and label maps
 labels_in, label_maps = vxm.py.utils.load_labels(arg.label_dir)
 if arg.out_labels.endswith('.npy'):
     labels_out = np.load(arg.out_labels)
-elif arg.labels_out.endswith('.pickle'):
+elif arg.out_labels.endswith('.pickle'):
     import pickle
-    with open(arg.labels_out, 'rb') as f:
+    with open(arg.out_labels, 'rb') as f:
         labels_out = pickle.load(f)
 else:
     labels_out = labels_in
