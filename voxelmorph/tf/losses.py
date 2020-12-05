@@ -114,7 +114,13 @@ class TukeyBiweight:
     def loss(self, y_true, y_pred):
         error_sq = (y_true - y_pred) ** 2
         ind_below = tf.where(error_sq <= self.csq)
-        rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+
+        # make sure that some indices are below the threshold, otherwise
+        # the tf.gather_nd returns NaN
+        if np.prod(ind_below.get_shape().as_list()) > 0:
+            rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+        else:
+            rho_below = 0.0
         rho_above = self.csq / 2
         w_below = tf.cast(tf.shape(ind_below)[0], tf.float32)
         w_above = tf.cast(tf.reduce_prod(tf.shape(y_pred)), tf.float32) - w_below
