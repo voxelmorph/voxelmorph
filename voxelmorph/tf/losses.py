@@ -1,7 +1,24 @@
+"""
+tensorflow/keras losses for voxelmorph
+
+If you use this code, please cite one of the voxelmorph papers:
+https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
+
+Copyright 2020 Adrian V. Dalca
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+"""
+
+# core python
 import sys
+
+# third party
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras.layers as KL
 import tensorflow.keras.backend as K
 
 
@@ -56,7 +73,7 @@ class NCC:
         I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
         J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
 
-        cc = cross * cross / (I_var * J_var + self.eps)
+        cc = (cross * cross + self.eps) / (I_var * J_var + self.eps)
 
         # return mean cc for each entry in batch
         return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
@@ -96,7 +113,13 @@ class TukeyBiweight:
     def loss(self, y_true, y_pred):
         error_sq = (y_true - y_pred) ** 2
         ind_below = tf.where(error_sq <= self.csq)
-        rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+
+        # make sure that some indices are below the threshold, otherwise
+        # the tf.gather_nd returns NaN
+        if np.prod(ind_below.get_shape().as_list()) > 0:
+            rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+        else:
+            rho_below = 0.0
         rho_above = self.csq / 2
         w_below = tf.cast(tf.shape(ind_below)[0], tf.float32)
         w_above = tf.cast(tf.reduce_prod(tf.shape(y_pred)), tf.float32) - w_below
@@ -128,9 +151,10 @@ class Grad:
     is equal to the downsample factor).
     """
 
-    def __init__(self, penalty='l1', loss_mult=None):
+    def __init__(self, penalty='l1', loss_mult=None, vox_weight=None):
         self.penalty = penalty
         self.loss_mult = loss_mult
+        self.vox_weight = vox_weight
 
     def _diffs(self, y):
         vol_shape = y.get_shape().as_list()[1:-1]
@@ -141,19 +165,25 @@ class Grad:
             d = i + 1
             # permute dimensions to put the ith dimension first
             r = [d, *range(d), *range(d + 1, ndims + 2)]
-            y = K.permute_dimensions(y, r)
-            dfi = y[1:, ...] - y[:-1, ...]
+            yp = K.permute_dimensions(y, r)
+            dfi = yp[1:, ...] - yp[:-1, ...]
+
+            if self.vox_weight is not None:
+                w = K.permute_dimensions(self.vox_weight, r)
+                dfi = w[1:, ...] * dfi
 
             # permute back
             # note: this might not be necessary for this loss specifically,
             # since the results are just summed over anyway.
             r = [*range(1, d + 1), 0, *range(d + 1, ndims + 2)]
-            r = [d, *range(1, d), 0, *range(d + 1, ndims + 2)]
             df[i] = K.permute_dimensions(dfi, r)
 
         return df
 
     def loss(self, _, y_pred):
+        """
+        returns Tensor of size [bs]
+        """
 
         if self.penalty == 'l1':
             dif = [tf.abs(f) for f in self._diffs(y_pred)]

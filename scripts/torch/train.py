@@ -3,12 +3,33 @@
 """
 Example script to train a VoxelMorph model.
 
-For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside each folder
-are normalized T1 volumes and segmentations in npz (numpy) format. You will have to customize this script slightly
-to accommodate your own data. All images should be appropriately cropped and scaled to values between 0 and 1.
+For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside 
+each folder are normalized T1 volumes and segmentations in npz (numpy) format. You will have to 
+customize this script slightly to accommodate your own data. All images should be appropriately
+cropped and scaled to values between 0 and 1.
 
-If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed. Otherwise,
-registration will be scan-to-scan.
+If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed. 
+Otherwise, registration will be scan-to-scan.
+
+
+If you use this code, please cite the following, and read function docs for further info/citations
+    VoxelMorph: A Learning Framework for Deformable Medical Image Registration 
+    G. Balakrishnan, A. Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. 
+    IEEE TMI: Transactions on Medical Imaging. 38(8). pp 1788-1800. 2019. 
+
+    or
+
+    Unsupervised Learning for Probabilistic Diffeomorphic Registration for Images and Surfaces
+    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu. 
+    MedIA: Medical Image Analysis. (57). pp 226-236, 2019 
+
+Copyright 2020 Adrian V. Dalca
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 """
 
 import os
