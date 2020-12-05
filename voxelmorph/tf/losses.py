@@ -74,7 +74,7 @@ class NCC:
         I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
         J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
 
-        cc = cross * cross / (I_var * J_var + self.eps)
+        cc = (cross * cross + self.eps) / (I_var * J_var + self.eps)
 
         # return mean cc for each entry in batch
         return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
@@ -146,9 +146,10 @@ class Grad:
     is equal to the downsample factor).
     """
 
-    def __init__(self, penalty='l1', loss_mult=None):
+    def __init__(self, penalty='l1', loss_mult=None, vox_weight=None):
         self.penalty = penalty
         self.loss_mult = loss_mult
+        self.vox_weight = vox_weight
 
     def _diffs(self, y):
         vol_shape = y.get_shape().as_list()[1:-1]
@@ -159,19 +160,25 @@ class Grad:
             d = i + 1
             # permute dimensions to put the ith dimension first
             r = [d, *range(d), *range(d + 1, ndims + 2)]
-            y = K.permute_dimensions(y, r)
-            dfi = y[1:, ...] - y[:-1, ...]
+            yp = K.permute_dimensions(y, r)
+            dfi = yp[1:, ...] - yp[:-1, ...]
+
+            if self.vox_weight is not None:
+                w = K.permute_dimensions(self.vox_weight, r)
+                dfi = w[1:, ...] * dfi
 
             # permute back
             # note: this might not be necessary for this loss specifically,
             # since the results are just summed over anyway.
             r = [*range(1, d + 1), 0, *range(d + 1, ndims + 2)]
-            r = [d, *range(1, d), 0, *range(d + 1, ndims + 2)]
             df[i] = K.permute_dimensions(dfi, r)
 
         return df
 
     def loss(self, _, y_pred):
+        """
+        returns Tensor of size [bs]
+        """
 
         if self.penalty == 'l1':
             dif = [tf.abs(f) for f in self._diffs(y_pred)]
