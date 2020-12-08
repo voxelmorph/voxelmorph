@@ -14,7 +14,7 @@ Unless required by applicable law or agreed to in writing, software distributed 
 """
 
 # core python
-import sys
+import sys, warnings
 
 # third party
 import numpy as np
@@ -138,7 +138,7 @@ class Dice:
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
         bottom = tf.reduce_sum(y_true + y_pred, vol_axes)
 
-        div_no_nan = tf.math.divide_no_nan if hasattr(tf.math, 'divide_no_nan') else tf.div_no_nan
+        div_no_nan = tf.math.divide_no_nan if hasattr(tf.math, 'divide_no_nan') else tf.div_no_nan # pylint: disable=no-member
         dice = tf.reduce_mean(div_no_nan(top, bottom))
         return -dice
 
@@ -170,6 +170,7 @@ class Grad:
 
             if self.vox_weight is not None:
                 w = K.permute_dimensions(self.vox_weight, r)
+                # TODO: Need to add square root, since for non-0/1 weights this is bad.
                 dfi = w[1:, ...] * dfi
 
             # permute back
@@ -375,6 +376,7 @@ class NMI:
         return K.mean(K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1))
 
     def global_mi(self, y_true, y_pred):
+        warnings.warn('This loss will be deprecated. Consider switching to ne.metrics.MutualInformation.')
         if self.crop_background:
             # does not support variable batch size
             thresh = 0.0001
