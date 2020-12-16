@@ -69,11 +69,12 @@ class NCC:
         u_I = I_sum / win_size
         u_J = J_sum / win_size
 
-        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size  # TODO: simplify this
+        # TODO: simplify this
+        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size  
         cross = tf.maximum(cross, self.eps)
-        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size  # moving eps here to avoid 0/0 if one image is 0
+        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size 
         I_var = tf.maximum(I_var, self.eps)
-        J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size  # moving eps here to avoid 0/0 if one image is 0
+        J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
         J_var = tf.maximum(J_var, self.eps)
         
         # cc = (cross * cross) / (I_var * J_var)
