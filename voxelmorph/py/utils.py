@@ -215,13 +215,21 @@ def dice(array1, array2, labels):
     return dicem
 
 
-def affine_shift_to_matrix(trf, resize=None):
+def affine_shift_to_matrix(trf, resize=None, unshift_shape=None):
     """
     Converts an affine shift to a matrix (over the identity).
+    To convert back from center-shifted transform, provide image shape
+    to unshift_shape.
+
+    TODO: make ND compatible - currently just 3D
     """
     matrix = np.concatenate([trf.reshape((3, 4)), np.zeros((1, 4))], 0) + np.eye(4)
     if resize is not None:
         matrix[:3, -1] *= resize
+    if unshift_shape is not None:
+        T = np.zeros((4, 4))
+        T[:3, 3] = (np.array(unshift_shape) - 1) / 2
+        matrix = (np.eye(4) + T) @ matrix @ (np.eye(4) - T)
     return matrix
 
 
