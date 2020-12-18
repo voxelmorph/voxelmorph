@@ -117,7 +117,7 @@ class SpatialTransformer(Layer):
         if len(input_shape) > 2:
             raise Exception('Spatial Transformer must be called on a list of length 2.'
                             'First argument is the image, second is the transform.')
-        
+
         # set up number of dimensions
         self.ndims = len(input_shape[0]) - 2
         self.inshape = input_shape
@@ -128,7 +128,9 @@ class SpatialTransformer(Layer):
         # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
         # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
-        is_matrix = len(trf_shape) == 2 and trf_shape[0] in (self.ndims, self.ndims+1) and trf_shape[1] == self.ndims+1
+        is_matrix = (len(trf_shape) == 2) and \
+                    (trf_shape[0] in (self.ndims, self.ndims+1)) and \
+                    (trf_shape[1] == self.ndims+1)
         self.is_affine = len(trf_shape) == 1 or is_matrix
 
         # check sizes
@@ -140,7 +142,7 @@ class SpatialTransformer(Layer):
 
         if not self.is_affine:
             if trf_shape[-1] != self.ndims:
-                raise Exception('Offset flow field size expected: %d, found: %d' 
+                raise Exception('Offset flow field size expected: %d, found: %d'
                                 % (self.ndims, trf_shape[-1]))
 
         # confirm built
@@ -171,7 +173,8 @@ class SpatialTransformer(Layer):
                 trf = tf.reshape(trf, shape=(-1, nrows, ncols))
             if self.add_identity:
                 trf += tf.eye(nrows, ncols, batch_shape=(tf.shape(trf)[0],))
-            fun = lambda x: affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
+
+            def fun(x): return affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
             trf = tf.map_fn(fun, trf, dtype=tf.float32)
 
         # prepare location shift
@@ -182,7 +185,7 @@ class SpatialTransformer(Layer):
 
         # map transform across batch
         if self.single_transform:
-            fn = lambda x: self._single_transform([x, trf[0,:]])
+            def fn(x): return self._single_transform([x, trf[0, :]])
             return tf.map_fn(fn, vol, dtype=tf.float32)
         else:
             return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
@@ -205,7 +208,7 @@ class VecInt(Layer):
       MICCAI 2018.
     """
 
-    def __init__(self, indexing='ij', method='ss', int_steps=7, out_time_pt=1, 
+    def __init__(self, indexing='ij', method='ss', int_steps=7, out_time_pt=1,
                  ode_args=None,
                  odeint_fn=None, **kwargs):
         """        
@@ -225,7 +228,7 @@ class VecInt(Layer):
         self.odeint_fn = odeint_fn  # if none then will use a tensorflow function
         self.ode_args = ode_args
         if ode_args is None:
-            self.ode_args = {'rtol':1e-6, 'atol':1e-12}
+            self.ode_args = {'rtol': 1e-6, 'atol': 1e-12}
         super(self.__class__, self).__init__(**kwargs)
 
     def get_config(self):
@@ -243,7 +246,7 @@ class VecInt(Layer):
     def build(self, input_shape):
         # confirm built
         self.built = True
-        
+
         trf_shape = input_shape
         if isinstance(input_shape[0], (list, tuple)):
             trf_shape = input_shape[0]
@@ -251,7 +254,7 @@ class VecInt(Layer):
 
         if trf_shape[-1] != len(trf_shape) - 2:
             raise Exception('transform ndims %d does not match expected ndims %d'
-                % (trf_shape[-1], len(trf_shape) - 2))
+                            % (trf_shape[-1], len(trf_shape) - 2))
 
     def call(self, inputs):
         if not isinstance(inputs, (list, tuple)):
@@ -262,7 +265,7 @@ class VecInt(Layer):
         loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
         if hasattr(inputs[0], '_keras_shape'):
             loc_shift._keras_shape = inputs[0]._keras_shape
-        
+
         # prepare location shift
         if self.indexing == 'xy':  # shift the first two dimensions
             loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
@@ -285,11 +288,11 @@ class VecInt(Layer):
         if len(inputs) == 2:
             out_time_pt = inputs[1]
         return integrate_vec(vel, method=self.method,
-                      nb_steps=self.int_steps,
-                      ode_args=self.ode_args,
-                      out_time_pt=out_time_pt,
-                      odeint_fn=self.odeint_fn)
-       
+                             nb_steps=self.int_steps,
+                             ode_args=self.ode_args,
+                             out_time_pt=out_time_pt,
+                             odeint_fn=self.odeint_fn)
+
 
 # full wording.
 VecIntegration = VecInt
@@ -318,7 +321,8 @@ class RescaleTransform(Layer):
             input_shape = input_shape[0]
 
         self.is_affine = is_affine(input_shape[1:])
-        self.ndims = extract_affine_ndims(input_shape[1:]) if self.is_affine else int(input_shape[-1])
+        self.ndims = extract_affine_ndims(
+            input_shape[1:]) if self.is_affine else int(input_shape[-1])
 
         super().build(input_shape)
 
@@ -367,7 +371,7 @@ class ComposeTransform(Layer):
 
     A --> B (so field/result is in the space of B)
     B --> C (so field/result is in the space of C)
-    
+
     This layer composes a new transform.
 
     A --> C (so field/result is in the space of C)
@@ -453,7 +457,7 @@ class AffineToDense(Layer):
         shape = input_shape[1:]
 
         if len(shape) == 1:
-            ex = self.ndims * (self.ndims + 1)            
+            ex = self.ndims * (self.ndims + 1)
             if shape[0] != ex:
                 raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
 
@@ -477,7 +481,8 @@ class AffineToDense(Layer):
         if len(trf.shape) == 1:
             trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
 
-        trf += tf.eye(self.ndims + 1)[:self.ndims, :]  # add identity, hence affine is a shift from identity
+        # add identity, hence affine is a shift from identity
+        trf += tf.eye(self.ndims + 1)[:self.ndims, :]
         return affine_to_shift(trf, self.volshape, shift_center=True)
 
     def compute_output_shape(self, input_shape):
@@ -549,8 +554,8 @@ class AffineTransformationsToMatrix(Layer):
             angle_z = vector[5]
 
             # x rotation matrix
-            cosx  = tf.math.cos(angle_x)
-            sinx  = tf.math.sin(angle_x)
+            cosx = tf.math.cos(angle_x)
+            sinx = tf.math.sin(angle_x)
             x_rot = tf.convert_to_tensor([
                 [1,    0,     0],
                 [0, cosx, -sinx],
@@ -558,17 +563,17 @@ class AffineTransformationsToMatrix(Layer):
             ], name='x_rot')
 
             # y rotation matrix
-            cosy  = tf.math.cos(angle_y)
-            siny  = tf.math.sin(angle_y)
+            cosy = tf.math.cos(angle_y)
+            siny = tf.math.sin(angle_y)
             y_rot = tf.convert_to_tensor([
                 [cosy,  0, siny],
                 [0,     1,    0],
                 [-siny, 0, cosy]
             ], name='y_rot')
-            
+
             # z rotation matrix
-            cosz  = tf.math.cos(angle_z)
-            sinz  = tf.math.sin(angle_z)
+            cosz = tf.math.cos(angle_z)
+            sinz = tf.math.sin(angle_z)
             z_rot = tf.convert_to_tensor([
                 [cosz, -sinz, 0],
                 [sinz,  cosz, 0],
@@ -593,8 +598,8 @@ class AffineTransformationsToMatrix(Layer):
             angle = vector[2]
 
             # rotation matrix
-            cosz  = tf.math.cos(angle)
-            sinz  = tf.math.sin(angle)
+            cosz = tf.math.cos(angle)
+            sinz = tf.math.sin(angle)
             m_rot = tf.convert_to_tensor([
                 [cosz, -sinz],
                 [sinz,  cosz]

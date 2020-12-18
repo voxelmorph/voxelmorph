@@ -72,7 +72,8 @@ class LoadableModel(tf.keras.Model):
         Loadable keras models expect this function to be defined.
         """
         if not hasattr(self, 'config'):
-            raise RuntimeError('models that inherit from LoadableModel must decorate the constructor with @store_config_args')
+            raise RuntimeError('models that inherit from LoadableModel must decorate the '
+                               'constructor with @store_config_args')
         return self.config.params
 
     @classmethod

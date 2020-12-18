@@ -85,7 +85,7 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
 
     if isinstance(volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
         volshape = volshape.as_list()
-    
+
     if affine_matrix.dtype != 'float32':
         affine_matrix = tf.cast(affine_matrix, 'float32')
 
@@ -102,15 +102,16 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
         shape1 = '(%d x %d)' % (nb_dims + 1, nb_dims + 1)
         shape2 = '(%d x %s)' % (nb_dims, nb_dims + 1)
         true_shape = str(affine_matrix.shape)
-        raise Exception('Affine shape should match %s or %s, but got: %s' % (shape1, shape2, true_shape))
+        raise Exception('Affine shape should match %s or %s, but got: %s' %
+                        (shape1, shape2, true_shape))
 
     # list of volume ndgrid
     # N-long list, each entry of shape volshape
-    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)  
+    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)
     mesh = [tf.cast(f, 'float32') for f in mesh]
-    
+
     if shift_center:
-        mesh = [mesh[f] - (volshape[f]-1)/2 for f in range(len(volshape))]
+        mesh = [mesh[f] - (volshape[f] - 1) / 2 for f in range(len(volshape))]
 
     # add an all-ones entry and transform into a large matrix
     flat_mesh = [ne.utils.flatten(f) for f in mesh]
@@ -143,10 +144,10 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
             In general, prefer to leave this 'ij'
         fill_value (default: None): value to use for points outside the domain.
             If None, the nearest neighbors will be used.
-    
+
     Return:
         new interpolated volumes in the same size as loc_shift[0]
-    
+
     Keyworks:
         interpolation, sampler, resampler, linear, bilinear
     """
@@ -196,7 +197,7 @@ def compose(disp_1, disp_2, indexing='ij'):
 def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
     """
     Integrate (stationary of time-dependent) vector field (N-D Tensor) in tensorflow
-    
+
     Aside from directly using tensorflow's numerical integration odeint(), also implements 
     "scaling and squaring", and quadrature. Note that the diff. equation given to odeint
     is the one used in quadrature.   
@@ -209,7 +210,7 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
             [vol_size, vol_ndim, nb_time_steps] (if time dependent)
         time_dep: bool whether vector is time dependent
         method: 'scaling_and_squaring' or 'ss' or 'ode' or 'quadrature'
-        
+
         if using 'scaling_and_squaring': currently only supports integrating to time point 1.
             nb_steps: int number of steps. Note that this means the vec field gets broken
             down to 2**nb_steps. so nb_steps of 0 means integral = vec.
@@ -243,14 +244,14 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
             svec = K.permute_dimensions(vec, [-1, *range(0, vec.shape[-1] - 1)])
             assert 2**nb_steps == svec.shape[0], "2**nb_steps and vector shape don't match"
 
-            svec = svec/(2**nb_steps)
+            svec = svec / (2**nb_steps)
             for _ in range(nb_steps):
-                svec = svec[0::2] + tf.map_fn(transform, svec[1::2,:], svec[0::2,:])
+                svec = svec[0::2] + tf.map_fn(transform, svec[1::2, :], svec[0::2, :])
 
             disp = svec[0, :]
 
         else:
-            vec = vec/(2**nb_steps)
+            vec = vec / (2**nb_steps)
             for _ in range(nb_steps):
                 vec += transform(vec, vec)
             disp = vec
@@ -260,27 +261,28 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
         nb_steps = kwargs['nb_steps']
         assert nb_steps >= 1, 'nb_steps should be >= 1, found: %d' % nb_steps
 
-        vec = vec/nb_steps
+        vec = vec / nb_steps
 
         if time_dep:
-            disp = vec[...,0]
-            for si in range(nb_steps-1):
-                disp += transform(vec[...,si+1], disp)
+            disp = vec[..., 0]
+            for si in range(nb_steps - 1):
+                disp += transform(vec[..., si + 1], disp)
         else:
             disp = vec
-            for _ in range(nb_steps-1):
+            for _ in range(nb_steps - 1):
                 disp += transform(vec, disp)
 
     else:
         assert not time_dep, "odeint not implemented with time-dependent vector field"
-        fn = lambda disp, _: transform(vec, disp)  
+        fn = lambda disp, _: transform(vec, disp)
 
         # process time point.
         out_time_pt = kwargs['out_time_pt'] if 'out_time_pt' in kwargs.keys() else 1
         out_time_pt = tf.cast(K.flatten(out_time_pt), tf.float32)
         len_out_time_pt = out_time_pt.get_shape().as_list()[0]
         assert len_out_time_pt is not None, 'len_out_time_pt is None :('
-        z = out_time_pt[0:1]*0.0  # initializing with something like tf.zeros(1) gives a control flow issue.
+        # initializing with something like tf.zeros(1) gives a control flow issue.
+        z = out_time_pt[0:1] * 0.0
         K_out_time_pt = K.concatenate([z, out_time_pt], 0)
 
         # enable a new integration function than tf.contrib.integrate.odeint
@@ -290,7 +292,7 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
 
         # process initialization
         if 'init' not in kwargs.keys() or kwargs['init'] == 'zero':
-            disp0 = vec*0  # initial displacement is 0
+            disp0 = vec * 0  # initial displacement is 0
         else:
             raise ValueError('non-zero init for ode method not implemented')
 
@@ -298,11 +300,11 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
         if 'ode_args' not in kwargs.keys():
             kwargs['ode_args'] = {}
         disp = odeint_fn(fn, disp0, K_out_time_pt, **kwargs['ode_args'])
-        disp = K.permute_dimensions(disp[1:len_out_time_pt+1, :], [*range(1,len(disp.shape)), 0])
+        disp = K.permute_dimensions(disp[1:len_out_time_pt + 1, :], [*range(1, len(disp.shape)), 0])
 
         # return
-        if len_out_time_pt == 1: 
-            disp = disp[...,0]
+        if len_out_time_pt == 1:
+            disp = disp[..., 0]
 
     return disp
 
@@ -356,7 +358,7 @@ def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute
 
     TODO: needs documentation
     """
-    
+
     # vol is batch_size, *vol_shape, nb_feats
     # loc_pts is batch_size, nb_surface_pts, D or D+1
     vol, loc_pts = x

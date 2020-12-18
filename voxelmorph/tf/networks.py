@@ -6,11 +6,15 @@ https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in 
+ompliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or 
+implied. See the License for the specific language governing permissions and limitations under 
+the License.
 """
 
 
@@ -42,20 +46,20 @@ class VxmDense(modelio.LoadableModel):
 
     @modelio.store_config_args
     def __init__(self,
-            inshape,
-            nb_unet_features=None,
-            nb_unet_levels=None,
-            unet_feat_mult=1,
-            nb_unet_conv_per_level=1,
-            int_steps=7,
-            int_downsize=2,
-            bidir=False,
-            use_probs=False,
-            src_feats=1,
-            trg_feats=1,
-            unet_half_res=False,
-            input_model=None,
-            name='vxm_dense'):
+                 inshape,
+                 nb_unet_features=None,
+                 nb_unet_levels=None,
+                 unet_feat_mult=1,
+                 nb_unet_conv_per_level=1,
+                 int_steps=7,
+                 int_downsize=2,
+                 bidir=False,
+                 use_probs=False,
+                 src_feats=1,
+                 trg_feats=1,
+                 unet_half_res=False,
+                 input_model=None,
+                 name='vxm_dense'):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -103,17 +107,18 @@ class VxmDense(modelio.LoadableModel):
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
         flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                    kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='%s_flow' % name)(unet_model.output)
+                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='%s_flow' % name)(unet_model.output)
 
         # optionally include probabilities
         if use_probs:
             # initialize the velocity variance very low, to start stable
             flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
-                            kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-10),
-                            bias_initializer=KI.Constant(value=-10),
-                            name='%s_log_sigma' % name)(unet_model.output)
+                                 kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-10),
+                                 bias_initializer=KI.Constant(value=-10),
+                                 name='%s_log_sigma' % name)(unet_model.output)
             flow_params = KL.concatenate([flow_mean, flow_logsigma], name='%s_prob_concat' % name)
-            flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)([flow_mean, flow_logsigma])
+            flow_inputs = [flow_mean, flow_logsigma]
+            flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)(flow_inputs)
         else:
             flow_params = flow_mean
             flow = flow_mean
@@ -132,20 +137,28 @@ class VxmDense(modelio.LoadableModel):
 
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         if int_steps > 0:
-            pos_flow = layers.VecInt(method='ss', name='%s_flow_int' % name, int_steps=int_steps)(pos_flow)
+            pos_flow = layers.VecInt(method='ss',
+                                     name='%s_flow_int' % name,
+                                     int_steps=int_steps)(pos_flow)
             if bidir:
-                neg_flow = layers.VecInt(method='ss', name='%s_neg_flow_int' % name, int_steps=int_steps)(neg_flow)
+                neg_flow = layers.VecInt(method='ss',
+                                         name='%s_neg_flow_int' % name,
+                                         int_steps=int_steps)(neg_flow)
 
             # resize to final resolution
             if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(int_downsize, name='%s_diffflow' % name)(pos_flow)
+                pos_flow = layers.RescaleTransform(
+                    int_downsize, name='%s_diffflow' % name)(pos_flow)
                 if bidir:
-                    neg_flow = layers.RescaleTransform(int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
+                    neg_flow = layers.RescaleTransform(
+                        int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
 
         # warp image with flow field
-        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
+        y_source = layers.SpatialTransformer(
+            interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
         if bidir:
-            y_target = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='%s_neg_transformer' % name)([target, neg_flow])
+            y_target = layers.SpatialTransformer(
+                interp_method='linear', indexing='ij', name='%s_neg_transformer' % name)([target, neg_flow])
 
         # initialize the keras model
         outputs = [y_source, y_target] if bidir else [y_source]
@@ -185,7 +198,8 @@ class VxmDense(modelio.LoadableModel):
         """
         warp_model = self.get_registration_model()
         img_input = tf.keras.Input(shape=img.shape[1:])
-        y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
+        st_input = [img_input, warp_model.output]
+        y_img = layers.SpatialTransformer(interp_method=interp_method)(st_input)
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
@@ -196,13 +210,13 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
 
     @modelio.store_config_args
     def __init__(self,
-        inshape,
-        nb_labels,
-        nb_unet_features=None,
-        int_steps=7,
-        int_downsize=2,
-        seg_downsize=2,
-        **kwargs):
+                 inshape,
+                 nb_labels,
+                 nb_unet_features=None,
+                 int_steps=7,
+                 int_downsize=2,
+                 seg_downsize=2,
+                 **kwargs):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -216,15 +230,22 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
         """
 
         # configure base voxelmorph network
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, int_steps=int_steps, int_downsize=int_downsize, **kwargs)
+        vxm_model = VxmDense(inshape,
+                             nb_unet_features=nb_unet_features,
+                             int_steps=int_steps,
+                             int_downsize=int_downsize,
+                             **kwargs)
 
         # configure downsampled seg input layer
         inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
         seg_src = tf.keras.Input(shape=(*inshape_downsized, nb_labels))
 
         # configure warped seg output layer
-        seg_flow = layers.RescaleTransform(1 / seg_downsize, name='seg_resize')(vxm_model.references.pos_flow)
-        y_seg = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='seg_transformer')([seg_src, seg_flow])
+        seg_flow = layers.RescaleTransform(
+            1 / seg_downsize, name='seg_resize')(vxm_model.references.pos_flow)
+        y_seg = layers.SpatialTransformer(interp_method='linear',
+                                          indexing='ij',
+                                          name='seg_transformer')([seg_src, seg_flow])
 
         # initialize the keras model
         inputs = vxm_model.inputs + [seg_src]
@@ -253,7 +274,8 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
         """
         warp_model = self.get_registration_model()
         img_input = tf.keras.Input(shape=img.shape[1:])
-        y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
+        st_input = [img_input, warp_model.output]
+        y_img = layers.SpatialTransformer(interp_method=interp_method)(st_input)
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
@@ -264,13 +286,13 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
 
     @modelio.store_config_args
     def __init__(self,
-        inshape,
-        nb_surface_points,
-        nb_labels_sample,
-        nb_unet_features=None,
-        sdt_vol_resize=1,
-        surf_bidir=True,
-        **kwargs):
+                 inshape,
+                 nb_surface_points,
+                 nb_labels_sample,
+                 nb_unet_features=None,
+                 sdt_vol_resize=1,
+                 surf_bidir=True,
+                 **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -284,7 +306,8 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
 
         sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
         surface_points_shape = [nb_surface_points, len(inshape) + 1]
-        single_pt_trf = lambda x: utils.point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
+        def single_pt_trf(x): return utils.point_spatial_transformer(x,
+                                                                     sdt_vol_resize=sdt_vol_resize)
 
         # vxm model
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
@@ -296,25 +319,30 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
 
         # warp atlas surface
         # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
-        warped_atl_surf_pts = KL.Lambda(single_pt_trf, name='warped_atl_surface')([atl_surf_input, pos_flow])
+        warped_atl_surf_pts = KL.Lambda(single_pt_trf, name='warped_atl_surface')([
+            atl_surf_input, pos_flow])
 
         # get value of dt_input *at* warped_atlas_surface
         subj_dt_input = tf.keras.Input([*sdt_shape, nb_labels_sample], name='subj_dt_input')
-        subj_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_subj_dt')([subj_dt_input, warped_atl_surf_pts])
+        subj_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_subj_dt')(
+            [subj_dt_input, warped_atl_surf_pts])
 
         if surf_bidir:
             # go the other way and warp subject to atlas
             subj_surf_input = tf.keras.Input(surface_points_shape, name='subj_surface_input')
-            warped_subj_surf_pts = KL.Lambda(single_pt_trf, name='warped_subj_surface')([subj_surf_input, neg_flow])
+            warped_subj_surf_pts = KL.Lambda(single_pt_trf, name='warped_subj_surface')([
+                subj_surf_input, neg_flow])
 
             atl_dt_input = tf.keras.Input([*sdt_shape, nb_labels_sample], name='atl_dt_input')
-            atl_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_atl_dt')([atl_dt_input, warped_subj_surf_pts])
+            atl_dt_value = KL.Lambda(utils.value_at_location, name='hausdorff_atl_dt')(
+                [atl_dt_input, warped_subj_surf_pts])
 
-            inputs  = [*vxm_model.inputs, subj_dt_input, atl_dt_input, subj_surf_input, atl_surf_input]
+            inputs = [*vxm_model.inputs, subj_dt_input,
+                      atl_dt_input, subj_surf_input, atl_surf_input]
             outputs = [*vxm_model.outputs, subj_dt_value, atl_dt_value]
 
         else:
-            inputs  = [*vxm_model.inputs, subj_dt_input, atl_surf_input]
+            inputs = [*vxm_model.inputs, subj_dt_input, atl_surf_input]
             outputs = [*vxm_model.outputs, subj_dt_value]
 
         # initialize the keras model
@@ -342,7 +370,8 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
         """
         warp_model = self.get_registration_model()
         img_input = tf.keras.Input(shape=img.shape[1:])
-        y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, warp_model.output])
+        st_input = [img_input, warp_model.output]
+        y_img = layers.SpatialTransformer(interp_method=interp_method)(st_input)
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
@@ -364,9 +393,12 @@ class SynthMorphDense(modelio.LoadableModel):
         """
 
         # synthesis
-        build_gen = lambda i: SynthMorphGenerative(
-            inshape, labels_in, labels_out, id=i, **gen_args,
-        )
+        def build_gen(i): return SynthMorphGenerative(inshape,
+                                                      labels_in,
+                                                      labels_out,
+                                                      id=i,
+                                                      **gen_args,
+                                                      )
         gen_model_1, gen_model_2 = map(build_gen, (0, 1))
         img_1, map_1 = gen_model_1.outputs
         img_2, map_2 = gen_model_2.outputs
@@ -417,7 +449,7 @@ class InstanceDense(modelio.LoadableModel):
         source = tf.keras.Input(shape=(*inshape, nb_feats))
         flow_layer = ne.layers.LocalParamWithInput(shape=(*ds_warp_shape, len(inshape)), mult=mult)
         preint_flow = flow_layer(source)
-        
+
         # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
         pos_flow = preint_flow
         if int_steps > 0:
@@ -428,10 +460,14 @@ class InstanceDense(modelio.LoadableModel):
                 pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
 
         # warp image with flow field
-        y_source = layers.SpatialTransformer(interp_method='linear', indexing='ij', name='transformer')([source, pos_flow])
+        y_source = layers.SpatialTransformer(interp_method='linear',
+                                             indexing='ij',
+                                             name='transformer')([source, pos_flow])
 
         # initialize the keras model
-        super().__init__(name='vxm_instance_dense', inputs=[source], outputs=[y_source, preint_flow])
+        super().__init__(name='vxm_instance_dense',
+                         inputs=[source],
+                         outputs=[y_source, preint_flow])
 
         # cache pointers to important layers and tensors for future reference
         self.references = modelio.LoadableModel.ReferenceContainer()
@@ -471,16 +507,16 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
 
     @modelio.store_config_args
     def __init__(self,
-        inshape,
-        nb_labels,
-        nb_unet_features=None,
-        init_mu=None,
-        init_sigma=None,
-        warp_atlas=True,
-        stat_post_warp=True,
-        stat_nb_feats=16,
-        network_stat_weight=0.001,
-        **kwargs):
+                 inshape,
+                 nb_labels,
+                 nb_unet_features=None,
+                 init_mu=None,
+                 init_sigma=None,
+                 warp_atlas=True,
+                 stat_post_warp=True,
+                 stat_nb_feats=16,
+                 network_stat_weight=0.001,
+                 **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -499,7 +535,10 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # build warp network
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, src_feats=nb_labels, **kwargs)
+        vxm_model = VxmDense(inshape,
+                             nb_unet_features=nb_unet_features,
+                             src_feats=nb_labels,
+                             **kwargs)
 
         # extract necessary layers from the network
         # important to note that we're warping the atlas to the image in this case and
@@ -524,28 +563,33 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
         weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
 
         # convolve into mu and sigma volumes
-        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol', kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        
+        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol',
+                           kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
+                               kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+
         # pool to get 'final' stat
         stat_mu = KL.GlobalMaxPooling3D(name='mu_pooling')(stat_mu_vol)
         stat_logssq = KL.GlobalMaxPooling3D(name='logssq_pooling')(stat_logssq_vol)
 
         # combine mu with initialization
-        if init_mu is not None: 
+        if init_mu is not None:
             init_mu = np.array(init_mu)
-            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu, name='comb_mu')(stat_mu)
-        
+            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu,
+                                name='comb_mu')(stat_mu)
+
         # combine sigma with initialization
-        if init_sigma is not None: 
+        if init_sigma is not None:
             init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
-            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq, name='comb_sigma')(stat_logssq)
+            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq,
+                                    name='comb_sigma')(stat_logssq)
 
         # unnorm loglike
         def unnorm_loglike(I, mu, logsigmasq, use_log=True):
-            P = tf.distributions.Normal(mu, K.exp(logsigmasq/2))
+            P = tf.distributions.Normal(mu, K.exp(logsigmasq / 2))
             return P.log_prob(I) if use_log else P.prob(I)
-        uloglhood = KL.Lambda(lambda x:unnorm_loglike(*x), name='unsup_likelihood')([image, stat_mu, stat_logssq])
+        uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
+                              name='unsup_likelihood')([image, stat_mu, stat_logssq])
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
         def logsum(prob_ll, atl):
@@ -553,7 +597,7 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
             # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
             logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
-            return alpha + tf.math.log(tf.reduce_sum(K.exp(logpdf-alpha), -1, keepdims=True) + K.epsilon())
+            return alpha + tf.math.log(tf.reduce_sum(K.exp(logpdf - alpha), -1, keepdims=True) + K.epsilon())
         loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
 
         # initialize the keras model
@@ -612,10 +656,12 @@ class TemplateCreation(modelio.LoadableModel):
             name='atlas'
         )
         atlas_tensor = atlas_layer(source_input)
-        warp_input_model = tf.keras.Model(inputs=[source_input], outputs=[atlas_tensor, source_input])
+        warp_input_model = tf.keras.Model(inputs=[source_input], outputs=[
+                                          atlas_tensor, source_input])
 
         # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features,
+                             bidir=True, input_model=warp_input_model, **kwargs)
 
         # extract tensors from stacked model
         y_source = vxm_model.references.y_source
@@ -669,7 +715,8 @@ class TemplateCreation(modelio.LoadableModel):
         """
         warp_model = self.get_registration_model()
         img_input = tf.keras.Input(shape=img.shape[1:])
-        y_img = layers.SpatialTransformer(interp_method=interp_method, fill_value=fill_value)([img_input, warp_model.output])
+        y_img = layers.SpatialTransformer(interp_method=interp_method,
+                                          fill_value=fill_value)([img_input, warp_model.output])
         return tf.keras.Model(inputs=(*warp_model.inputs, img_input), outputs=y_img).predict([src, trg, img])
 
 
@@ -680,20 +727,20 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
 
     @modelio.store_config_args
     def __init__(self,
-        inshape,
-        pheno_input_shape,
-        nb_unet_features=None,
-        src_feats=1,
-        conv_image_shape=None,
-        conv_size=3,
-        conv_nb_levels=0,
-        conv_nb_features=32,
-        extra_conv_layers=3,
-        use_mean_stream=True,
-        mean_cap=100,
-        templcondsi=False,
-        templcondsi_init=None,
-        **kwargs):
+                 inshape,
+                 pheno_input_shape,
+                 nb_unet_features=None,
+                 src_feats=1,
+                 conv_image_shape=None,
+                 conv_size=3,
+                 conv_nb_levels=0,
+                 conv_nb_features=32,
+                 extra_conv_layers=3,
+                 use_mean_stream=True,
+                 mean_cap=100,
+                 templcondsi=False,
+                 templcondsi_init=None,
+                 **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -730,7 +777,8 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
         Conv = getattr(KL, 'Conv%dD' % len(inshape))
         last = pheno_decoder_model.output
         for n in range(extra_conv_layers):
-            last = Conv(conv_nb_features, kernel_size=conv_size, padding='same', name='atlas_extra_conv_%d' % n)(last)
+            last = Conv(conv_nb_features, kernel_size=conv_size,
+                        padding='same', name='atlas_extra_conv_%d' % n)(last)
 
         # final convolution to get atlas features
         atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
@@ -746,13 +794,14 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
             # change first channel to be result from seg with another add layer
             tmp_layer = KL.Lambda(lambda x: K.softmax(x[..., 1:]))(atlas_tensor)
             conv_layer = Conv(1, kernel_size=1, padding='same', use_bias=False, name='atlas_gen',
-                kernel_initializer=KI.RandomNormal(mean=0, stddev=1e-5))
+                              kernel_initializer=KI.RandomNormal(mean=0, stddev=1e-5))
             x_img = conv_layer(tmp_layer)
             if templcondsi_init is not None:
                 weights = conv_layer.get_weights()
                 weights[0] = templcondsi_init.reshape(weights[0].shape)
                 conv_layer.set_weights(weights)
-            atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][...,1:]]), name='atlas')([x_img, atlas_tensor])
+            atlas_tensor = KL.Lambda(lambda x: K.concatenate([x[0], x[1][..., 1:]]),
+                                     name='atlas')([x_img, atlas_tensor])
         else:
             atlas_tensor = KL.Add(name='atlas')([atlas_input, atlas_gen])
 
@@ -763,7 +812,8 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
         warp_input_model = tf.keras.Model(inputs=inputs, outputs=[atlas_tensor, source_input])
 
         # warp model
-        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, input_model=warp_input_model, **kwargs)
+        vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features,
+                             bidir=True, input_model=warp_input_model, **kwargs)
 
         # extract tensors from stacked model
         y_source = vxm_model.references.y_source
@@ -791,12 +841,12 @@ class Transform(tf.keras.Model):
     """
 
     def __init__(self,
-        inshape,
-        affine=False,
-        interp_method='linear',
-        rescale=None,
-        fill_value=None,
-        nb_feats=1):
+                 inshape,
+                 affine=False,
+                 interp_method='linear',
+                 rescale=None,
+                 fill_value=None,
+                 nb_feats=1):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -903,7 +953,7 @@ class Unet(tf.keras.Model):
         nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
 
         if isinstance(max_pool, int):
-            max_pool = [max_pool]*nb_levels
+            max_pool = [max_pool] * nb_levels
 
         # configure encoder (down-sampling path)
         enc_layers = []
@@ -914,7 +964,7 @@ class Unet(tf.keras.Model):
                 layer_name = '%s_enc_conv_%d_%d' % (name, level, conv)
                 last = _conv_block(last, nf, name=layer_name, do_res=do_res)
             enc_layers.append(last)
-            
+
             # temporarily use maxpool since downsampling doesn't exist in keras
             last = MaxPooling(max_pool[level], name='%s_enc_pooling_%d' % (name, level))(last)
 
@@ -927,7 +977,8 @@ class Unet(tf.keras.Model):
                 last = _conv_block(last, nf, name=layer_name, do_res=do_res)
             if not half_res or level < (nb_levels - 2):
                 layer_name = '%s_dec_upsample_%d' % (name, real_level)
-                last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level], name=layer_name)
+                last = _upsample_block(last, enc_layers.pop(),
+                                       factor=max_pool[real_level], name=layer_name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
@@ -1050,8 +1101,11 @@ class SynthMorphGenerative(tf.keras.Model):
         if warp_std_dev > 0:
             # Velocity field.
             vel_scale = np.asarray(warp_shape_factor) / 2
-            vel_draw = lambda x: utils.synthmorph.draw_perlin(vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
-            vel_field = KL.Lambda(lambda x: tf.map_fn(vel_draw, x, dtype='float32'), name=f'vel_{id}')(labels) # One per batch.
+            vel_draw = lambda x: utils.synthmorph.draw_perlin(
+                vel_shape, scales=vel_scale, max_std=warp_std_dev, modulate=warp_modulate)
+            # One per batch.
+            vel_field = KL.Lambda(lambda x: tf.map_fn(
+                vel_draw, x, dtype='float32'), name=f'vel_{id}')(labels)
             # Deformation field.
             def_field = layers.VecInt(int_steps=5, name=f'vec_int_{id}')(vel_field)
             def_field = ne.layers.RescaleValues(2)(def_field)
@@ -1059,10 +1113,12 @@ class SynthMorphGenerative(tf.keras.Model):
         else:
             draw_zeros = lambda x, d: tf.zeros((tf.shape(x)[0], *d), dtype='float32')
             vel_field = KL.Lambda(lambda x: draw_zeros(x, vel_shape), name=f'vel_{id}')(labels)
-            def_field = KL.Lambda(lambda x: draw_zeros(x, (*out_shape, num_dim)), name=f'def_{id}')(labels)
+            def_field = KL.Lambda(lambda x: draw_zeros(
+                x, (*out_shape, num_dim)), name=f'def_{id}')(labels)
 
         # Resampling.
-        labels = layers.SpatialTransformer(interp_method='nearest', fill_value=0, name=f'trans_{id}')([labels, def_field])
+        labels = layers.SpatialTransformer(
+            interp_method='nearest', fill_value=0, name=f'trans_{id}')([labels, def_field])
         labels = KL.Lambda(lambda x: tf.cast(x, dtype='int32'))(labels)
 
         # Intensity means and standard deviations.
@@ -1077,16 +1133,19 @@ class SynthMorphGenerative(tf.keras.Model):
         int_range = [mean_min, mean_max, std_min, std_max]
         for i, x in enumerate(int_range):
             x = np.asarray(x)
-            int_range[i] = x[...,None] if np.ndim(x) == 1 else x
+            int_range[i] = x[..., None] if np.ndim(x) == 1 else x
         m0, m1, s0, s1 = int_range
-        mean_draw = lambda x: tf.random.uniform((tf.shape(x)[0], num_in_labels, num_chan), minval=m0, maxval=m1)
-        std_draw = lambda x: tf.random.uniform((tf.shape(x)[0], num_in_labels, num_chan), minval=s0, maxval=s1)
+        mean_draw = lambda x: tf.random.uniform(
+            (tf.shape(x)[0], num_in_labels, num_chan), minval=m0, maxval=m1)
+        std_draw = lambda x: tf.random.uniform(
+            (tf.shape(x)[0], num_in_labels, num_chan), minval=s0, maxval=s1)
         means = KL.Lambda(mean_draw)(labels)
         stds = KL.Lambda(std_draw)(labels)
 
         # Synthetic image.
-        image = KL.Lambda(lambda x: tf.random.normal(tf.shape(x)),  name=f'sample_normal_{id}')(labels)
-        im_cat = lambda x: tf.concat([x + num_in_labels*i for i in range(num_chan)], axis=-1)
+        image = KL.Lambda(lambda x: tf.random.normal(tf.shape(x)),
+                          name=f'sample_normal_{id}')(labels)
+        im_cat = lambda x: tf.concat([x + num_in_labels * i for i in range(num_chan)], axis=-1)
         im_ind = KL.Lambda(im_cat, name=f'ind_{id}')(labels)
         im_take = lambda x: tf.gather(tf.reshape(x[0], shape=(-1,)), x[1])
         gather = KL.Lambda(lambda x: tf.map_fn(im_take, x, dtype='float32'))
@@ -1096,40 +1155,54 @@ class SynthMorphGenerative(tf.keras.Model):
         image = KL.Add(name=f'add_means_{id}')([image, means])
 
         # Blur.
-        blur_draw = lambda _: ne.utils.gaussian_kernel([blur_std_dev] * num_dim, separate=True, random=blur_modulate)
+        blur_draw = lambda _: ne.utils.gaussian_kernel(
+            [blur_std_dev] * num_dim, separate=True, random=blur_modulate)
         kernels = KL.Lambda(lambda x: tf.map_fn(blur_draw, x, dtype=['float32'] * num_dim))(image)
         blur_apply = lambda x: ne.utils.separable_conv(x[0], x[1])
-        image = KL.Lambda(lambda x: tf.map_fn(blur_apply, x, dtype='float32'), name=f'apply_blur_{id}')([image, kernels])
+        image = KL.Lambda(lambda x: tf.map_fn(blur_apply, x, dtype='float32'),
+                          name=f'apply_blur_{id}')([image, kernels])
 
         # Background voodoo.
         mask = KL.Lambda(lambda x: tf.cast(tf.greater(x, 0), 'float32'))(labels)
-        channels = KL.Lambda(lambda x: tf.split(x, num_or_size_splits=num_chan, axis=-1))(image) if num_chan > 1 else [image]
+        channels = KL.Lambda(lambda x: tf.split(x, num_or_size_splits=num_chan,
+                                                axis=-1))(image) if num_chan > 1 else [image]
         blurred_mask = None
         out = [None] * num_chan
         for i in range(num_chan):
             if blur_background:
-                rand_flip = KL.Lambda(lambda x: tf.greater(tf.random.uniform((1,), 0, 1), 0.8), name=f'bool_{i}_{id}')([])
-                out[i] = KL.Lambda(lambda x: K.switch(x[0], x[1] * x[2], x[1]))([rand_flip, channels[i], mask])
+                rand_flip = KL.Lambda(lambda x: tf.greater(
+                    tf.random.uniform((1,), 0, 1), 0.8), name=f'bool_{i}_{id}')([])
+                out[i] = KL.Lambda(lambda x: K.switch(x[0], x[1] * x[2], x[1])
+                                   )([rand_flip, channels[i], mask])
             else:
                 if blurred_mask is None:
-                    blurred_mask = KL.Lambda(lambda x: tf.map_fn(blur_apply, x, dtype='float32'))([mask, kernels])
-                out[i] = KL.Lambda(lambda x: x[0] / (x[1] + K.epsilon()), name=f'masked_blurring_{i}_{id}')([channels[i], blurred_mask])
-                bg_mean = KL.Lambda(lambda x: tf.random.uniform((1,), 0, 10), name=f'bg_mean_{i}_{id}')([])
-                bg_std = KL.Lambda(lambda x: tf.random.uniform((1,), 0, 5), name=f'bg_std_{i}_{id}')([])
-                rand_flip = KL.Lambda(lambda x: tf.greater(tf.random.uniform((1,), 0, 1), 0.5), name=f'boolx_{i}_{id}')([])
-                bg_mean = KL.Lambda(lambda x: K.switch(x[0], tf.zeros_like(x[1]), x[1]), name=f'switch_backgd_mean_{i}_{id}')([rand_flip, bg_mean])
-                bg_std = KL.Lambda(lambda x: K.switch(x[0], tf.zeros_like(x[1]), x[1]), name=f'switch_backgd_std_{i}_{id}')([rand_flip, bg_std])
+                    blurred_mask = KL.Lambda(lambda x: tf.map_fn(
+                        blur_apply, x, dtype='float32'))([mask, kernels])
+                out[i] = KL.Lambda(lambda x: x[0] / (x[1] + K.epsilon()),
+                                   name=f'masked_blurring_{i}_{id}')([channels[i], blurred_mask])
+                bg_mean = KL.Lambda(lambda x: tf.random.uniform(
+                    (1,), 0, 10), name=f'bg_mean_{i}_{id}')([])
+                bg_std = KL.Lambda(lambda x: tf.random.uniform(
+                    (1,), 0, 5), name=f'bg_std_{i}_{id}')([])
+                rand_flip = KL.Lambda(lambda x: tf.greater(
+                    tf.random.uniform((1,), 0, 1), 0.5), name=f'boolx_{i}_{id}')([])
+                bg_mean = KL.Lambda(lambda x: K.switch(x[0], tf.zeros_like(
+                    x[1]), x[1]), name=f'switch_backgd_mean_{i}_{id}')([rand_flip, bg_mean])
+                bg_std = KL.Lambda(lambda x: K.switch(x[0], tf.zeros_like(
+                    x[1]), x[1]), name=f'switch_backgd_std_{i}_{id}')([rand_flip, bg_std])
                 background = KL.Lambda(lambda x: tf.random.normal(tf.shape(x[0]), mean=x[1], stddev=x[2]),
                                        name=f'gaussian_bg_{i}_{id}')([channels[i], bg_mean, bg_std])
                 out[i] = KL.Lambda(lambda x: tf.where(tf.cast(x[1], dtype='bool'), x[0], x[2]),
-                                  name=f'mask_blurred_image_{i}_{id}')([out[i], mask, background])
+                                   name=f'mask_blurred_image_{i}_{id}')([out[i], mask, background])
         image = KL.Concatenate(axis=-1)(out) if num_chan > 1 else out[0]
 
         # Bias field.
         bias_scale = bias_shape_factor
         bias_shape = (*out_shape, 1)
-        bias_draw = lambda x: utils.synthmorph.draw_perlin(bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
-        bias_field = KL.Lambda(lambda x: tf.map_fn(bias_draw, x, dtype='float32'))(labels) # One per batch.
+        bias_draw = lambda x: utils.synthmorph.draw_perlin(
+            bias_shape, scales=bias_scale, max_std=bias_std_dev, modulate=bias_modulate)
+        # One per batch.
+        bias_field = KL.Lambda(lambda x: tf.map_fn(bias_draw, x, dtype='float32'))(labels)
         bias_field = KL.Lambda(lambda x: tf.exp(x), name=f'bias_{id}')(bias_field)
         image = KL.multiply([bias_field, image], name=f'apply_bias_{id}')
 
@@ -1139,10 +1212,12 @@ class SynthMorphGenerative(tf.keras.Model):
             image = KL.Lambda(lambda x: tf.map_fn(ne.utils.minmax_norm, x))(image)
         if gamma_std_dev > 0:
             gamma_apply = lambda x: tf.pow(x, tf.exp(tf.random.normal((1,), stddev=gamma_std_dev)))
-            image = KL.Lambda(lambda x: tf.map_fn(gamma_apply, x, dtype='float32'), name=f'gamma_{id}')(image)
+            image = KL.Lambda(lambda x: tf.map_fn(
+                gamma_apply, x, dtype='float32'), name=f'gamma_{id}')(image)
         if dc_offset > 0:
             dc_apply = lambda x: tf.add(x, tf.random.uniform((1,), maxval=dc_offset))
-            image = KL.Lambda(lambda x: tf.map_fn(dc_apply, x, dtype='float32'), name=f'dc_offset_{id}')(image)
+            image = KL.Lambda(lambda x: tf.map_fn(dc_apply, x, dtype='float32'),
+                              name=f'dc_offset_{id}')(image)
 
         # Lookup table for converting the index labels back to the original values,
         # setting unwanted labels to background. If the output labels are provided
@@ -1161,7 +1236,7 @@ class SynthMorphGenerative(tf.keras.Model):
         # with value 0 is not part of the output labels, set it to -1 to remove it
         # from the one-hot maps.
         if one_hot:
-            hot_label_list = np.unique(list(out_label_list.values())) # Sorted.
+            hot_label_list = np.unique(list(out_label_list.values()))  # Sorted.
             hot_lut = np.full(hot_label_list[-1] + 1, fill_value=-1, dtype='int32')
             for i, lab in enumerate(hot_label_list):
                 hot_lut[lab] = i
@@ -1172,7 +1247,7 @@ class SynthMorphGenerative(tf.keras.Model):
         labels = KL.Lambda(out_conv, name=f'labels_back_{id}')(labels)
         if one_hot:
             depth = len(hot_label_list)
-            labels = KL.Lambda(lambda x: tf.one_hot(x[...,0], depth), name=f'one_hot_{id}')(labels)
+            labels = KL.Lambda(lambda x: tf.one_hot(x[..., 0], depth), name=f'one_hot_{id}')(labels)
 
         outputs = [image, labels]
         if return_vel:
@@ -1195,7 +1270,8 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False):
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     Conv = getattr(KL, 'Conv%dD' % ndims)
 
-    convolved = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', strides=strides, name=name)(x)
+    convolved = Conv(nfeat, kernel_size=3, padding='same',
+                     kernel_initializer='he_normal', strides=strides, name=name)(x)
     name = name + '_activation' if name else None
 
     if do_res:
@@ -1203,7 +1279,8 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False):
         add_layer = x
         print('note: this is a weird thing to do, since its not really residual training anymore')
         if nfeat != x.get_shape().as_list()[-1]:
-            add_layer = Conv(nfeat, kernel_size=3, padding='same', kernel_initializer='he_normal', name='resfix_'+name)(x)
+            add_layer = Conv(nfeat, kernel_size=3, padding='same',
+                             kernel_initializer='he_normal', name='resfix_' + name)(x)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
 
     return KL.LeakyReLU(0.2, name=name)(convolved)
@@ -1216,7 +1293,7 @@ def _upsample_block(x, connection, factor=2, name=None):
     ndims = len(x.get_shape()) - 2
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
-    
+
     upsampled = UpSampling(size=(factor,) * ndims, name=name)(x)
     name = name + '_concat' if name else None
     return KL.concatenate([upsampled, connection], name=name)

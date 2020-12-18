@@ -14,7 +14,8 @@ Unless required by applicable law or agreed to in writing, software distributed 
 """
 
 # core python
-import sys, warnings
+import sys
+import warnings
 
 # third party
 import numpy as np
@@ -70,13 +71,13 @@ class NCC:
         u_J = J_sum / win_size
 
         # TODO: simplify this
-        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size  
+        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size
         cross = tf.maximum(cross, self.eps)
-        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size 
+        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
         I_var = tf.maximum(I_var, self.eps)
         J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
         J_var = tf.maximum(J_var, self.eps)
-        
+
         # cc = (cross * cross) / (I_var * J_var)
         cc = (cross/I_var) * (cross/J_var)
 
@@ -122,7 +123,8 @@ class TukeyBiweight:
         # make sure that some indices are below the threshold, otherwise
         # the tf.gather_nd returns NaN
         if np.prod(ind_below.get_shape().as_list()) > 0:
-            rho_below = (self.csq / 2) * (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+            rho_below = (self.csq / 2) * \
+                (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
         else:
             rho_below = 0.0
         rho_above = self.csq / 2
@@ -143,7 +145,8 @@ class Dice:
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
         bottom = tf.reduce_sum(y_true + y_pred, vol_axes)
 
-        div_no_nan = tf.math.divide_no_nan if hasattr(tf.math, 'divide_no_nan') else tf.div_no_nan # pylint: disable=no-member
+        div_no_nan = tf.math.divide_no_nan if hasattr(
+            tf.math, 'divide_no_nan') else tf.div_no_nan  # pylint: disable=no-member
         dice = tf.reduce_mean(div_no_nan(top, bottom))
         return -dice
 
@@ -231,12 +234,12 @@ class KL:
             o[j] = [0, 2]
             filt_inner[np.ix_(*o)] = 1
 
-        # full filter, that makes sure the inner filter is applied 
+        # full filter, that makes sure the inner filter is applied
         # ith feature to ith feature
         filt = np.zeros([3] * ndims + [ndims, ndims])
         for i in range(ndims):
             filt[..., i, i] = filt_inner
-                    
+
         return filt
 
     def _degree_matrix(self, vol_shape):
@@ -266,7 +269,7 @@ class KL:
         """
         vol_shape = y_pred.get_shape().as_list()[1:-1]
         ndims = len(vol_shape)
-        
+
         sm = 0
         for i in range(ndims):
             d = i + 1
@@ -293,7 +296,7 @@ class KL:
         log_sigma = y_pred[..., ndims:]
 
         # compute the degree matrix (only needs to be done once)
-        # we usually can't compute this until we know the ndims, 
+        # we usually can't compute this until we know the ndims,
         # which is a function of the data
         if self.D is None:
             self.D = self._degree_matrix(self.flow_vol_shape)
@@ -307,7 +310,8 @@ class KL:
         prec_term = self.prior_lambda * self.prec_loss(mean)
 
         # combine terms
-        return 0.5 * ndims * (sigma_term + prec_term)  # ndims because we averaged over dimensions as well
+        # ndims because we averaged over dimensions as well
+        return 0.5 * ndims * (sigma_term + prec_term)
 
 
 class NMI:
@@ -347,41 +351,45 @@ class NMI:
         x_r = -x % patch_size
         y_r = -y % patch_size
         z_r = -z % patch_size
-        pad_dims = [[0,0]]
+        pad_dims = [[0, 0]]
         pad_dims.append([x_r//2, x_r - x_r//2])
         pad_dims.append([y_r//2, y_r - y_r//2])
         pad_dims.append([z_r//2, z_r - z_r//2])
-        pad_dims.append([0,0])
+        pad_dims.append([0, 0])
         padding = tf.constant(pad_dims)
 
         # compute image terms
         # num channels of y_true and y_pred must be 1
-        I_a = K.exp(- self.preterm * K.square(tf.pad(y_true, padding, 'CONSTANT')  - vbc))
+        I_a = K.exp(- self.preterm * K.square(tf.pad(y_true, padding, 'CONSTANT') - vbc))
         I_a /= K.sum(I_a, -1, keepdims=True)
 
-        I_b = K.exp(- self.preterm * K.square(tf.pad(y_pred, padding, 'CONSTANT')  - vbc))
+        I_b = K.exp(- self.preterm * K.square(tf.pad(y_pred, padding, 'CONSTANT') - vbc))
         I_b /= K.sum(I_b, -1, keepdims=True)
 
-        I_a_patch = tf.reshape(I_a, [(x+x_r)//patch_size, patch_size, (y+y_r)//patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
+        I_a_patch = tf.reshape(I_a, [(x+x_r)//patch_size, patch_size, (y+y_r) //
+                                     patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
         I_a_patch = tf.transpose(I_a_patch, [0, 2, 4, 1, 3, 5, 6])
         I_a_patch = tf.reshape(I_a_patch, [-1, patch_size**3, self.num_bins])
 
-        I_b_patch = tf.reshape(I_b, [(x+x_r)//patch_size, patch_size, (y+y_r)//patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
+        I_b_patch = tf.reshape(I_b, [(x+x_r)//patch_size, patch_size, (y+y_r) //
+                                     patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
         I_b_patch = tf.transpose(I_b_patch, [0, 2, 4, 1, 3, 5, 6])
         I_b_patch = tf.reshape(I_b_patch, [-1, patch_size**3, self.num_bins])
 
         # compute probabilities
-        I_a_permute = K.permute_dimensions(I_a_patch, (0,2,1))
-        pab = K.batch_dot(I_a_permute, I_b_patch)  # should be the right size now, nb_labels x nb_bins
+        I_a_permute = K.permute_dimensions(I_a_patch, (0, 2, 1))
+        # should be the right size now, nb_labels x nb_bins
+        pab = K.batch_dot(I_a_permute, I_b_patch)
         pab /= patch_size**3
         pa = tf.reduce_mean(I_a_patch, 1, keepdims=True)
         pb = tf.reduce_mean(I_b_patch, 1, keepdims=True)
 
-        papb = K.batch_dot(K.permute_dimensions(pa, (0,2,1)), pb) + K.epsilon()
+        papb = K.batch_dot(K.permute_dimensions(pa, (0, 2, 1)), pb) + K.epsilon()
         return K.mean(K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1))
 
     def global_mi(self, y_true, y_pred):
-        warnings.warn('This loss will be deprecated. Consider switching to ne.metrics.MutualInformation.')
+        warnings.warn(
+            'This loss will be deprecated. Consider switching to ne.metrics.MutualInformation.')
         if self.crop_background:
             # does not support variable batch size
             thresh = 0.0001
@@ -410,20 +418,20 @@ class NMI:
         vbc = K.reshape(self.vol_bin_centers, o)
 
         # compute image terms
-        I_a = K.exp(- self.preterm * K.square(y_true  - vbc))
+        I_a = K.exp(- self.preterm * K.square(y_true - vbc))
         I_a /= K.sum(I_a, -1, keepdims=True)
 
-        I_b = K.exp(- self.preterm * K.square(y_pred  - vbc))
+        I_b = K.exp(- self.preterm * K.square(y_pred - vbc))
         I_b /= K.sum(I_b, -1, keepdims=True)
 
         # compute probabilities
-        I_a_permute = K.permute_dimensions(I_a, (0,2,1))
+        I_a_permute = K.permute_dimensions(I_a, (0, 2, 1))
         pab = K.batch_dot(I_a_permute, I_b)  # should be the right size now, nb_labels x nb_bins
         pab /= nb_voxels
         pa = tf.reduce_mean(I_a, 1, keepdims=True)
         pb = tf.reduce_mean(I_b, 1, keepdims=True)
 
-        papb = K.batch_dot(K.permute_dimensions(pa, (0,2,1)), pb) + K.epsilon()
+        papb = K.batch_dot(K.permute_dimensions(pa, (0, 2, 1)), pb) + K.epsilon()
         return K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1)
 
     def loss(self, y_true, y_pred):
