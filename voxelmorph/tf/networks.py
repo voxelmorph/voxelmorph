@@ -64,19 +64,24 @@ class VxmDense(modelio.LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
-                the unet features are defined by the default config described in the unet class documentation.
-            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer. Default is None.
-            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an integer. Default is 1.
+                the form [[encoder feats], [decoder feats]], or as a single integer. 
+                If None (default), the unet features are defined by the default config described in 
+                the unet class documentation.
+            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer. 
+                Default is None.
+            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an 
+                integer. Default is 1.
             nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
-                is not downsampled when this value is 1.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
+                value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. 
+                The flow field is not downsampled when this value is 1.
             bidir: Enable bidirectional cost function. Default is False.
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
-            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. Default is False.
+            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
+                Default is False.
             input_model: Model to replace default input layer before concatenation. Default is None.
             name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
         """
@@ -107,7 +112,8 @@ class VxmDense(modelio.LoadableModel):
         # transform unet output into a flow field
         Conv = getattr(KL, 'Conv%dD' % ndims)
         flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5), name='%s_flow' % name)(unet_model.output)
+                         kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-5),
+                         name='%s_flow' % name)(unet_model.output)
 
         # optionally include probabilities
         if use_probs:
@@ -157,8 +163,10 @@ class VxmDense(modelio.LoadableModel):
         y_source = layers.SpatialTransformer(
             interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
         if bidir:
-            y_target = layers.SpatialTransformer(
-                interp_method='linear', indexing='ij', name='%s_neg_transformer' % name)([target, neg_flow])
+            st_inputs = [target, neg_flow]
+            y_target = layers.SpatialTransformer(interp_method='linear',
+                                                 indexing='ij',
+                                                 name='%s_neg_transformer' % name)(st_inputs)
 
         # initialize the keras model
         outputs = [y_source, y_target] if bidir else [y_source]
@@ -221,11 +229,14 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels used for ground truth segmentations.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
-                is not downsampled when this value is 1.
-            seg_downsize: Interger specifying the downsampled factor of the segmentations. Default is 2.
+            nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
+            int_steps: Number of flow integration steps. 
+                The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. 
+                The flow field is not downsampled when this value is 1.
+            seg_downsize: Interger specifying the downsampled factor of the segmentations.
+                Default is 2.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -298,7 +309,8 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
             inshape: Input shape. e.g. (192, 192, 192)
             nb_surface_points: Number of surface points to warp.
             nb_labels_sample: Number of labels to sample.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
             sdt_vol_resize: Resize factor of distance transform. Default is 1.
             surf_bidir: Train with bidirectional surface warping. Default is True.
             kwargs: Forwarded to the internal VxmDense model.
@@ -318,7 +330,8 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
         atl_surf_input = tf.keras.Input(surface_points_shape, name='atl_surface_input')
 
         # warp atlas surface
-        # NOTE: pos diffflow is used to define an image moving x --> A, but when moving points, it moves A --> x
+        # NOTE: pos diffflow is used to define an image moving x --> A,
+        #   but when moving points, it moves A --> x
         warped_atl_surf_pts = KL.Lambda(single_pt_trf, name='warped_atl_surface')([
             atl_surf_input, pos_flow])
 
@@ -438,9 +451,10 @@ class InstanceDense(modelio.LoadableModel):
             inshape: Input shape of moving image. e.g. (192, 192, 192)
             nb_feats: Number of source image features. Default is 1.
             mult: Bias multiplier for local parameter layer. Default is 1000.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. The flow field
-                is not downsampled when this value is 1.
+            int_steps: Number of flow integration steps. 
+                The warp is non-diffeomorphic when this value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. 
+                The flow field is not downsampled when this value is 1.
         """
 
         # downsample warp shape
@@ -521,12 +535,14 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels in probabilistic atlas.
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
             stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
             stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
-            network_stat_weight: Relative weight of the stats learned by the network. Default is 0.001.
+            network_stat_weight: Relative weight of the stats learned by the network. 
+                Default is 0.001.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -597,7 +613,8 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
             # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
             logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
-            return alpha + tf.math.log(tf.reduce_sum(K.exp(logpdf - alpha), -1, keepdims=True) + K.epsilon())
+            ked = K.exp(logpdf - alpha)
+            return alpha + tf.math.log(tf.reduce_sum(ked, -1, keepdims=True) + K.epsilon())
         loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
 
         # initialize the keras model
@@ -634,11 +651,13 @@ class TemplateCreation(modelio.LoadableModel):
     """
 
     @modelio.store_config_args
-    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1, **kwargs):
+    def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1,
+                 **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
             mean_cap: Cap for mean stream. Default is 100.
             atlas_feats: Number of atlas/template features. Default is 1.
             src_feats: Number of source image features. Default is 1.
@@ -717,7 +736,8 @@ class TemplateCreation(modelio.LoadableModel):
         img_input = tf.keras.Input(shape=img.shape[1:])
         y_img = layers.SpatialTransformer(interp_method=interp_method,
                                           fill_value=fill_value)([img_input, warp_model.output])
-        return tf.keras.Model(inputs=(*warp_model.inputs, img_input), outputs=y_img).predict([src, trg, img])
+        inputs = (*warp_model.inputs, img_input)
+        return tf.keras.Model(inputs=inputs, outputs=y_img).predict([src, trg, img])
 
 
 class ConditionalTemplateCreation(modelio.LoadableModel):
@@ -745,13 +765,16 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             pheno_input_shape: Pheno data input shape. e.g. (2)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for more information.
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for 
+                more information.
             src_feats: Number of source (atlas) features. Default is 1.
-            conv_image_shape: Intermediate phenotype image shape. Default is inshape with conv_nb_features.
+            conv_image_shape: Intermediate phenotype image shape. Default is inshape 
+                with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
             conv_nb_levels: Number of levels in atlas generator unet. Default is 0.
             conv_nb_features: Number of features in atlas generator convolutions. Default is 32.
-            extra_conv_layers: Number of extra convolutions after unet in atlas generator. Default is 3.
+            extra_conv_layers: Number of extra convolutions after unet in atlas generator. 
+                Default is 3.
             use_mean_stream: Return mean stream layer for training. Default is True.
             mean_cap: Cap for mean stream. Default is 100.
             templcondsi: Default is False.
@@ -769,9 +792,12 @@ class ConditionalTemplateCreation(modelio.LoadableModel):
         pheno_init_model = tf.keras.models.Model(pheno_input, pheno_reshaped)
 
         # build model to decode reshaped pheno
-        pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels, conv_size,
-                                                 nb_labels=conv_nb_features, final_pred_activation='linear',
-                                                 input_model=pheno_init_model, name='atlas_decoder')
+        pheno_decoder_model = ne.models.conv_dec(conv_nb_features, conv_image_shape, conv_nb_levels,
+                                                 conv_size,
+                                                 nb_labels=conv_nb_features,
+                                                 final_pred_activation='linear',
+                                                 input_model=pheno_init_model,
+                                                 name='atlas_decoder')
 
         # add extra convolutions
         Conv = getattr(KL, 'Conv%dD' % len(inshape))
@@ -879,9 +905,10 @@ class Transform(tf.keras.Model):
 
 class Unet(tf.keras.Model):
     """
-    A unet architecture that builds off either an input keras model or input shape. Layer features can be
-    specified directly as a list of encoder and decoder features or as a single integer along with a number
-    of unet levels. The default network features per layer (when no options are specified) are:
+    A unet architecture that builds off either an input keras model or input shape. Layer features 
+    can be specified directly as a list of encoder and decoder features or as a single integer along
+    with a number of unet levels. The default network features per layer (when no options are
+    specified) are:
 
         encoder: [16, 32, 32, 32]
         decoder: [32, 32, 32, 32, 32, 16, 16]
@@ -904,12 +931,15 @@ class Unet(tf.keras.Model):
         """
         Parameters:
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
-            input_model: Optional input model that feeds directly into the unet before concatenation.
+            input_model: Optional input model that feeds directly into the unet before concatenation
             nb_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. If None (default),
-                the unet features are defined by the default config described in the class documentation.
-            nb_levels: Number of levels in unet. Only used when nb_features is an integer. Default is None.
-            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. Default is 1.
+                the form [[encoder feats], [decoder feats]], or as a single integer. 
+                If None (default), the unet features are defined by the default config described in 
+                the class documentation.
+            nb_levels: Number of levels in unet. Only used when nb_features is an integer. 
+                Default is None.
+            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
+                Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
             half_res: Skip the last decoder upsampling. Default is False.
             name: Model name - also used as layer name prefix. Default is 'unet'.
@@ -1190,7 +1220,8 @@ class SynthMorphGenerative(tf.keras.Model):
                     x[1]), x[1]), name=f'switch_backgd_mean_{i}_{id}')([rand_flip, bg_mean])
                 bg_std = KL.Lambda(lambda x: K.switch(x[0], tf.zeros_like(
                     x[1]), x[1]), name=f'switch_backgd_std_{i}_{id}')([rand_flip, bg_std])
-                background = KL.Lambda(lambda x: tf.random.normal(tf.shape(x[0]), mean=x[1], stddev=x[2]),
+                background = KL.Lambda(lambda x: tf.random.normal(tf.shape(x[0]), mean=x[1],
+                                                                  stddev=x[2]),
                                        name=f'gaussian_bg_{i}_{id}')([channels[i], bg_mean, bg_std])
                 out[i] = KL.Lambda(lambda x: tf.where(tf.cast(x[1], dtype='bool'), x[0], x[2]),
                                    name=f'mask_blurred_image_{i}_{id}')([out[i], mask, background])
