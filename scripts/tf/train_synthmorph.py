@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 Example script for training a SynthMorph model on images synthesized from label maps. Requires
@@ -73,7 +73,6 @@ p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
 p.add_argument('--verbose', type=int, default=0,
                help='0 silent, 1 progress, 2 one line/epoch (default: 0)')
-p.add_argument('--profile', type=str, default='0', help='batches to profile (default: off)')
 
 # network architecture parameters
 p.add_argument('--enc', type=int, nargs='+',
@@ -182,7 +181,6 @@ if arg.log_dir:
     log = tf.keras.callbacks.TensorBoard(
         log_dir=arg.log_dir,
         write_graph=False,
-        profile_batch=arg.profile,
     )
     callbacks.append(log)
 
