@@ -376,7 +376,8 @@ def edge_to_surface_pts(X_edges, nb_surface_pts=None):
     return surface_pts
 
 
-def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr=0.50001, resize_fn=None):
+def sdt_to_surface_pts(X_sdt, nb_surface_pts,
+                       surface_pts_upsample_factor=2, thr=0.50001, resize_fn=None):
     """
     Converts a signed distance transform to surface points.
     """
@@ -393,7 +394,8 @@ def sdt_to_surface_pts(X_sdt, nb_surface_pts, surface_pts_upsample_factor=2, thr
     sf_pts = edge_to_surface_pts(X_edges, nb_surface_pts=nb_surface_pts)
 
     # can't just correct by surface_pts_upsample_factor because of how interpolation works...
-    return np.stack([sf_pts[..., f] * (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)], -1)
+    l = [sf_pts[..., f] * (X_sdt.shape[f] - 1) / (X_edges.shape[f] - 1) for f in range(X_sdt.ndim)]
+    return np.stack(l, -1)
 
 
 def jacobian_determinant(disp):
