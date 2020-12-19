@@ -292,7 +292,8 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
 
 class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
     """
-    VoxelMorph network for semi-supervised nonlinear registration aided by surface point registration.
+    VoxelMorph network for semi-supervised nonlinear registration aided by surface point
+    registration.
     """
 
     @modelio.store_config_args
