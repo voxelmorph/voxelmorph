@@ -6,11 +6,15 @@ https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 """
 
 # internal python imports
@@ -129,8 +133,8 @@ class SpatialTransformer(Layer):
         # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
         #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
         is_matrix = (len(trf_shape) == 2) and \
-                    (trf_shape[0] in (self.ndims, self.ndims+1)) and \
-                    (trf_shape[1] == self.ndims+1)
+                    (trf_shape[0] in (self.ndims, self.ndims + 1)) and \
+                    (trf_shape[1] == self.ndims + 1)
         self.is_affine = len(trf_shape) == 1 or is_matrix
 
         # check sizes
@@ -557,17 +561,17 @@ class AffineTransformationsToMatrix(Layer):
             cosx = tf.math.cos(angle_x)
             sinx = tf.math.sin(angle_x)
             x_rot = tf.convert_to_tensor([
-                [1,    0,     0],
+                [1, 0, 0],
                 [0, cosx, -sinx],
-                [0, sinx,  cosx]
+                [0, sinx, cosx]
             ], name='x_rot')
 
             # y rotation matrix
             cosy = tf.math.cos(angle_y)
             siny = tf.math.sin(angle_y)
             y_rot = tf.convert_to_tensor([
-                [cosy,  0, siny],
-                [0,     1,    0],
+                [cosy, 0, siny],
+                [0, 1, 0],
                 [-siny, 0, cosy]
             ], name='y_rot')
 
@@ -576,8 +580,8 @@ class AffineTransformationsToMatrix(Layer):
             sinz = tf.math.sin(angle_z)
             z_rot = tf.convert_to_tensor([
                 [cosz, -sinz, 0],
-                [sinz,  cosz, 0],
-                [0,        0, 1]
+                [sinz, cosz, 0],
+                [0, 0, 1]
             ], name='z_rot')
 
             # compose matrices
@@ -602,7 +606,7 @@ class AffineTransformationsToMatrix(Layer):
             sinz = tf.math.sin(angle)
             m_rot = tf.convert_to_tensor([
                 [cosz, -sinz],
-                [sinz,  cosz]
+                [sinz, cosz]
             ], name='rot')
 
             s = vector[3] if self.scale else 1.0

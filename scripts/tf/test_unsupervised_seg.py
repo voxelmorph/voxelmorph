@@ -1,21 +1,26 @@
 #!/usr/bin/env python
 
 """
-Example script to test a segmentation network trained in an unsupervised fashion,
-using a probabilistic atlas and unlabeled scans.
+Example script to test a segmentation network trained in an unsupervised fashion, using a
+probabilistic atlas and unlabeled scans.
 
-If you use this code, please cite the following
-    Unsupervised deep learning for Bayesian brain MRI segmentation
-    A.V. Dalca, E. Yu, P. Golland, B. Fischl, M.R. Sabuncu, J.E. Iglesias
-    MICCAI 2019. arXiv https://arxiv.org/abs/1904.11319
+If you use this code, please cite the following 
+    Unsupervised deep learning for Bayesian brain MRI segmentation 
+    A.V. Dalca, E. Yu, P. Golland, B. Fischl, M.R. Sabuncu, J.E. Iglesias 
+    MICCAI 2019.
+    arXiv https://arxiv.org/abs/1904.11319
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 """
 
 import os
@@ -66,11 +71,14 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
     Utility to build keras (gpu-runnable) functions that will warp the atlas and compute
     posteriors given the original full atlas and unnormalized log likelihood.
 
-    norm_post (True): normalize posterior? Thi sis faster on GPU, so if possible should be set to True
-    max_feats (None): since atlas van be very large, warping full atlas can run out of memory on current GPUs. 
-        Providing a number here will avoid OOM error, and will return several keras functions that each provide 
-        the posterior computation for at most max_feats nb_full_labels. Stacking the result of calling these
-        functions will provide an *unnormalized* posterior (since it can't properly normalize)
+    norm_post (True): normalize posterior? Thi sis faster on GPU, so if possible should 
+        be set to True
+    max_feats (None): since atlas van be very large, warping full atlas can run out of memory on 
+        current GPUs. 
+        Providing a number here will avoid OOM error, and will return several keras functions that 
+        each provide  the posterior computation for at most max_feats nb_full_labels. Stacking the 
+        result of calling these functions will provide an *unnormalized* posterior (since it can't
+         properly normalize)
     """
     nb_full_labels = len(mapping)
     nb_labels = np.max(mapping) + 1

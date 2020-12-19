@@ -6,11 +6,15 @@ https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 """
 
 # core python
@@ -79,7 +83,7 @@ class NCC:
         J_var = tf.maximum(J_var, self.eps)
 
         # cc = (cross * cross) / (I_var * J_var)
-        cc = (cross/I_var) * (cross/J_var)
+        cc = (cross / I_var) * (cross / J_var)
 
         # return mean cc for each entry in batch
         return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
@@ -124,7 +128,7 @@ class TukeyBiweight:
         # the tf.gather_nd returns NaN
         if np.prod(ind_below.get_shape().as_list()) > 0:
             rho_below = (self.csq / 2) * \
-                (1 - (1 - (tf.gather_nd(error_sq, ind_below)/self.csq)) ** 3)
+                (1 - (1 - (tf.gather_nd(error_sq, ind_below) / self.csq)) ** 3)
         else:
             rho_below = 0.0
         rho_above = self.csq / 2
@@ -140,7 +144,7 @@ class Dice:
 
     def loss(self, y_true, y_pred):
         ndims = len(y_pred.get_shape().as_list()) - 2
-        vol_axes = list(range(1, ndims+1))
+        vol_axes = list(range(1, ndims + 1))
 
         top = 2 * tf.reduce_sum(y_true * y_pred, vol_axes)
         bottom = tf.reduce_sum(y_true + y_pred, vol_axes)
@@ -316,7 +320,8 @@ class KL:
 
 class NMI:
 
-    def __init__(self, bin_centers, vol_size, sigma_ratio=0.5, max_clip=1, local=False, crop_background=False, patch_size=1):
+    def __init__(self, bin_centers, vol_size,
+                 sigma_ratio=0.5, max_clip=1, local=False, crop_background=False, patch_size=1):
         """
         Mutual information loss for image-image pairs.
         Author: Courtney Guo
@@ -352,9 +357,9 @@ class NMI:
         y_r = -y % patch_size
         z_r = -z % patch_size
         pad_dims = [[0, 0]]
-        pad_dims.append([x_r//2, x_r - x_r//2])
-        pad_dims.append([y_r//2, y_r - y_r//2])
-        pad_dims.append([z_r//2, z_r - z_r//2])
+        pad_dims.append([x_r // 2, x_r - x_r // 2])
+        pad_dims.append([y_r // 2, y_r - y_r // 2])
+        pad_dims.append([z_r // 2, z_r - z_r // 2])
         pad_dims.append([0, 0])
         padding = tf.constant(pad_dims)
 
@@ -366,13 +371,15 @@ class NMI:
         I_b = K.exp(- self.preterm * K.square(tf.pad(y_pred, padding, 'CONSTANT') - vbc))
         I_b /= K.sum(I_b, -1, keepdims=True)
 
-        I_a_patch = tf.reshape(I_a, [(x+x_r)//patch_size, patch_size, (y+y_r) //
-                                     patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
+        I_a_patch = tf.reshape(I_a, [(x + x_r) // patch_size, patch_size, (y + y_r) //
+                                     patch_size, patch_size, (z + z_r) // patch_size, patch_size,
+                                     self.num_bins])
         I_a_patch = tf.transpose(I_a_patch, [0, 2, 4, 1, 3, 5, 6])
         I_a_patch = tf.reshape(I_a_patch, [-1, patch_size**3, self.num_bins])
 
-        I_b_patch = tf.reshape(I_b, [(x+x_r)//patch_size, patch_size, (y+y_r) //
-                                     patch_size, patch_size, (z+z_r)//patch_size, patch_size, self.num_bins])
+        I_b_patch = tf.reshape(I_b, [(x + x_r) // patch_size, patch_size, (y + y_r) //
+                                     patch_size, patch_size, (z + z_r) // patch_size, patch_size,
+                                     self.num_bins])
         I_b_patch = tf.transpose(I_b_patch, [0, 2, 4, 1, 3, 5, 6])
         I_b_patch = tf.reshape(I_b_patch, [-1, patch_size**3, self.num_bins])
 
@@ -385,7 +392,7 @@ class NMI:
         pb = tf.reduce_mean(I_b_patch, 1, keepdims=True)
 
         papb = K.batch_dot(K.permute_dimensions(pa, (0, 2, 1)), pb) + K.epsilon()
-        return K.mean(K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1))
+        return K.mean(K.sum(K.sum(pab * K.log(pab / papb + K.epsilon()), 1), 1))
 
     def global_mi(self, y_true, y_pred):
         warnings.warn(
@@ -432,7 +439,7 @@ class NMI:
         pb = tf.reduce_mean(I_b, 1, keepdims=True)
 
         papb = K.batch_dot(K.permute_dimensions(pa, (0, 2, 1)), pb) + K.epsilon()
-        return K.sum(K.sum(pab * K.log(pab/papb + K.epsilon()), 1), 1)
+        return K.sum(K.sum(pab * K.log(pab / papb + K.epsilon()), 1), 1)
 
     def loss(self, y_true, y_pred):
         y_pred = K.clip(y_pred, 0, self.max_clip)

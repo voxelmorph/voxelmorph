@@ -1,21 +1,25 @@
 #!/usr/bin/env python
 
 """
-Example script for training semi-supervised nonlinear registration aided by
-surface point clouds generated from segmentations.
+Example script for training semi-supervised nonlinear registration aided by surface point clouds
+generated from segmentations.
 
-If you use this code, please cite the following:
-    Unsupervised Learning for Probabilistic Diffeomorphic Registration for Images and Surfaces
-    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu. 
+If you use this code, please cite the following: Unsupervised Learning for Probabilistic
+    Diffeomorphic Registration for Images and Surfaces
+    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu.
     MedIA: Medical Image Analysis. (57). pp 226-236, 2019 
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 """
 
 import os
@@ -127,8 +131,8 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (
-    args.batch_size, nb_devices)
+assert np.mod(args.batch_size, nb_devices) == 0, \
+    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
