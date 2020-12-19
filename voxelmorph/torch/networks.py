@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -73,7 +74,7 @@ class Unet(nn.Module):
         for nf in self.dec_nf[len(self.enc_nf):]:
             self.extras.append(ConvBlock(ndims, prev_nf, nf, stride=1))
             prev_nf = nf
- 
+
     def forward(self, x):
 
         # get encoder activations
@@ -102,14 +103,14 @@ class VxmDense(LoadableModel):
 
     @store_config_args
     def __init__(self,
-        inshape,
-        nb_unet_features=None,
-        nb_unet_levels=None,
-        unet_feat_mult=1,
-        int_steps=7,
-        int_downsize=2,
-        bidir=False,
-        use_probs=False):
+                 inshape,
+                 nb_unet_features=None,
+                 nb_unet_levels=None,
+                 unet_feat_mult=1,
+                 int_steps=7,
+                 int_downsize=2,
+                 bidir=False,
+                 use_probs=False):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -151,7 +152,8 @@ class VxmDense(LoadableModel):
 
         # probabilities are not supported in pytorch
         if use_probs:
-            raise NotImplementedError('Flow variance has not been implemented in pytorch - set use_probs to False')
+            raise NotImplementedError(
+                'Flow variance has not been implemented in pytorch - set use_probs to False')
 
         # configure optional resize layers
         resize = int_steps > 0 and int_downsize > 1

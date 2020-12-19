@@ -28,16 +28,16 @@ class NCC:
         # compute filters
         sum_filt = torch.ones([1, 1, *win]).to("cuda")
 
-        pad_no = math.floor(win[0]/2)
+        pad_no = math.floor(win[0] / 2)
 
         if ndims == 1:
             stride = (1)
             padding = (pad_no)
         elif ndims == 2:
-            stride = (1,1)
+            stride = (1, 1)
             padding = (pad_no, pad_no)
         else:
-            stride = (1,1,1)
+            stride = (1, 1, 1)
             padding = (pad_no, pad_no, pad_no)
 
         # get convolution function
@@ -83,7 +83,7 @@ class Dice:
 
     def loss(self, y_true, y_pred):
         ndims = len(list(y_pred.size())) - 2
-        vol_axes = list(range(2, ndims+2))
+        vol_axes = list(range(2, ndims + 2))
         top = 2 * (y_true * y_pred).sum(dim=vol_axes)
         bottom = torch.clamp((y_true + y_pred).sum(dim=vol_axes), min=1e-5)
         dice = torch.mean(top / bottom)
@@ -100,9 +100,9 @@ class Grad:
         self.loss_mult = loss_mult
 
     def loss(self, _, y_pred):
-        dy = torch.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :]) 
-        dx = torch.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :]) 
-        dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1]) 
+        dy = torch.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :])
+        dx = torch.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :])
+        dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1])
 
         if self.penalty == 'l2':
             dy = dy * dy

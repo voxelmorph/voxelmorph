@@ -93,10 +93,10 @@ def save_volfile(array, filename, affine=None):
         import nibabel as nib
         if affine is None and array.ndim >= 3:
             # use LIA transform as default affine
-            affine = np.array([[-1,  0, 0, 0], # nopep8
-                               [ 0,  0, 1, 0], # nopep8
-                               [ 0, -1, 0, 0], # nopep8
-                               [ 0,  0, 0, 1]], dtype=float) # nopep8
+            affine = np.array([[-1, 0, 0, 0],  # nopep8
+                               [0, 0, 1, 0],  # nopep8
+                               [0, -1, 0, 0],  # nopep8
+                               [0, 0, 0, 1]], dtype=float)  # nopep8
             pcrs = np.append(np.array(array.shape[:3]) / 2, 1)
             affine[:3, 3] = -np.matmul(affine, pcrs)[:3]
         nib.save(nib.Nifti1Image(array, affine), filename)

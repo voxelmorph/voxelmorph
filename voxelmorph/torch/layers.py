@@ -55,7 +55,7 @@ class VecInt(nn.Module):
 
     def __init__(self, inshape, nsteps):
         super().__init__()
-        
+
         assert nsteps >= 0, 'nsteps should be >= 0, found: %d' % nsteps
         self.nsteps = nsteps
         self.scale = 1.0 / (2 ** self.nsteps)

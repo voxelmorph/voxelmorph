@@ -51,7 +51,8 @@ class LoadableModel(nn.Module):
     # either manually or via store_config_args
     def __init__(self, *args, **kwargs):
         if not hasattr(self, 'config'):
-            raise RuntimeError('models that inherit from LoadableModel must decorate the constructor with @store_config_args')
+            raise RuntimeError(
+                'models that inherit from LoadableModel must decorate the constructor with @store_config_args')
         super().__init__(*args, **kwargs)
 
     def save(self, path):

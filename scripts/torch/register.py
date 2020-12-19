@@ -32,14 +32,15 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 import os
 import argparse
+
+# third party
 import numpy as np
 import nibabel as nib
 import torch
 
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
-import voxelmorph as vxm
-
+import voxelmorph as vxm   # nopep8
 
 # parse commandline args
 parser = argparse.ArgumentParser()
@@ -49,7 +50,8 @@ parser.add_argument('--moved', required=True, help='warped image output filename
 parser.add_argument('--model', required=True, help='pytorch model for nonlinear registration')
 parser.add_argument('--warp', help='output warp deformation filename')
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
+parser.add_argument('--multichannel', action='store_true',
+                    help='specify that data has multiple channels')
 args = parser.parse_args()
 
 # device handling
@@ -63,7 +65,8 @@ else:
 # load moving and fixed images
 add_feat_axis = not args.multichannel
 moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
+fixed, fixed_affine = vxm.py.utils.load_volfile(
+    args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
 # load and set up model
 model = vxm.networks.VxmDense.load(args.model, device)
@@ -86,4 +89,3 @@ if args.moved:
 if args.warp:
     warp = warp.detach().cpu().numpy().squeeze()
     vxm.py.utils.save_volfile(warp, args.warp, fixed_affine)
-
