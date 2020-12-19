@@ -31,8 +31,8 @@ from tensorflow.keras.layers import Layer
 # local utils
 import neurite as ne
 # TODO: simply import utils and use utils.is_affine, etc...
-from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity, affine_identity_to_shift
-from .utils import transform, integrate_vec, affine_to_shift
+from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity
+from .utils import transform, integrate_vec, affine_to_shift, affine_identity_to_shift
 from . import utils
 
 
@@ -131,7 +131,8 @@ class SpatialTransformer(Layer):
         # the transform is an affine iff:
         # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
         # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
-        #   [dense with N=1, which is the only one that could have a transform shape of 2, would be of size Mx1]
+        #   [dense with N=1, which is the only one that could have a transform shape of 2,
+        #   would be of size Mx1]
         is_matrix = (len(trf_shape) == 2) and \
                     (trf_shape[0] in (self.ndims, self.ndims + 1)) and \
                     (trf_shape[1] == self.ndims + 1)
@@ -178,7 +179,7 @@ class SpatialTransformer(Layer):
             if self.add_identity:
                 trf += tf.eye(nrows, ncols, batch_shape=(tf.shape(trf)[0],))
 
-            def fun(x): return affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
+            fun = lambda x: affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
             trf = tf.map_fn(fun, trf, dtype=tf.float32)
 
         # prepare location shift
@@ -189,13 +190,14 @@ class SpatialTransformer(Layer):
 
         # map transform across batch
         if self.single_transform:
-            def fn(x): return self._single_transform([x, trf[0, :]])
+            fn = lambda x: self._single_transform([x, trf[0, :]])
             return tf.map_fn(fn, vol, dtype=tf.float32)
         else:
             return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
 
     def _single_transform(self, inputs):
-        return transform(inputs[0], inputs[1], interp_method=self.interp_method, fill_value=self.fill_value)
+        return transform(inputs[0], inputs[1],
+                         interp_method=self.interp_method, fill_value=self.fill_value)
 
 
 class VecInt(Layer):
@@ -277,7 +279,8 @@ class VecInt(Layer):
             loc_shift = tf.concat(loc_shift_lst, -1)
 
         if len(inputs) > 1:
-            assert self.out_time_pt is None, 'out_time_pt should be None if providing batch_based out_time_pt'
+            assert self.out_time_pt is None, \
+                'out_time_pt should be None if providing batch_based out_time_pt'
 
         # map transform across batch
         out = tf.map_fn(self._single_int, [loc_shift] + inputs[1:], dtype=tf.float32)

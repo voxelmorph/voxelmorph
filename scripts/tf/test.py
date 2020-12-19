@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 """
-Example script for testing quality of trained vxm models. This script iterates over a list of
-images and corresponding segmentations, registers them to an atlas, propagates segmentations
-to the atlas, and computes the dice overlap. Example usage is:
+Example script for testing quality of trained vxm models. This script iterates over a list of images
+and corresponding segmentations, registers them to an atlas, propagates segmentations to the atlas,
+and computes the dice overlap. Example usage is:
 
     test.py \
     --model models/model.h5 \
@@ -11,8 +11,8 @@ to the atlas, and computes the dice overlap. Example usage is:
     --scans data/test_scan.npz \
     --labels data/labels.npz
 
-Where each atlas and scan npz file is assumed to contain the array variables 'vol' and 'seg'.
-This script will most likely need to be customized to fit your data.
+Where each atlas and scan npz file is assumed to contain the array variables 'vol' and 'seg'. This
+script will most likely need to be customized to fit your data.
 
 If you use this code, please cite the following, and read function docs for further info/citations
     VoxelMorph: A Learning Framework for Deformable Medical Image Registration 
@@ -21,11 +21,15 @@ If you use this code, please cite the following, and read function docs for furt
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License. You may obtain a copy of the License at
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
-Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+Unless required by applicable law or agreed to in writing, software distributed under the License is
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under the
+License.
 """
 
 import os

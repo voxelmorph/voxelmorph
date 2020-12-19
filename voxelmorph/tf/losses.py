@@ -328,7 +328,9 @@ class NMI:
 
         If you use this loss function, please cite the following:
 
-        Guo, Courtney K. Multi-modal image registration with unsupervised deep learning. MEng. Thesis
+        Guo, Courtney K.
+        Multi-modal image registration with unsupervised deep learning.
+        MEng. Thesis
 
         Unsupervised Learning of Probabilistic Diffeomorphic Registration for Images and Surfaces
         Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu

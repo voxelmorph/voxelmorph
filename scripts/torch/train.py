@@ -125,8 +125,8 @@ gpus = args.gpu.split(',')
 nb_gpus = len(gpus)
 device = 'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-assert args.batch_size >= nb_gpus, 'Batch size (%d) should be no less than the number of gpus (%d)' % (
-    args.batch_size, nb_gpus)
+assert args.batch_size >= nb_gpus,
+'Batch size (%d) should be no less than the nr of gpus (%d)' % (args.batch_size, nb_gpus)
 
 # enabling cudnn determinism appears to speed up training by a lot
 torch.backends.cudnn.deterministic = not args.cudnn_nondet

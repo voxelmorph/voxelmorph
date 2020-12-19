@@ -56,8 +56,9 @@ device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 # build transfer model and warp
 with tf.device(device):
-    moved = vxm.networks.Transform(
-        moving.shape[1:-1], interp_method=args.interp, nb_feats=moving.shape[-1]).predict([moving, deform])
+    moved = vxm.networks.Transform(moving.shape[1:-1],
+                                   interp_method=args.interp,
+                                   nb_feats=moving.shape[-1]).predict([moving, deform])
 
 # save moved image
 vxm.py.utils.save_volfile(moved.squeeze(), args.moved, deform_affine)

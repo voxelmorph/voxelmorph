@@ -64,8 +64,8 @@ parser.add_argument('--no-warp-atlas', action='store_true',
                     help='disable atlas warp method within network')
 parser.add_argument('--stat-pre-warp', action='store_true',
                     help='compute gaussian stats before applying warp to atlas')
-parser.add_argument(
-    '--init-stat', help='npz file defining guesses for initial stats (with arrays init_mu and init_sigma)')
+parser.add_argument('--init-stat',
+                    help='npz file defining guesses for initial stats (with arrays init_mu and init_sigma)')  # nopep8
 
 # loss hyperparameters
 parser.add_argument('--grad-loss-weight', type=float, default=10.0,
@@ -109,8 +109,8 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (
-    args.batch_size, nb_devices)
+assert np.mod(args.batch_size, nb_devices) == 0,
+'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]

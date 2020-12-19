@@ -87,7 +87,7 @@ parser.add_argument('--dt-sigma', type=float, default=1.0,
 parser.add_argument('--kl-lambda', type=float, default=10,
                     help='prior lambda regularization for KL loss (default: 10)')
 parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
-                    help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')
+                    help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')  # nopep8
 args = parser.parse_args()
 
 # load and prepare training data

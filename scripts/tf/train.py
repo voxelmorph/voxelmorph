@@ -88,7 +88,7 @@ parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01,
 parser.add_argument('--kl-lambda', type=float, default=10,
                     help='prior lambda regularization for KL loss (default: 10)')
 parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
-                    help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')
+                    help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')  # nopep8
 args = parser.parse_args()
 
 # load and prepare training data
@@ -103,8 +103,10 @@ if args.atlas:
     # scan-to-atlas generator
     atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
                                       add_batch_axis=True, add_feat_axis=add_feat_axis)
-    generator = vxm.generators.scan_to_atlas(
-        train_vol_names, atlas, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas,
+                                             batch_size=args.batch_size,
+                                             bidir=args.bidir,
+                                             add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
     generator = vxm.generators.scan_to_scan(
@@ -121,8 +123,8 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (
-    args.batch_size, nb_devices)
+assert np.mod(args.batch_size, nb_devices) == 0,
+'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]

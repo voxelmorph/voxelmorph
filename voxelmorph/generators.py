@@ -293,7 +293,9 @@ def surf_semisupervised(
 
     # prepare surface extraction function
     std_to_surf = lambda x, y: py.utils.sdt_to_surface_pts(
-        x, y, surface_pts_upsample_factor=surface_pts_upsample_factor, thr=(1 / surface_pts_upsample_factor + 1e-5))
+        x, y,
+        surface_pts_upsample_factor=surface_pts_upsample_factor,
+        thr=(1 / surface_pts_upsample_factor + 1e-5))
 
     # prepare zeros, which will be used for outputs unused in cost functions
     zero_flow = np.zeros((batch_size, *vol_shape, len(vol_shape)))

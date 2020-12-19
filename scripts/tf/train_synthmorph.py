@@ -86,8 +86,8 @@ arg = p.parse_args()
 
 # tensorflow handling
 device, nb_devices = vxm.tf.utils.setup_device(arg.gpu)
-assert np.mod(arg.batch_size,
-              nb_devices) == 0, f'batch size {arg.batch_size} not a multiple of the number of GPUs {nb_devices}'
+assert np.mod(arg.batch_size, nb_devices) == 0, \
+    f'batch size {arg.batch_size} not a multiple of the number of GPUs {nb_devices}'
 assert tf.__version__.startswith('2'), f'TensorFlow version {tf.__version__} is not 2 or later'
 
 # prepare model directory

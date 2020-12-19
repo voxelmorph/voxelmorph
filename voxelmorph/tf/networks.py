@@ -319,8 +319,7 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
 
         sdt_shape = [int(f * sdt_vol_resize) for f in inshape]
         surface_points_shape = [nb_surface_points, len(inshape) + 1]
-        def single_pt_trf(x): return utils.point_spatial_transformer(x,
-                                                                     sdt_vol_resize=sdt_vol_resize)
+        single_pt_trf = lambda x: utils.point_spatial_transformer(x, sdt_vol_resize=sdt_vol_resize)
 
         # vxm model
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features, bidir=True, **kwargs)
@@ -407,12 +406,12 @@ class SynthMorphDense(modelio.LoadableModel):
         """
 
         # synthesis
-        def build_gen(i): return SynthMorphGenerative(inshape,
-                                                      labels_in,
-                                                      labels_out,
-                                                      id=i,
-                                                      **gen_args,
-                                                      )
+        build_gen = lambda i: SynthMorphGenerative(inshape,
+                                                   labels_in,
+                                                   labels_out,
+                                                   id=i,
+                                                   **gen_args,
+                                                   )
         gen_model_1, gen_model_2 = map(build_gen, (0, 1))
         img_1, map_1 = gen_model_1.outputs
         img_2, map_2 = gen_model_2.outputs
