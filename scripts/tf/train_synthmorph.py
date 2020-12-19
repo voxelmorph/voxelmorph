@@ -31,43 +31,59 @@ import voxelmorph as vxm
 p = argparse.ArgumentParser()
 
 # data organization parameters
-p.add_argument('--label-dir', default=None, help='path or glob pattern pointing to input label maps')
+p.add_argument('--label-dir', default=None,
+               help='path or glob pattern pointing to input label maps')
 p.add_argument('--model-dir', default='model', help='model output directory (default: model)')
-p.add_argument('--sub-dir', default=None, help='sub-directory for logging and saving model weights (default: None)')
+p.add_argument('--sub-dir', default=None,
+               help='sub-directory for logging and saving model weights (default: None)')
 p.add_argument('--log-dir', default=None, help='TensorBoard log directory (default: None)')
 
 # generation parameters
-p.add_argument('--out-labels', default='fs_labels.npy', help='labels whose overlap to optimize (default: fs_labels.npy)')
-p.add_argument('--same-subj', action='store_true', help='generate image and label-map pairs from same segmentation')
-p.add_argument('--blur-std', type=float, default=1, help='standard deviation of blurring kernel (default: 1)')
-p.add_argument('--bias-std', type=float, default=0.3, help='standard deviation of bias field (default: 0.3)')
-p.add_argument('--bias-scales', type=float, nargs='+', default=[40], help='Perlin scales of bias field (default: 40)')
-p.add_argument('--vel-std', type=float, default=0.5, help='standard deviation of velocity field (default: 0.5)')
-p.add_argument('--vel-scales', type=float, nargs='+', default=[16], help='Perlin scales of velocity field (default: 16)')
-p.add_argument('--gamma', type=float, default=0.25, help='standard deviation of gamma (default: 0.25)')
+p.add_argument('--out-labels', default='fs_labels.npy',
+               help='labels whose overlap to optimize (default: fs_labels.npy)')
+p.add_argument('--same-subj', action='store_true',
+               help='generate image and label-map pairs from same segmentation')
+p.add_argument('--blur-std', type=float, default=1,
+               help='standard deviation of blurring kernel (default: 1)')
+p.add_argument('--bias-std', type=float, default=0.3,
+               help='standard deviation of bias field (default: 0.3)')
+p.add_argument('--bias-scales', type=float, nargs='+',
+               default=[40], help='Perlin scales of bias field (default: 40)')
+p.add_argument('--vel-std', type=float, default=0.5,
+               help='standard deviation of velocity field (default: 0.5)')
+p.add_argument('--vel-scales', type=float, nargs='+',
+               default=[16], help='Perlin scales of velocity field (default: 16)')
+p.add_argument('--gamma', type=float, default=0.25,
+               help='standard deviation of gamma (default: 0.25)')
 
 # training parameters
 p.add_argument('--gpu', type=str, default=0, help='ID of GPU to use (default: 0)')
 p.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
 p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
-p.add_argument('--save-freq', type=int, default=10, help='number of epochs between model saves (default: 10)')
-p.add_argument('--reg-param', type=float, default=1, help='weight of regularization loss (default: 1)')
+p.add_argument('--save-freq', type=int, default=10,
+               help='number of epochs between model saves (default: 10)')
+p.add_argument('--reg-param', type=float, default=1,
+               help='weight of regularization loss (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-p.add_argument('--verbose', type=int, default=0, help='0 silent, 1 progress, 2 one line/epoch (default: 0)')
+p.add_argument('--verbose', type=int, default=0,
+               help='0 silent, 1 progress, 2 one line/epoch (default: 0)')
 p.add_argument('--profile', type=str, default='0', help='batches to profile (default: off)')
 
 # network architecture parameters
-p.add_argument('--enc', type=int, nargs='+', default=[64]*4, help='list of U-net encoder filters (default: 64 64 64 64)')
-p.add_argument('--dec', type=int, nargs='+', default=[64]*6, help='list of U-net decorder filters (default: 64 64 64 64 64 64)')
+p.add_argument('--enc', type=int, nargs='+',
+               default=[64] * 4, help='list of U-net encoder filters (default: 64 64 64 64)')
+p.add_argument('--dec', type=int, nargs='+',
+               default=[64] * 6, help='list of U-net decorder filters (default: 64 64 64 64 64 64)')
 p.add_argument('--int-steps', type=int, default=5, help='number of integration steps (default: 5)')
 
 arg = p.parse_args()
 
 # tensorflow handling
 device, nb_devices = vxm.tf.utils.setup_device(arg.gpu)
-assert np.mod(arg.batch_size, nb_devices) == 0, f'batch size {arg.batch_size} not a multiple of the number of GPUs {nb_devices}'
+assert np.mod(arg.batch_size,
+              nb_devices) == 0, f'batch size {arg.batch_size} not a multiple of the number of GPUs {nb_devices}'
 assert tf.__version__.startswith('2'), f'TensorFlow version {tf.__version__} is not 2 or later'
 
 # prepare model directory
@@ -100,6 +116,8 @@ gen = vxm.generators.synthmorph(
 inshape = label_maps[0].shape
 
 # custom loss
+
+
 def data_loss(_, x):
     shape = x.shape.as_list()
     assert shape[-1] % 2 == 0, f'shape {shape} incompatible with Dice loss'
@@ -107,7 +125,9 @@ def data_loss(_, x):
     true = x[..., :depth]
     pred = x[..., depth:]
     return 1 + vxm.losses.Dice().loss(true, pred)
-losses  = (data_loss, vxm.losses.Grad('l2', loss_mult=None).loss)
+
+
+losses = (data_loss, vxm.losses.Grad('l2', loss_mult=None).loss)
 weights = (1, arg.reg_param)
 
 # multi-GPU support
@@ -165,7 +185,7 @@ if arg.log_dir:
 # load weights, save and run
 if arg.init_weights:
     model.load_weights(arg.init_weights)
-model.save( save_name.format(epoch=arg.init_epoch) )
+model.save(save_name.format(epoch=arg.init_epoch))
 model.fit(
     gen,
     initial_epoch=arg.init_epoch,

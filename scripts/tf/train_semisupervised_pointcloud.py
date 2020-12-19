@@ -33,37 +33,55 @@ parser = argparse.ArgumentParser()
 # data organization parameters
 parser.add_argument('datadir', help='base data directory')
 parser.add_argument('--atlas', required=True, help='atlas filename')
-parser.add_argument('--model-dir', default='models', help='model output directory (default: models)')
-parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
-parser.add_argument('--smooth-seg', type=float, default=0.1, help='segmentation smoothness sigma (default: 0.1)')
-parser.add_argument('--labels', type=int, nargs='+', default=None, help='labels to include - by default all labels in the atlas seg are used')
+parser.add_argument('--model-dir', default='models',
+                    help='model output directory (default: models)')
+parser.add_argument('--multichannel', action='store_true',
+                    help='specify that data has multiple channels')
+parser.add_argument('--smooth-seg', type=float, default=0.1,
+                    help='segmentation smoothness sigma (default: 0.1)')
+parser.add_argument('--labels', type=int, nargs='+', default=None,
+                    help='labels to include - by default all labels in the atlas seg are used')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
 parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
-parser.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
-parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
+parser.add_argument('--epochs', type=int, default=1500,
+                    help='number of training epochs (default: 1500)')
+parser.add_argument('--steps-per-epoch', type=int, default=100,
+                    help='frequency of model saves (default: 100)')
 parser.add_argument('--load-weights', help='optional weights file to initialize with')
-parser.add_argument('--initial-epoch', type=int, default=0, help='initial epoch number (default: 0)')
+parser.add_argument('--initial-epoch', type=int, default=0,
+                    help='initial epoch number (default: 0)')
 parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 
 # network architecture parameters
-parser.add_argument('--enc', type=int, nargs='+', help='list of unet encoder filters (default: 16 32 32 32)')
-parser.add_argument('--dec', type=int, nargs='+', help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
-parser.add_argument('--int-steps', type=int, default=7, help='number of integration steps (default: 7)')
-parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample factor for integration (default: 2)')
+parser.add_argument('--enc', type=int, nargs='+',
+                    help='list of unet encoder filters (default: 16 32 32 32)')
+parser.add_argument('--dec', type=int, nargs='+',
+                    help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
+parser.add_argument('--int-steps', type=int, default=7,
+                    help='number of integration steps (default: 7)')
+parser.add_argument('--int-downsize', type=int, default=2,
+                    help='flow downsample factor for integration (default: 2)')
 parser.add_argument('--use-probs', action='store_true', help='enable probabilities')
-parser.add_argument('--surf-points', type=int, default=5000, help='number of surface points to warp (default: 5000)')
-parser.add_argument('--surf-bidir', action='store_true', help='enable surface-based bidirectional cost function')
-parser.add_argument('--sdt-resize', type=float, default=1.0, help='resize factor for distance transform (default: 1.0)')
+parser.add_argument('--surf-points', type=int, default=5000,
+                    help='number of surface points to warp (default: 5000)')
+parser.add_argument('--surf-bidir', action='store_true',
+                    help='enable surface-based bidirectional cost function')
+parser.add_argument('--sdt-resize', type=float, default=1.0,
+                    help='resize factor for distance transform (default: 1.0)')
 parser.add_argument('--num-labels', type=float, help='number of labels to sample (default: all)')
 parser.add_argument('--align-segs', action='store_true', help='only align segmentations')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient or KL loss (default: 0.01)')
-parser.add_argument('--dt-sigma', type=float, default=1.0, help='surface noise parameter (default: 1.0)')
-parser.add_argument('--kl-lambda', type=float, default=10, help='prior lambda regularization for KL loss (default: 10)')
+parser.add_argument('--image-loss', default='mse',
+                    help='image reconstruction loss - can be mse or ncc (default: mse)')
+parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01,
+                    help='weight of gradient or KL loss (default: 0.01)')
+parser.add_argument('--dt-sigma', type=float, default=1.0,
+                    help='surface noise parameter (default: 1.0)')
+parser.add_argument('--kl-lambda', type=float, default=10,
+                    help='prior lambda regularization for KL loss (default: 10)')
 parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
                     help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')
 args = parser.parse_args()
@@ -109,7 +127,8 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (args.batch_size, nb_devices)
+assert np.mod(args.batch_size, nb_devices) == 0, 'Batch size (%d) should be a multiple of the number of gpus (%d)' % (
+    args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -148,7 +167,7 @@ with tf.device(device):
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
     # base dense network is bidirectional
-    losses  = [image_loss_func, image_loss_func]
+    losses = [image_loss_func, image_loss_func]
     weights = [0.5, 0.5]
 
     # prepare deformation loss
@@ -161,7 +180,7 @@ with tf.device(device):
 
     # prepare sdt loss
     nb_dst_outputs = 2 if args.surf_bidir else 1
-    losses  += [vxm.losses.MSE().loss] * nb_dst_outputs
+    losses += [vxm.losses.MSE().loss] * nb_dst_outputs
     weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
 
     # multi-gpu support
@@ -177,9 +196,9 @@ with tf.device(device):
     model.save(save_filename.format(epoch=args.initial_epoch))
 
     model.fit_generator(generator,
-        initial_epoch=args.initial_epoch,
-        epochs=args.epochs,
-        steps_per_epoch=args.steps_per_epoch,
-        callbacks=[save_callback],
-        verbose=1
-    )
+                        initial_epoch=args.initial_epoch,
+                        epochs=args.epochs,
+                        steps_per_epoch=args.steps_per_epoch,
+                        callbacks=[save_callback],
+                        verbose=1
+                        )

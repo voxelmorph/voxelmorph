@@ -34,7 +34,8 @@ parser.add_argument('--model', required=True, help='keras model file')
 parser.add_argument('--atlas', required=True, help='atlas npz file')
 parser.add_argument('--mapping', required=True, help='atlas mapping filename')
 parser.add_argument('--gpu', help='GPU number - if not supplied, CPU is used')
-parser.add_argument("--max-feats", default=21, help='number of label posteriors to compute on GPU at once')
+parser.add_argument("--max-feats", default=21,
+                    help='number of label posteriors to compute on GPU at once')
 parser.add_argument('--warped-atlas', help='save warped atlas to output vol file')
 parser.add_argument('--posteriors', help='save posteriors to output vol file')
 parser.add_argument('--warp', help='save warp to output vol file')
@@ -55,7 +56,8 @@ for i in range(np.max(mapping.shape)):
 inshape = atlas.shape[1:-1]
 
 # load input scan
-image, affine = vxm.py.utils.load_volfile(args.image, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
+image, affine = vxm.py.utils.load_volfile(
+    args.image, add_batch_axis=True, add_feat_axis=True, ret_affine=True)
 
 
 # define an isolated method of computing posteriors
@@ -80,11 +82,11 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
     else:
         assert not norm_post, 'cannot do normalized posterior if providing max_feats'
 
-    # prepare ull and 
+    # prepare ull and
     ull = tf.placeholder(tf.float32, vol_shape + (nb_labels, ))
     input_flow = tf.placeholder(tf.float32, vol_shape + (len(vol_shape), ))
     ul_pred = K.exp(ull)
-    
+
     funcs = []
     for i in range(0, nb_full_labels, max_feats):
         end = min(i + max_feats, nb_full_labels)
@@ -98,9 +100,10 @@ def make_k_functions(vol_shape, mapping, max_feats=None, norm_post=True):
         warped = vxm.tf.ne.transform(input_atlas, input_flow, interp_method='linear', indexing='ij')
 
         # normalized posterior
-        post_lst = [ul_pred[..., this_mapping[j]] * warped[..., j] for j in range(len(this_mapping))]
+        post_lst = [ul_pred[..., this_mapping[j]] * warped[..., j]
+                    for j in range(len(this_mapping))]
         posterior = K.stack(post_lst, -1)
-        
+
         funcs.append(K.function([input_atlas, ull, input_flow], [posterior, warped]))
 
     if return_single_fn:

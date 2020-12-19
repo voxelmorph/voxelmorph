@@ -38,22 +38,29 @@ parser.add_argument('--fixed', required=True, help='fixed image (target) filenam
 parser.add_argument('--moved', required=True, help='registered image output filename')
 parser.add_argument('--model', help='initialize with prediction from pretrained vxm model')
 parser.add_argument('--warp', help='output warp filename')
-parser.add_argument('--multichannel', action='store_true', help='specify that data has multiple channels')
+parser.add_argument('--multichannel', action='store_true',
+                    help='specify that data has multiple channels')
 
 # training parameters
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
 parser.add_argument('--epochs', type=int, default=2, help='number of training epochs (default: 2)')
-parser.add_argument('--steps-per-epoch', type=int, default=100, help='frequency of model saves (default: 100)')
+parser.add_argument('--steps-per-epoch', type=int, default=100,
+                    help='frequency of model saves (default: 100)')
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.001)')
 
 # network architecture parameters
-parser.add_argument('--int-steps', type=int, default=7, help='number of integration steps (default: 7)')
-parser.add_argument('--int-downsize', type=int, default=2, help='flow downsample factor for integration (default: 2)')
-parser.add_argument('--multiplier', type=float, default=1000, help='local weight multiplier (default: 1000)')
+parser.add_argument('--int-steps', type=int, default=7,
+                    help='number of integration steps (default: 7)')
+parser.add_argument('--int-downsize', type=int, default=2,
+                    help='flow downsample factor for integration (default: 2)')
+parser.add_argument('--multiplier', type=float, default=1000,
+                    help='local weight multiplier (default: 1000)')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse', help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01, help='weight of gradient loss (default: 0.01)')
+parser.add_argument('--image-loss', default='mse',
+                    help='image reconstruction loss - can be mse or ncc (default: mse)')
+parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01,
+                    help='weight of gradient loss (default: 0.01)')
 args = parser.parse_args()
 
 # tensorflow device handling
@@ -62,7 +69,8 @@ device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 # load moving and fixed images
 add_feat_axis = not args.multichannel
 moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.py.utils.load_volfile(args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
+fixed, fixed_affine = vxm.py.utils.load_volfile(
+    args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
 with tf.device(device):
 
@@ -90,7 +98,7 @@ with tf.device(device):
     else:
         raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    losses  = [image_loss_func, vxm.losses.Grad('l2').loss]
+    losses = [image_loss_func, vxm.losses.Grad('l2').loss]
     weights = [1, args.lambda_weight]
 
     # train
