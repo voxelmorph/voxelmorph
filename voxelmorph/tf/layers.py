@@ -372,14 +372,13 @@ class ComposeTransform(Layer):
     """ 
     Composes two transforms specified by their displacements. Affine transforms
     can also be provided. If only affines are provided, the returned transform
-    is an affine, otherwise it will return a displacement field.
-
-    We have two transforms:
+    is an affine, otherwise it will return a displacement field. For example,
+    given two transforms:
 
     A --> B (so field/result is in the space of B)
     B --> C (so field/result is in the space of C)
 
-    This layer composes a new transform.
+    This layer composes a new transform:
 
     A --> C (so field/result is in the space of C)
     """
