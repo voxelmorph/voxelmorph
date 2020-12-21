@@ -601,9 +601,9 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
                                     name='comb_sigma')(stat_logssq)
 
         # unnorm loglike
-        def unnorm_loglike(I, mu, logsigmasq, use_log=True):
+        def unnorm_loglike(img, mu, logsigmasq, use_log=True):
             P = tf.distributions.Normal(mu, K.exp(logsigmasq / 2))
-            return P.log_prob(I) if use_log else P.prob(I)
+            return P.log_prob(img) if use_log else P.prob(img)
         uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
                               name='unsup_likelihood')([image, stat_mu, stat_logssq])
 

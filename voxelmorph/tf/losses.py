@@ -36,10 +36,10 @@ class NCC:
         self.win = win
         self.eps = eps
 
-    def ncc(self, I, J):
+    def ncc(self, Ii, Ji):
         # get dimension of volume
-        # assumes I, J are sized [batch_size, *vol_shape, nb_feats]
-        ndims = len(I.get_shape().as_list()) - 2
+        # assumes Ii, Ji are sized [batch_size, *vol_shape, nb_feats]
+        ndims = len(Ii.get_shape().as_list()) - 2
         assert ndims in [1, 2, 3], "volumes should be 1 to 3 dimensions. found: %d" % ndims
 
         # set window size
@@ -50,12 +50,12 @@ class NCC:
         conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
 
         # compute CC squares
-        I2 = I * I
-        J2 = J * J
-        IJ = I * J
+        I2 = Ii * Ii
+        J2 = Ji * Ji
+        IJ = Ii * Ji
 
         # compute filters
-        in_ch = J.get_shape().as_list()[-1]
+        in_ch = Ji.get_shape().as_list()[-1]
         sum_filt = tf.ones([*self.win, in_ch, 1])
         strides = 1
         if ndims > 1:
@@ -63,8 +63,8 @@ class NCC:
 
         # compute local sums via convolution
         padding = 'SAME'
-        I_sum = conv_fn(I, sum_filt, strides, padding)
-        J_sum = conv_fn(J, sum_filt, strides, padding)
+        I_sum = conv_fn(Ii, sum_filt, strides, padding)
+        J_sum = conv_fn(Ji, sum_filt, strides, padding)
         I2_sum = conv_fn(I2, sum_filt, strides, padding)
         J2_sum = conv_fn(J2, sum_filt, strides, padding)
         IJ_sum = conv_fn(IJ, sum_filt, strides, padding)

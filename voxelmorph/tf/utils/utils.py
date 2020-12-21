@@ -98,8 +98,8 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
 
         affine_matrix = tf.reshape(affine_matrix, [nb_dims, nb_dims + 1])
 
-    if not ((affine_matrix.shape[0] in [nb_dims, nb_dims + 1]) and
-            (affine_matrix.shape[1] == (nb_dims + 1))):
+    if not ((affine_matrix.shape[0] in [nb_dims, nb_dims + 1])
+            and (affine_matrix.shape[1] == (nb_dims + 1))):
         shape1 = '(%d x %d)' % (nb_dims + 1, nb_dims + 1)
         shape2 = '(%d x %s)' % (nb_dims, nb_dims + 1)
         true_shape = str(affine_matrix.shape)

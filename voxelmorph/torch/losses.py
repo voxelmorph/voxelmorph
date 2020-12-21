@@ -14,12 +14,12 @@ class NCC:
 
     def loss(self, y_true, y_pred):
 
-        I = y_true
-        J = y_pred
+        Ii = y_true
+        Ji = y_pred
 
         # get dimension of volume
-        # assumes I, J are sized [batch_size, *vol_shape, nb_feats]
-        ndims = len(list(I.size())) - 2
+        # assumes Ii, Ji are sized [batch_size, *vol_shape, nb_feats]
+        ndims = len(list(Ii.size())) - 2
         assert ndims in [1, 2, 3], "volumes should be 1 to 3 dimensions. found: %d" % ndims
 
         # set window size
@@ -44,12 +44,12 @@ class NCC:
         conv_fn = getattr(F, 'conv%dd' % ndims)
 
         # compute CC squares
-        I2 = I * I
-        J2 = J * J
-        IJ = I * J
+        I2 = Ii * Ii
+        J2 = Ji * Ji
+        IJ = Ii * Ji
 
-        I_sum = conv_fn(I, sum_filt, stride=stride, padding=padding)
-        J_sum = conv_fn(J, sum_filt, stride=stride, padding=padding)
+        I_sum = conv_fn(Ii, sum_filt, stride=stride, padding=padding)
+        J_sum = conv_fn(Ji, sum_filt, stride=stride, padding=padding)
         I2_sum = conv_fn(I2, sum_filt, stride=stride, padding=padding)
         J2_sum = conv_fn(J2, sum_filt, stride=stride, padding=padding)
         IJ_sum = conv_fn(IJ, sum_filt, stride=stride, padding=padding)
