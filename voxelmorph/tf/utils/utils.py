@@ -181,6 +181,76 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
 
 
+def batch_transform(vol, loc_shift, batch_size=None, interp_method='linear', indexing='ij', fill_value=None):
+    """ apply transform along batch. Compared to _single_transform, reshape inputs to move the 
+    batch axis to the feature/channel axis, then essentially apply single transform, and 
+    finally reshape back. Need to know/fix batch_size.
+
+    Important: loc_shift is currently implemented only for shape [B, *new_vol_shape, C, D]. 
+        to implement loc_shift size [B, *new_vol_shape, D] (as transform() supports), 
+        we need to figure out how to deal with the second-last dimension.
+
+    Args:
+        vol (Tensor): volume with size vol_shape or [B, *vol_shape, C]
+            where C is the number of channels
+        loc_shift: shift volume [B, *new_vol_shape, C, D]
+            where C is the number of channels, and D is the dimentionality len(vol_shape)
+            If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
+        interp_method (default:'linear'): 'linear', 'nearest'
+        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
+            In general, prefer to leave this 'ij'
+        fill_value (default: None): value to use for points outside the domain.
+            If None, the nearest neighbors will be used.
+
+    Return:
+        new interpolated volumes in the same size as loc_shift[0]
+
+    Keyworks:
+        interpolation, sampler, resampler, linear, bilinear
+    """
+
+    # input management
+    ndim = len(vol.shape) - 2
+    assert ndim in range(1, 4), 'Dimension {} can only be in [1, 2, 3]'.format(ndim)
+    vol_shape_tf = tf.shape(vol)
+
+    if batch_size is None:
+        batch_size = vol_shape_tf[0]
+        assert batch_size is not None, 'batch_transform: provide batch_size or valid Tensor shape'
+    else:
+        tf.debugging.assert_equal(vol_shape_tf[0],
+                                  batch_size,
+                                  message='Tensor has wrong batch size '
+                                  '{} instead of {}'.format(tf.shape(vol), batch_size))
+    BC = batch_size * vol.shape[-1]
+
+    assert len(loc_shift.shape) == ndim + 3, \
+        'vol dim {} and loc dim {} are not appropriate'.format(ndim + 2, len(loc_shift.shape))
+    assert loc_shift.shape[-1] == ndim, \
+        'Dimension check failed for ne.utils.transform(): {}D volume (shape {}) called ' \
+        'with {}D transform'.format(ndim, vol.shape[:-1], loc_shift.shape[-1])
+
+    # reshape vol [B, *vol_shape, C] --> [*vol_shape, C * B]
+    vol_reshape = K.permute_dimensions(vol, list(range(1, ndim + 2)) + [0])
+    vol_reshape = K.reshape(vol_reshape, list(vol.shape[1:ndim + 1]) + [BC])
+
+    # reshape loc_shift [B, *vol_shape, C, D] --> [*vol_shape, C * B, D]
+    loc_reshape = K.permute_dimensions(loc_shift, list(range(1, ndim + 2)) + [0] + [ndim + 2])
+    loc_reshape_shape = list(vol.shape[1:ndim + 1]) + [BC] + [loc_shift.shape[ndim + 2]]
+    loc_reshape = K.reshape(loc_reshape, loc_reshape_shape)
+
+    # transform (output is [*vol_shape, C*B])
+    vol_trf = transform(vol_reshape, loc_reshape,
+                        interp_method=interp_method, indexing=indexing, fill_value=fill_value)
+
+    # reshape vol back to [*vol_shape, C, B]
+    new_shape = tf.concat([vol_shape_tf[1:], vol_shape_tf[0:1]], 0)
+    vol_trf_reshape = K.reshape(vol_trf, new_shape)
+
+    # reshape back to [B, *vol_shape, C]
+    return K.permute_dimensions(vol_trf_reshape, [ndim + 1] + list(range(ndim + 1)))
+
+
 def compose(disp_1, disp_2, indexing='ij'):
     """
     compose two dense deformations specified by their displacements
