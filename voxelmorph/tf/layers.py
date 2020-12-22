@@ -92,7 +92,7 @@ class SpatialTransformer(Layer):
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
 
-        super(self.__class__, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def get_config(self):
         config = super().get_config().copy()
