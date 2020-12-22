@@ -137,9 +137,12 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     This is a spatial transform in the sense that at location [x] we now have the data from, 
     [x + shift] so we've moved data.
 
-    Parameters:
-        vol: volume with size vol_shape or [*vol_shape, nb_features]
-        loc_shift: shift volume [*new_vol_shape, N]
+    Args:
+        vol (Tensor): volume with size vol_shape or [*vol_shape, C]
+            where C is the number of channels
+        loc_shift: shift volume [*new_vol_shape, D] or [*new_vol_shape, C, D]
+            where C is the number of channels, and D is the dimentionality len(vol_shape)
+            If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
         interp_method (default:'linear'): 'linear', 'nearest'
         indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
             In general, prefer to leave this 'ij'
@@ -153,17 +156,26 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
         interpolation, sampler, resampler, linear, bilinear
     """
 
-    # parse shapes
+    # parse shapes.
+    # location volshape, including channels if available
+    loc_volshape = loc_shift.shape[:-1]
+    if isinstance(loc_volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
+        loc_volshape = loc_volshape.as_list()
 
-    if isinstance(loc_shift.shape, (tf.compat.v1.Dimension, tf.TensorShape)):
-        volshape = loc_shift.shape[:-1].as_list()
-    else:
-        volshape = loc_shift.shape[:-1]
-    nb_dims = len(volshape)
+    # volume dimensions
+    nb_dims = len(vol.shape) - 1
+    is_channelwise = len(loc_volshape) == (nb_dims + 1)
+    assert loc_shift.shape[-1] == nb_dims, \
+        'Dimension check failed for ne.utils.transform(): {}D volume (shape {}) called ' \
+        'with {}D transform'.format(nb_dims, vol.shape[:-1], loc_shift.shape[-1])
 
     # location should be mesh and delta
-    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)  # volume mesh
+    mesh = ne.utils.volshape_to_meshgrid(loc_volshape, indexing=indexing)  # volume mesh
     loc = [tf.cast(mesh[d], 'float32') + loc_shift[..., d] for d in range(nb_dims)]
+
+    # if channelwise location, then append the channel as part of the location lookup
+    if is_channelwise:
+        loc.append(tf.cast(mesh[-1], 'float32'))
 
     # test single
     return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
