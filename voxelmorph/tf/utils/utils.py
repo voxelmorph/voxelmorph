@@ -181,7 +181,8 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
 
 
-def batch_transform(vol, loc_shift, batch_size=None, interp_method='linear', indexing='ij', fill_value=None):
+def batch_transform(vol, loc_shift,
+                    batch_size=None, interp_method='linear', indexing='ij', fill_value=None):
     """ apply transform along batch. Compared to _single_transform, reshape inputs to move the 
     batch axis to the feature/channel axis, then essentially apply single transform, and 
     finally reshape back. Need to know/fix batch_size.
