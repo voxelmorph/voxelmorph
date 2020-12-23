@@ -226,7 +226,7 @@ def batch_transform(vol, loc_shift,
         tf.debugging.assert_equal(vol_shape_tf[0],
                                   batch_size,
                                   message='Tensor has wrong batch size '
-                                  '{} instead of {}'.format(tf.shape(vol), batch_size))
+                                  '{} instead of {}'.format(vol_shape_tf, batch_size))
     BC = batch_size * vol.shape[-1]
 
     assert len(loc_shift.shape) == ndim + 3, \
