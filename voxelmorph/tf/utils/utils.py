@@ -191,6 +191,10 @@ def batch_transform(vol, loc_shift,
         to implement loc_shift size [B, *new_vol_shape, D] (as transform() supports), 
         we need to figure out how to deal with the second-last dimension.
 
+    Other Notes:
+    - we couldn't use ne.utils.flatten_axes() because that computes the axes size from tf.shape(), 
+      whereas we get the batch size as an input to avoid 'None'
+
     Args:
         vol (Tensor): volume with size vol_shape or [B, *vol_shape, C]
             where C is the number of channels
