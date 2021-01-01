@@ -540,6 +540,14 @@ class AffineTransformationsToMatrix(Layer):
 
         super().__init__(**kwargs)
 
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'ndims': self.ndims,
+            'scale': self.scale,
+        })
+        return config
+
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.ndims * (self.ndims + 1))
 

@@ -59,6 +59,7 @@ class VxmDense(modelio.LoadableModel):
                  trg_feats=1,
                  unet_half_res=False,
                  input_model=None,
+                 fill_value=None,
                  name='vxm_dense'):
         """ 
         Parameters:
@@ -161,11 +162,15 @@ class VxmDense(modelio.LoadableModel):
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(
-            interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
+            interp_method='linear', 
+            indexing='ij', 
+            fill_value=fill_value,
+            name='%s_transformer' % name)([source, pos_flow])
         if bidir:
             st_inputs = [target, neg_flow]
             y_target = layers.SpatialTransformer(interp_method='linear',
                                                  indexing='ij',
+                                                 fill_value=fill_value,
                                                  name='%s_neg_transformer' % name)(st_inputs)
 
         # initialize the keras model
