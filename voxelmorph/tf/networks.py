@@ -927,6 +927,8 @@ class Unet(tf.keras.Model):
                  nb_conv_per_level=1,
                  do_res=False,
                  half_res=False,
+                 hyp_input=None,
+                 hyp_tensor=None,
                  name='unet'):
         """
         Parameters:
@@ -942,6 +944,8 @@ class Unet(tf.keras.Model):
                 Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
             half_res: Skip the last decoder upsampling. Default is False.
+            hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
+            hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -954,6 +958,10 @@ class Unet(tf.keras.Model):
         else:
             unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
             model_inputs = input_model.inputs
+
+        # add hyp_input tensor if provided
+        if hyp_input is not None:
+            model_inputs = model_inputs + [hyp_input]
 
         # default encoder and decoder layer features if nothing provided
         if nb_features is None:
@@ -992,7 +1000,7 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_enc_conv_%d_%d' % (name, level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
             enc_layers.append(last)
 
             # temporarily use maxpool since downsampling doesn't exist in keras
@@ -1004,16 +1012,16 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
             if not half_res or level < (nb_levels - 2):
                 layer_name = '%s_dec_upsample_%d' % (name, real_level)
-                last = _upsample_block(last, enc_layers.pop(),
-                                       factor=max_pool[real_level], name=layer_name)
+                last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level],
+                                       name=layer_name)
 
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
-            last = _conv_block(last, nf, name=layer_name)
+            last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
@@ -1290,19 +1298,186 @@ class SynthMorphGenerative(tf.keras.Model):
 
 
 ###############################################################################
+# HyperMorph
+###############################################################################
+
+class HyperVxmDense(modelio.LoadableModel):
+    """
+    HyperMorph-VxmDense network amortized hyperparameter learning.
+    """
+
+    @modelio.store_config_args
+    def __init__(self,
+                 inshape,
+                 nb_unet_features=None,
+                 nb_unet_levels=None,
+                 unet_feat_mult=1,
+                 nb_unet_conv_per_level=1,
+                 int_steps=7,
+                 int_downsize=2,
+                 bidir=False,
+                 use_probs=False,
+                 src_feats=1,
+                 trg_feats=1,
+                 unet_half_res=False,
+                 nb_hyp_params=1,
+                 nb_hyp_layers=4,
+                 nb_hyp_units=64,
+                 name='hyper_vxm_dense'):
+        """ 
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
+                the form [[encoder feats], [decoder feats]], or as a single integer. 
+                If None (default), the unet features are defined by the default config described in 
+                the unet class documentation.
+            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer. 
+                Default is None.
+            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an 
+                integer. Default is 1.
+            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
+                value is 0.
+            int_downsize: Integer specifying the flow downsample factor for vector integration. 
+                The flow field is not downsampled when this value is 1.
+            bidir: Enable bidirectional cost function. Default is False.
+            use_probs: Use probabilities in flow field. Default is False.
+            src_feats: Number of source image features. Default is 1.
+            trg_feats: Number of target image features. Default is 1.
+            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
+                Default is False.
+            name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
+        """
+
+        # ensure correct dimensionality
+        ndims = len(inshape)
+        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # configure default input layers if an input model is not provided
+        source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
+        target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
+        input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
+
+        # build hypernetwork
+        hyp_input = tf.keras.Input(shape=[nb_hyp_params], name='%s_hyp_input' % name)
+        hyp_last = hyp_input
+        for n in range(nb_hyp_layers):
+            hyp_last = KL.Dense(nb_hyp_units, activation='relu',
+                                name='%s_hyp_dense_%d' % (name, n + 1))(hyp_last)
+
+        # build core unet model and grab inputs
+        unet_model = Unet(
+            input_model=input_model,
+            nb_features=nb_unet_features,
+            nb_levels=nb_unet_levels,
+            feat_mult=unet_feat_mult,
+            nb_conv_per_level=nb_unet_conv_per_level,
+            half_res=unet_half_res,
+            hyp_input=hyp_input,
+            hyp_tensor=hyp_last,
+            name='%s_unet' % name
+        )
+
+        # transform unet output into a flow field
+        Conv = getattr(ne.layers, 'HyperConv%dDFromDense' % ndims)
+        flow_mean = Conv(ndims, kernel_size=3, padding='same',
+                         name='%s_flow' % name)([unet_model.output, hyp_last])
+
+        # optionally include probabilities
+        if use_probs:
+            # initialize the velocity variance very low, to start stable
+            flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
+                                 name='%s_log_sigma' % name)([unet_model.output, hyp_last])
+            flow_params = KL.concatenate([flow_mean, flow_logsigma], name='%s_prob_concat' % name)
+            flow_inputs = [flow_mean, flow_logsigma]
+            flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)(flow_inputs)
+        else:
+            flow_params = flow_mean
+            flow = flow_mean
+
+        if not unet_half_res:
+            # optionally resize for integration
+            if int_steps > 0 and int_downsize > 1:
+                flow = layers.RescaleTransform(1 / int_downsize, name='%s_flow_resize' % name)(flow)
+
+        preint_flow = flow
+
+        # optionally negate flow for bidirectional model
+        pos_flow = flow
+        if bidir:
+            neg_flow = ne.layers.Negate(name='%s_neg_flow' % name)(flow)
+
+        # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
+        if int_steps > 0:
+            pos_flow = layers.VecInt(method='ss',
+                                     name='%s_flow_int' % name,
+                                     int_steps=int_steps)(pos_flow)
+            if bidir:
+                neg_flow = layers.VecInt(method='ss',
+                                         name='%s_neg_flow_int' % name,
+                                         int_steps=int_steps)(neg_flow)
+
+            # resize to final resolution
+            if int_downsize > 1:
+                pos_flow = layers.RescaleTransform(
+                    int_downsize, name='%s_diffflow' % name)(pos_flow)
+                if bidir:
+                    neg_flow = layers.RescaleTransform(
+                        int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
+
+        # warp image with flow field
+        y_source = layers.SpatialTransformer(
+            interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
+        if bidir:
+            st_inputs = [target, neg_flow]
+            y_target = layers.SpatialTransformer(interp_method='linear',
+                                                 indexing='ij',
+                                                 name='%s_neg_transformer' % name)(st_inputs)
+
+        # initialize the keras model
+        outputs = [y_source, y_target] if bidir else [y_source]
+
+        if use_probs:
+            # compute loss on flow probabilities
+            outputs += [flow_params]
+        else:
+            # compute smoothness loss on pre-integrated warp
+            outputs += [preint_flow]
+
+        super().__init__(name=name, inputs=[source, target, hyp_input], outputs=outputs)
+
+        # cache pointers to layers and tensors for future reference
+        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references.hyper_val = hyp_input
+        self.references.unet_model = unet_model
+        self.references.y_source = y_source
+        self.references.y_target = y_target if bidir else None
+        self.references.pos_flow = pos_flow
+        self.references.neg_flow = neg_flow if bidir else None
+
+
+###############################################################################
 # Private functions
 ###############################################################################
 
-def _conv_block(x, nfeat, strides=1, name=None, do_res=False):
+def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
     ndims = len(x.get_shape()) - 2
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-    Conv = getattr(KL, 'Conv%dD' % ndims)
+
+    extra_conv_params = {}
+    if hyp_tensor is not None:
+        Conv = getattr(ne.layers, 'HyperConv%dDFromDense' % ndims)
+        conv_inputs = [x, hyp_tensor]
+    else:
+        Conv = getattr(KL, 'Conv%dD' % ndims)
+        extra_conv_params['kernel_initializer'] = 'he_normal'
+        conv_inputs = x
 
     convolved = Conv(nfeat, kernel_size=3, padding='same',
-                     kernel_initializer='he_normal', strides=strides, name=name)(x)
+                     strides=strides, name=name, **extra_conv_params)(conv_inputs)
     name = name + '_activation' if name else None
 
     if do_res:
@@ -1311,7 +1486,7 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False):
         print('note: this is a weird thing to do, since its not really residual training anymore')
         if nfeat != x.get_shape().as_list()[-1]:
             add_layer = Conv(nfeat, kernel_size=3, padding='same',
-                             kernel_initializer='he_normal', name='resfix_' + name)(x)
+                             name='resfix_' + name, **extra_conv_params)(conv_inputs)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
 
     return KL.LeakyReLU(0.2, name=name)(convolved)
