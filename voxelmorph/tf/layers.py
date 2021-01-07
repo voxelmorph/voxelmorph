@@ -92,7 +92,7 @@ class SpatialTransformer(Layer):
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
 
-        super(self.__class__, self).__init__(**kwargs)
+        super().__init__(**kwargs)
 
     def get_config(self):
         config = super().get_config().copy()
@@ -539,6 +539,14 @@ class AffineTransformationsToMatrix(Layer):
             raise NotImplementedError('rigid registration is limited to 3D for now')
 
         super().__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'ndims': self.ndims,
+            'scale': self.scale,
+        })
+        return config
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.ndims * (self.ndims + 1))
