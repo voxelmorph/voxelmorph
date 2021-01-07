@@ -123,8 +123,8 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0,
-'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
+assert np.mod(args.batch_size, nb_devices) == 0, \
+    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
