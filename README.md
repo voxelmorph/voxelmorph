@@ -15,6 +15,10 @@ To use the VoxelMorph library, either clone this repository and install the requ
 pip install voxelmorph
 ```
 
+## Pre-trained models
+
+See list of pre-trained models available [here](data/readme.md#models).
+
 ## Training
 
 If you would like to train your own model, you will likely need to customize some of the data loading code in `voxelmorph/generators.py` for your own datasets and data formats. However, it is possible to run many of the example scripts out-of-the-box, assuming that you have a directory containing training data files in npz (numpy) format. It's assumed that each npz file in your data folder has a `vol` parameter, which points to the numpy image data to be registered, and an optional `seg` variable, which points to a corresponding discrete segmentation (for semi-supervised learning). It's also assumed that the shape of all image data in a directory is consistent.
