@@ -116,7 +116,7 @@ We encourage users to download and process their own data. See [a list of medica
 
 # Creation of Deformable Templates
 
-We present a template consturction method in this [preprint](https://arxiv.org/abs/1908.02738): 
+We present a template construction method in this [preprint](https://arxiv.org/abs/1908.02738):
 
   *  **Learning Conditional Deformable Templates with Convolutional Networks**  
   [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)
@@ -129,6 +129,22 @@ We've also provided an unconditional atlas in `data/generated_uncond_atlas.npz.n
 Models in h5 format weights are provided for [unconditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_uncond_NCC_1500.h5), and [conditional atlas here](http://people.csail.mit.edu/adalca/voxelmorph/atlas_creation_cond_NCC_1022.h5).
 
 **Explore the atlases [interactively here](http://voxelmorph.mit.edu/atlas_creation/)** with tipiX!
+
+
+# SynthMorph
+
+SynthMorph is a strategy for learning registration without acquired imaging data, producing powerful networks agnostic to contrast induced by MRI ([eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)).
+
+We provide model files for a ["shapes" variant](sm-shapes.h5) of SynthMorph, that we train using images synthesized from random shapes only, and a ["brains" variant](sm-brains.h5), that we train using images synthesized from brain label maps. We train the brains variant by optimizing a loss term that measures volume overlap of a [selection of brain labels](fs-labels.npy). For registration with either model, please use the `register.py` script with the respective model weights.
+
+Accurate registration requires the input images to be min-max normalized, such that voxel intensities range from 0 to 1, and to be resampled in the affine space of a [reference image](ref.nii.gz). For the affine registration, we first skull-strip the images with [SAMSEG](https://surfer.nmr.mgh.harvard.edu/fswiki/Samseg), keeping brain labels only. Second, we run [mri_robust_register](https://surfer.nmr.mgh.harvard.edu/fswiki/mri_robust_register):
+
+```
+mri_robust_register --mov in.nii.gz --dst out.nii.gz --lta transform.lta --satit --iscale
+mri_robust_register --mov in.nii.gz --dst out.nii.gz --lta transform.lta --satit --iscale --ixform transform.lta --affine
+```
+
+where we replace `--satit --iscale` with `--cost NMI` for registration across MRI contrasts.
 
 
 # Contact:
