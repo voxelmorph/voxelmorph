@@ -162,8 +162,8 @@ class VxmDense(modelio.LoadableModel):
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(
-            interp_method='linear', 
-            indexing='ij', 
+            interp_method='linear',
+            indexing='ij',
             fill_value=fill_value,
             name='%s_transformer' % name)([source, pos_flow])
         if bidir:
@@ -1189,7 +1189,8 @@ class HyperVxmDense(modelio.LoadableModel):
 # Private functions
 ###############################################################################
 
-def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None):
+def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
+                include_activation=True):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -1207,7 +1208,6 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None):
 
     convolved = Conv(nfeat, kernel_size=3, padding='same',
                      strides=strides, name=name, **extra_conv_params)(conv_inputs)
-    name = name + '_activation' if name else None
 
     if do_res:
         # assert nfeat == x.get_shape()[-1], 'for residual number of features should be constant'
@@ -1218,7 +1218,11 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None):
                              name='resfix_' + name, **extra_conv_params)(conv_inputs)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
 
-    return KL.LeakyReLU(0.2, name=name)(convolved)
+    if include_activation:
+        name = name + '_activation' if name else None
+        convolved = KL.LeakyReLU(0.2, name=name)(convolved)
+
+    return convolved
 
 
 def _upsample_block(x, connection, factor=2, name=None):
