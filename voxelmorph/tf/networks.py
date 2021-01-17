@@ -33,18 +33,17 @@ import neurite as ne
 from .. import default_unet_features
 from . import layers
 from . import utils
-from . import modelio
 
 # make directly available from vxm
 ModelCheckpointParallel = ne.callbacks.ModelCheckpointParallel
 
 
-class VxmDense(modelio.LoadableModel):
+class VxmDense(ne.modelio.LoadableModel):
     """
     VoxelMorph network for (unsupervised) nonlinear registration between two images.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  nb_unet_features=None,
@@ -186,7 +185,7 @@ class VxmDense(modelio.LoadableModel):
         super().__init__(name=name, inputs=input_model.inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.unet_model = unet_model
         self.references.y_source = y_source
         self.references.y_target = y_target if bidir else None
@@ -216,12 +215,12 @@ class VxmDense(modelio.LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
+class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
     """
     VoxelMorph network for (semi-supervised) nonlinear registration between two images.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  nb_labels,
@@ -269,7 +268,7 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = vxm_model.references.pos_flow
 
     def get_registration_model(self):
@@ -295,13 +294,13 @@ class VxmDenseSemiSupervisedSeg(modelio.LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
+class VxmDenseSemiSupervisedPointCloud(ne.modelio.LoadableModel):
     """
     VoxelMorph network for semi-supervised nonlinear registration aided by surface point
     registration.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  nb_surface_points,
@@ -367,7 +366,7 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = pos_flow
 
     def get_registration_model(self):
@@ -393,13 +392,13 @@ class VxmDenseSemiSupervisedPointCloud(modelio.LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class SynthMorphDense(modelio.LoadableModel):
+class SynthMorphDense(ne.modelio.LoadableModel):
     """
     SynthMorph model for learning subject-to-subject registration from images
     with arbitrary contrasts synthesized from label maps.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self, inshape, labels_in, labels_out, reg_args={}, gen_args={}):
         """
         Parameters:
@@ -433,7 +432,7 @@ class SynthMorphDense(modelio.LoadableModel):
         super().__init__(inputs=inputs, outputs=[maps, flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.flow = flow
         self.references.gen_model_1 = gen_model_1
         self.references.gen_model_2 = gen_model_2
@@ -444,12 +443,12 @@ class SynthMorphDense(modelio.LoadableModel):
 # Instance Trainers
 ###############################################################################
 
-class InstanceDense(modelio.LoadableModel):
+class InstanceDense(ne.modelio.LoadableModel):
     """
     VoxelMorph network to perform instance-specific optimization.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self, inshape, nb_feats=1, mult=1000, int_steps=7, int_downsize=2):
         """ 
         Parameters:
@@ -489,7 +488,7 @@ class InstanceDense(modelio.LoadableModel):
                          outputs=[y_source, preint_flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = pos_flow
         self.references.flow_layer = flow_layer
         self.references.mult = mult
@@ -519,12 +518,12 @@ class InstanceDense(modelio.LoadableModel):
 # Probabilistic atlas-based segmentation
 ###############################################################################
 
-class ProbAtlasSegmentation(modelio.LoadableModel):
+class ProbAtlasSegmentation(ne.modelio.LoadableModel):
     """
     VoxelMorph network to segment images by warping a probabilistic atlas.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  nb_labels,
@@ -626,7 +625,7 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.vxm_model = vxm_model
         self.references.uloglhood = uloglhood
         self.references.stat_mu = stat_mu
@@ -650,12 +649,12 @@ class ProbAtlasSegmentation(modelio.LoadableModel):
 # Template Creation Networks
 ###############################################################################
 
-class TemplateCreation(modelio.LoadableModel):
+class TemplateCreation(ne.modelio.LoadableModel):
     """
     VoxelMorph network to generate an unconditional template image.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1,
                  **kwargs):
         """ 
@@ -700,7 +699,7 @@ class TemplateCreation(modelio.LoadableModel):
         super().__init__(inputs=[source_input], outputs=[y_source, y_target, mean_stream, pos_flow])
 
         # cache pointers to important layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.atlas_layer = atlas_layer
         self.references.atlas_tensor = atlas_tensor
         self.references.vxm_model = vxm_model
@@ -745,12 +744,12 @@ class TemplateCreation(modelio.LoadableModel):
         return tf.keras.Model(inputs=inputs, outputs=y_img).predict([src, trg, img])
 
 
-class ConditionalTemplateCreation(modelio.LoadableModel):
+class ConditionalTemplateCreation(ne.modelio.LoadableModel):
     """
     VoxelMorph network to generate an conditional template image.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  pheno_input_shape,
@@ -1306,12 +1305,12 @@ class SynthMorphGenerative(tf.keras.Model):
 # HyperMorph
 ###############################################################################
 
-class HyperVxmDense(modelio.LoadableModel):
+class HyperVxmDense(ne.modelio.LoadableModel):
     """
     HyperMorph-VxmDense network amortized hyperparameter learning.
     """
 
-    @modelio.store_config_args
+    @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
                  nb_unet_features=None,
@@ -1452,7 +1451,7 @@ class HyperVxmDense(modelio.LoadableModel):
         super().__init__(name=name, inputs=[source, target, hyp_input], outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
-        self.references = modelio.LoadableModel.ReferenceContainer()
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.hyper_val = hyp_input
         self.references.unet_model = unet_model
         self.references.y_source = y_source
