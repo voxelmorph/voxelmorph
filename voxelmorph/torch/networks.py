@@ -67,12 +67,12 @@ class Unet(nn.Module):
         enc_history = list(reversed(self.enc_nf))
         self.uparm = nn.ModuleList()
         for i, nf in enumerate(self.dec_nf[:len(self.enc_nf)]):
-            channels = prev_nf + enc_history[i] if i > 0 else prev_nf
+            channels = prev_nf + enc_history[i-1] if i > 0 else prev_nf
             self.uparm.append(ConvBlock(ndims, channels, nf, stride=1))
             prev_nf = nf
 
         # configure extra decoder convolutions (no up-sampling)
-        prev_nf += 2
+        prev_nf += enc_history[-1]
         self.extras = nn.ModuleList()
         for nf in self.dec_nf[len(self.enc_nf):]:
             self.extras.append(ConvBlock(ndims, prev_nf, nf, stride=1))
@@ -86,7 +86,7 @@ class Unet(nn.Module):
             x_enc.append(layer(x_enc[-1]))
 
         # conv, upsample, concatenate series
-        x = x_enc.pop()
+        x = torch.clone(x_enc[-1])
         for layer in self.uparm:
             x = layer(x)
             x = self.upsample(x)
