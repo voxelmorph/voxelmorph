@@ -80,6 +80,20 @@ In the original MICCAI code, the parameters were applied after the scaling of th
 
 If you use voxelmorph or some part of the code, please cite (see [bibtex](citations.bib)):
 
+  * HyperMorph, avoiding the need to tune registration hyperparameters:   
+
+    **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
+    A. Hoopes, M. Hoffmann, B. Fischl, J. Guttag, A.V. Dalca   
+    Preprint 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
+
+
+  * SynthMorph, avoiding the need to have data at training (!):  
+
+    **Learning image registration without images.**      
+    M. Hoffmann, B. Billot, J.E. Iglesias, B. Fischl, A.V. Dalca  
+    Preprint 2020. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
+
+
   * For the atlas formation model:  
   
     **Learning Conditional Deformable Templates with Convolutional Networks**  
@@ -119,12 +133,6 @@ We encourage users to download and process their own data. See [a list of medica
 
 
 # Creation of Deformable Templates
-
-We present a template construction method in this [preprint](https://arxiv.org/abs/1908.02738):
-
-  *  **Learning Conditional Deformable Templates with Convolutional Networks**  
-  [Adrian V. Dalca](http://adalca.mit.edu), [Marianne Rakic](https://mariannerakic.github.io/), [John Guttag](https://people.csail.mit.edu/guttag/), [Mert R. Sabuncu](http://sabuncu.engineering.cornell.edu/)
-  NeurIPS 2019. [eprint arXiv:1908.02738](https://arxiv.org/abs/1908.02738)
 
 To experiment with this method, please use `train_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
 
