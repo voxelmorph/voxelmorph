@@ -84,14 +84,14 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
 
     **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
     A. Hoopes, M. Hoffmann, B. Fischl, J. Guttag, A.V. Dalca   
-    Preprint 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
+    Preprint. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
 
   * SynthMorph, avoiding the need to have data at training (!):  
 
     **Learning image registration without images.**      
     M. Hoffmann, B. Billot, J.E. Iglesias, B. Fischl, A.V. Dalca  
-    Preprint 2020. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
+    Preprint. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
 
   * For the atlas formation model:  
