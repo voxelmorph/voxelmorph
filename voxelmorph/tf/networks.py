@@ -411,8 +411,8 @@ class SynthMorphDense(modelio.LoadableModel):
         """
 
         # synthesis
-        gen_model_1 = ne.models.synth(inshape, labels_in, labels_out, id=1, **gen_args)
-        gen_model_2 = ne.models.synth(inshape, labels_in, labels_out, id=2, **gen_args)
+        gen_model_1 = ne.models.label_to_image(inshape, labels_in, labels_out, id=1, **gen_args)
+        gen_model_2 = ne.models.label_to_image(inshape, labels_in, labels_out, id=2, **gen_args)
         img_1, map_1 = gen_model_1.outputs
         img_2, map_2 = gen_model_2.outputs
 
