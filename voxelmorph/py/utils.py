@@ -28,6 +28,43 @@ def get_backend():
     return 'pytorch' if os.environ.get('VXM_BACKEND') == 'pytorch' else 'tensorflow'
 
 
+def read_file_list(filename, prefix=None, suffix=None):
+    '''
+    Reads a list of files from a line-seperated text file.
+
+    Parameters:
+        filename: Filename to load.
+        prefix: File prefix. Default is None.
+        suffix: File suffix. Default is None.
+    '''
+    with open(filename, 'r') as file:
+        content = file.readlines()
+    filelist = [x.strip() for x in content if x.strip()]
+    if prefix is not None:
+        filelist = [prefix + f for f in filelist]
+    if suffix is not None:
+        filelist = [f + suffix for f in filelist]
+    return filelist
+
+
+def read_pair_list(filename, delim=None, prefix=None, suffix=None):
+    '''
+    Reads a list of registration file pairs from a line-seperated text file.
+
+    Parameters:
+        filename: Filename to load.
+        delim: File pair delimiter. Default is a whitespace seperator (None).
+        prefix: File prefix. Default is None.
+        suffix: File suffix. Default is None.
+    '''
+    pairlist = [f.split(delim) for f in read_file_list(filename)]
+    if prefix is not None:
+        pairlist = [[prefix + f for f in pair] for pair in pairlist]
+    if suffix is not None:
+        pairlist = [[f + suffix for f in pair] for pair in pairlist]
+    return pairlist
+
+
 def load_volfile(
     filename,
     np_var='vol',
@@ -50,6 +87,9 @@ def load_volfile(
         resize: Volume resize factor. Default is 1
         ret_affine: Additionally returns the affine transform (or None if it doesn't exist).
     """
+    if not os.path.isfile(filename):
+        raise ValueError("'%s' is not a file." % filename)
+
     if filename.endswith(('.nii', '.nii.gz', '.mgz')):
         import nibabel as nib
         img = nib.load(filename)
@@ -202,10 +242,22 @@ def resize(array, factor):
         return scipy.ndimage.interpolation.zoom(array, dim_factors, order=0)
 
 
-def dice(array1, array2, labels):
+def dice(array1, array2, labels=None, include_zero=False):
     """
     Computes the dice overlap between two arrays for a given set of integer labels.
+
+    Parameters:
+        array1: Input array 1.
+        array2: Input array 2.
+        labels: List of labels to compute dice on. If None, all labels will be used.
+        include_zero: Include label 0 in label list. Default is False.
     """
+    if labels is None:
+        labels = np.concatenate([np.unique(a) for a in [array1, array2]])
+        labels = np.sort(np.unique(labels))
+    if not include_zero:
+        labels = np.delete(labels, np.argwhere(labels == 0)) 
+
     dicem = np.zeros(len(labels))
     for idx, label in enumerate(labels):
         top = 2 * np.sum(np.logical_and(array1 == label, array2 == label))

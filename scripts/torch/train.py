@@ -3,16 +3,14 @@
 """
 Example script to train a VoxelMorph model.
 
-For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside
-each folder are normalized T1 volumes and segmentations in npz (numpy) format. You will have to
-customize this script slightly to accommodate your own data. All images should be appropriately
-cropped and scaled to values between 0 and 1.
+You will likely have to customize this script slightly to accommodate your own data. All images
+should be appropriately cropped and scaled to values between 0 and 1.
 
 If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed.
 Otherwise, registration will be scan-to-scan.
 
+If you use this code, please cite the following, and read function docs for further info/citations.
 
-If you use this code, please cite the following, and read function docs for further info/citations
     VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
     Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8). pp
     1788-1800. 2019. 
@@ -39,7 +37,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import time
 import numpy as np
 import torch
@@ -52,7 +49,9 @@ import voxelmorph as vxm  # nopep8
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
 parser.add_argument('--atlas', help='atlas filename (default: data/atlas_norm.npz)')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
@@ -94,9 +93,9 @@ args = parser.parse_args()
 bidir = args.bidir
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
@@ -105,13 +104,13 @@ if args.atlas:
     # scan-to-atlas generator
     atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
                                       add_batch_axis=True, add_feat_axis=add_feat_axis)
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas,
+    generator = vxm.generators.scan_to_atlas(train_files, atlas,
                                              batch_size=args.batch_size, bidir=args.bidir,
                                              add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
     generator = vxm.generators.scan_to_scan(
-        train_vol_names, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+        train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -125,8 +124,8 @@ gpus = args.gpu.split(',')
 nb_gpus = len(gpus)
 device = 'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-assert args.batch_size >= nb_gpus,
-'Batch size (%d) should be no less than the nr of gpus (%d)' % (args.batch_size, nb_gpus)
+assert np.mod(args.batch_size, nb_gpus) == 0, \
+    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
 # enabling cudnn determinism appears to speed up training by a lot
 torch.backends.cudnn.deterministic = not args.cudnn_nondet
@@ -184,7 +183,12 @@ weights += [args.weight]
 for epoch in range(args.initial_epoch, args.epochs):
 
     # save model checkpoint
-    model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+    if epoch % 20 == 0:
+        model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+
+    epoch_loss = []
+    epoch_total_loss = []
+    epoch_step_time = []
 
     for step in range(args.steps_per_epoch):
 
@@ -206,18 +210,23 @@ for epoch in range(args.initial_epoch, args.epochs):
             loss_list.append('%.6f' % curr_loss.item())
             loss += curr_loss
 
-        loss_info = 'loss: %.6f  (%s)' % (loss.item(), ', '.join(loss_list))
+        epoch_loss.append(loss_list)
+        epoch_total_loss.append(loss.item())
 
         # backpropagate and optimize
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-        # print step info
-        epoch_info = 'epoch: %04d' % (epoch + 1)
-        step_info = ('step: %d/%d' % (step + 1, args.steps_per_epoch)).ljust(14)
-        time_info = 'time: %.2f sec' % (time.time() - step_start_time)
-        print('  '.join((epoch_info, step_info, time_info, loss_info)), flush=True)
+        # get compute time
+        epoch_step_time.append(time.time() - step_start_time)
+
+    # print epoch info
+    epoch_info = 'epoch: %d' % (epoch + 1)
+    time_info = 'time: %.2f sec/step' % np.mean(epoch_step_time)
+    loss_info = 'loss: %.6f  (%s)' % (np.mean(epoch_total_loss),
+                                      ', '.join(np.mean(epoch_loss, axis=-1)))
+    print('  '.join((epoch_info, step_info, time_info, loss_info)), flush=True)
 
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))

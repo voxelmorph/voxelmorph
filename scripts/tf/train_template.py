@@ -3,7 +3,8 @@
 """
 Example script to train (unconditional) template creation.
 
-If you use this code, please cite the following
+If you use this code, please cite the following:
+
     Learning Conditional Deformable Templates with Convolutional Networks
     Adrian V. Dalca, Marianne Rakic, John Guttag, Mert R. Sabuncu
     NeurIPS 2019. https://arxiv.org/abs/1908.02738
@@ -24,7 +25,6 @@ the License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -36,8 +36,10 @@ tf.compat.v1.disable_eager_execution()
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
-parser.add_argument('--atlas', help='atlas filename')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
+parser.add_argument('--init-template', help='initial template image')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
 parser.add_argument('--multichannel', action='store_true',
@@ -74,9 +76,9 @@ parser.add_argument('--grad-loss-weight', type=float, default=0.01,
 args = parser.parse_args()
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # prepare model folder
 model_dir = args.model_dir
@@ -85,32 +87,30 @@ os.makedirs(model_dir, exist_ok=True)
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
 
-# prepare the initial weights for the atlas "layer"
-if args.atlas:
-    # load atlas from file
-    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
-                                      add_batch_axis=True, add_feat_axis=add_feat_axis)
+# prepare the initial weights for the template
+if args.init_template:
+    # load template from file
+    template = vxm.py.utils.load_volfile(args.init_template,
+                                         add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
-    print('creating input atlas by averaging first 100 scans')
-    atlas = 0
-    atlas_scans = train_vol_names[:100]
-    for scan in atlas_scans:
-        atlas += vxm.py.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
-    atlas /= len(atlas_scans)
+    navgs = min((100, len(train_files)))
+    print('Creating starting template by averaging first %d scans.' % navgs)
+    template = 0
+    for scan in train_files[:navgs]:
+        template += vxm.py.utils.load_volfile(scan, add_batch_axis=True,
+                                              add_feat_axis=add_feat_axis)
+    template /= navgs
 
 # save average input atlas for the record
-vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'orig_atlas.npz'))
+vxm.py.utils.save_volfile(template.squeeze(), os.path.join(model_dir, 'init_template.nii.gz'))
 
-# get atlas shape (might differ from image input shape)
-atlas_shape = atlas.shape[1:-1]
-nfeats = atlas.shape[-1]
+# get template shape (might differ from image input shape)
+template_shape = template.shape[1:-1]
+nfeats = template.shape[-1]
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-assert np.mod(args.batch_size, nb_devices) == 0, \
-    'Batch size (%d) should be a multiple of the number of gpus (%d)' % (
-        args.batch_size, nb_devices)
 
 # unet architecture
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
@@ -118,7 +118,7 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 # configure generator
 generator = vxm.generators.template_creation(
-    train_vol_names, bidir=True, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
+    train_files, bidir=True, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
 
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
@@ -128,14 +128,14 @@ with tf.device(device):
 
     # build model
     model = vxm.networks.TemplateCreation(
-        atlas_shape,
+        template_shape,
         nb_unet_features=[enc_nf, dec_nf],
         atlas_feats=nfeats,
         src_feats=nfeats
     )
 
-    # set initial atlas weights
-    model.set_atlas(atlas)
+    # set initial template weights
+    model.set_atlas(template)
 
     # load initial weights (if provided)
     if args.load_weights:
@@ -162,7 +162,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
@@ -177,4 +177,4 @@ with tf.device(device):
                         verbose=1
                         )
 
-    vxm.py.utils.save_volfile(model.get_atlas(), os.path.join(model_dir, 'final_atlas.npz'))
+    vxm.py.utils.save_volfile(model.get_atlas(), os.path.join(model_dir, 'template.nii.gz'))

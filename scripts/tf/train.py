@@ -3,16 +3,14 @@
 """
 Example script to train a VoxelMorph model.
 
-For the CVPR and MICCAI papers, we have data arranged in train, validate, and test folders. Inside
-each folder are normalized T1 volumes and segmentations in npz (numpy) format. You will have to
-customize this script slightly to accommodate your own data. All images should be appropriately
-cropped and scaled to values between 0 and 1.
+You will likely have to customize this script slightly to accommodate your own data. All images
+should be appropriately cropped and scaled to values between 0 and 1.
 
 If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed.
 Otherwise, registration will be scan-to-scan.
 
+If you use this code, please cite the following, and read function docs for further info/citations.
 
-If you use this code, please cite the following, and read function docs for further info/citations
     VoxelMorph: A Learning Framework for Deformable Medical Image Registration
     G. Balakrishnan, A. Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca.
     IEEE TMI: Transactions on Medical Imaging. 38(8). pp 1788-1800. 2019. 
@@ -39,7 +37,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -49,8 +46,10 @@ import voxelmorph as vxm
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
-parser.add_argument('--atlas', help='atlas filename')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
+parser.add_argument('--atlas', help='optional atlas filename')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
 parser.add_argument('--multichannel', action='store_true',
@@ -92,9 +91,9 @@ parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, defa
 args = parser.parse_args()
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
@@ -103,14 +102,14 @@ if args.atlas:
     # scan-to-atlas generator
     atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
                                       add_batch_axis=True, add_feat_axis=add_feat_axis)
-    generator = vxm.generators.scan_to_atlas(train_vol_names, atlas,
+    generator = vxm.generators.scan_to_atlas(train_files, atlas,
                                              batch_size=args.batch_size,
                                              bidir=args.bidir,
                                              add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
     generator = vxm.generators.scan_to_scan(
-        train_vol_names, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+        train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
 # extract shape and number of features from sampled input
 sample_shape = next(generator)[0][0].shape
@@ -181,7 +180,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 

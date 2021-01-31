@@ -25,7 +25,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -35,7 +34,9 @@ import voxelmorph as vxm
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
 parser.add_argument('--atlas', required=True, help='atlas filename')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
@@ -91,9 +92,9 @@ parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, defa
 args = parser.parse_args()
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
@@ -107,7 +108,7 @@ num_labels = args.num_labels if args.num_labels is not None else len(labels)
 
 # scan-to-atlas sdt generator
 generator = vxm.generators.surf_semisupervised(
-    train_vol_names,
+    train_files,
     atlas_vol,
     atlas_seg,
     nb_surface_pts=args.surf_points,
@@ -192,7 +193,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
