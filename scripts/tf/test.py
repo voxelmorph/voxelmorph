@@ -111,7 +111,8 @@ with tf.device(device):
         overlap = vxm.py.utils.dice(warped_seg, fixed_seg, labels=labels)
         dice_means.append(np.mean(overlap))
         print('Pair %d    Reg Time: %.4f    Dice: %.4f +/- %.4f' % (i + 1, reg_time,
-                                                         np.mean(overlap), np.std(overlap)))
+                                                                    np.mean(overlap),
+                                                                    np.std(overlap)))
 
 print()
 print('Avg Reg Time: %.4f +/- %.4f  (skipping first prediction)' % (np.mean(reg_times),
