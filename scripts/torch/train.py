@@ -207,7 +207,7 @@ for epoch in range(args.initial_epoch, args.epochs):
         loss_list = []
         for n, loss_function in enumerate(losses):
             curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            loss_list.append('%.6f' % curr_loss.item())
+            loss_list.append(curr_loss.item())
             loss += curr_loss
 
         epoch_loss.append(loss_list)
@@ -222,11 +222,11 @@ for epoch in range(args.initial_epoch, args.epochs):
         epoch_step_time.append(time.time() - step_start_time)
 
     # print epoch info
-    epoch_info = 'epoch: %d' % (epoch + 1)
-    time_info = 'time: %.2f sec/step' % np.mean(epoch_step_time)
-    loss_info = 'loss: %.6f  (%s)' % (np.mean(epoch_total_loss),
-                                      ', '.join(np.mean(epoch_loss, axis=-1)))
-    print('  '.join((epoch_info, step_info, time_info, loss_info)), flush=True)
+    epoch_info = 'Epoch %d/%d' % (epoch + 1, args.epochs)
+    time_info = '%.4f sec/step' % np.mean(epoch_step_time)
+    losses_info = ', '.join(['%.4e' % f for f in np.mean(epoch_loss, axis=0)])
+    loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
+    print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))

@@ -19,24 +19,39 @@ class Unet(nn.Module):
         decoder: [32, 32, 32, 32, 32, 16, 16]
     """
 
-    def __init__(self, inshape, nb_features=None, nb_levels=None, feat_mult=1):
-        super().__init__()
+    def __init__(self,
+                 inshape=None,
+                 infeats=None,
+                 nb_features=None,
+                 nb_levels=None,
+                 max_pool=2,
+                 feat_mult=1,
+                 nb_conv_per_level=1,
+                 half_res=False):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
+            infeats: Number of input features.
             nb_features: Unet convolutional features. Can be specified via a list of lists with
                 the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config 
-                described in the class documentation.
+                If None (default), the unet features are defined by the default config described in 
+                the class documentation.
             nb_levels: Number of levels in unet. Only used when nb_features is an integer. 
                 Default is None.
             feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
                 Default is 1.
+            nb_conv_per_level: Number of convolutions per unet level. Default is 1.
+            half_res: Skip the last decoder upsampling. Default is False.
         """
+
+        super().__init__()
 
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # cache some parameters
+        self.half_res = half_res
 
         # default encoder and decoder layer features if nothing provided
         if nb_features is None:
@@ -47,54 +62,84 @@ class Unet(nn.Module):
             if nb_levels is None:
                 raise ValueError('must provide unet nb_levels if nb_features is an integer')
             feats = np.round(nb_features * feat_mult ** np.arange(nb_levels)).astype(int)
-            self.enc_nf = feats[:-1]
-            self.dec_nf = np.flip(feats)
+            nb_features = [
+                np.repeat(feats[:-1], nb_conv_per_level),
+                np.repeat(np.flip(feats), nb_conv_per_level)
+            ]
         elif nb_levels is not None:
             raise ValueError('cannot use nb_levels if nb_features is not an integer')
-        else:
-            self.enc_nf, self.dec_nf = nb_features
 
-        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        # extract any surplus (full resolution) decoder convolutions
+        enc_nf, dec_nf = nb_features
+        nb_dec_convs = len(enc_nf)
+        final_convs = dec_nf[nb_dec_convs:]
+        dec_nf = dec_nf[:nb_dec_convs]
+        self.nb_levels = int(nb_dec_convs / nb_conv_per_level) + 1
+
+        if isinstance(max_pool, int):
+            max_pool = [max_pool] * self.nb_levels
+
+        # cache downsampling / upsampling operations
+        MaxPooling = getattr(nn, 'MaxPool%dd' % ndims)
+        self.pooling = [MaxPooling(s) for s in max_pool]
+        self.upsampling = [nn.Upsample(scale_factor=s, mode='nearest') for s in max_pool]
 
         # configure encoder (down-sampling path)
-        prev_nf = 2
-        self.downarm = nn.ModuleList()
-        for nf in self.enc_nf:
-            self.downarm.append(ConvBlock(ndims, prev_nf, nf, stride=2))
-            prev_nf = nf
+        prev_nf = infeats
+        encoder_nfs = [prev_nf]
+        self.encoder = nn.ModuleList()
+        for level in range(self.nb_levels - 1):
+            convs = nn.ModuleList()
+            for conv in range(nb_conv_per_level):
+                nf = enc_nf[level * nb_conv_per_level + conv]
+                convs.append(ConvBlock(ndims, prev_nf, nf))
+                prev_nf = nf
+            self.encoder.append(convs)
+            encoder_nfs.append(prev_nf)
 
         # configure decoder (up-sampling path)
-        enc_history = list(reversed(self.enc_nf))
-        self.uparm = nn.ModuleList()
-        for i, nf in enumerate(self.dec_nf[:len(self.enc_nf)]):
-            channels = prev_nf + enc_history[i-1] if i > 0 else prev_nf
-            self.uparm.append(ConvBlock(ndims, channels, nf, stride=1))
+        encoder_nfs = np.flip(encoder_nfs)
+        self.decoder = nn.ModuleList()
+        for level in range(self.nb_levels - 1):
+            convs = nn.ModuleList()
+            for conv in range(nb_conv_per_level):
+                nf = dec_nf[level * nb_conv_per_level + conv]
+                convs.append(ConvBlock(ndims, prev_nf, nf))
+                prev_nf = nf
+            self.decoder.append(convs)
+            if not half_res or level < (self.nb_levels - 2):
+                prev_nf += encoder_nfs[level]
+
+        # now we take care of any remaining convolutions
+        self.remaining = nn.ModuleList()
+        for num, nf in enumerate(final_convs):
+            self.remaining.append(ConvBlock(ndims, prev_nf, nf))
             prev_nf = nf
 
-        # configure extra decoder convolutions (no up-sampling)
-        prev_nf += enc_history[-1]
-        self.extras = nn.ModuleList()
-        for nf in self.dec_nf[len(self.enc_nf):]:
-            self.extras.append(ConvBlock(ndims, prev_nf, nf, stride=1))
-            prev_nf = nf
+        # cache final number of features
+        self.final_nf = prev_nf
 
     def forward(self, x):
 
-        # get encoder activations
-        x_enc = [x]
-        for layer in self.downarm:
-            x_enc.append(layer(x_enc[-1]))
+        # encoder forward pass
+        x_history = [x]
+        for level, convs in enumerate(self.encoder):
+            for conv in convs:
+                x = conv(x)
+            x_history.append(x)
+            x = self.pooling[level](x)
 
-        # conv, upsample, concatenate series
-        x = torch.clone(x_enc[-1])
-        for layer in self.uparm:
-            x = layer(x)
-            x = self.upsample(x)
-            x = torch.cat([x, x_enc.pop()], dim=1)
+        # decoder forward pass with upsampling and concatenation
+        for level, convs in enumerate(self.decoder):
+            for conv in convs:
+                x = conv(x)
+            if not self.half_res or level < (self.nb_levels - 2):
+                x = self.upsampling[level](x)
+                x = torch.cat([x, x_history.pop()], dim=1)
 
-        # extra convs at full resolution
-        for layer in self.extras:
-            x = layer(x)
+        # remaining convs at full resolution
+        for conv in self.remaining:
+            x = conv(x)
 
         return x
 
@@ -110,10 +155,14 @@ class VxmDense(LoadableModel):
                  nb_unet_features=None,
                  nb_unet_levels=None,
                  unet_feat_mult=1,
+                 nb_unet_conv_per_level=1,
                  int_steps=7,
                  int_downsize=2,
                  bidir=False,
-                 use_probs=False):
+                 use_probs=False,
+                 src_feats=1,
+                 trg_feats=1,
+                 unet_half_res=False):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -125,12 +174,17 @@ class VxmDense(LoadableModel):
                 Default is None.
             unet_feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
                 Default is 1.
+            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
                 value is 0.
             int_downsize: Integer specifying the flow downsample factor for vector integration. 
                 The flow field is not downsampled when this value is 1.
             bidir: Enable bidirectional cost function. Default is False.
             use_probs: Use probabilities in flow field. Default is False.
+            src_feats: Number of source image features. Default is 1.
+            trg_feats: Number of target image features. Default is 1.
+            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
+                Default is False.
         """
         super().__init__()
 
@@ -144,14 +198,17 @@ class VxmDense(LoadableModel):
         # configure core unet model
         self.unet_model = Unet(
             inshape,
+            infeats=(src_feats + trg_feats),
             nb_features=nb_unet_features,
             nb_levels=nb_unet_levels,
-            feat_mult=unet_feat_mult
+            feat_mult=unet_feat_mult,
+            nb_conv_per_level=nb_unet_conv_per_level,
+            half_res=unet_half_res,
         )
 
         # configure unet to flow field layer
         Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.flow = Conv(self.unet_model.dec_nf[-1], ndims, kernel_size=3, padding=1)
+        self.flow = Conv(self.unet_model.final_nf, ndims, kernel_size=3, padding=1)
 
         # init flow layer with small weights and bias
         self.flow.weight = nn.Parameter(Normal(0, 1e-5).sample(self.flow.weight.shape))
@@ -162,10 +219,17 @@ class VxmDense(LoadableModel):
             raise NotImplementedError(
                 'Flow variance has not been implemented in pytorch - set use_probs to False')
 
-        # configure optional resize layers
-        resize = int_steps > 0 and int_downsize > 1
-        self.resize = layers.ResizeTransform(int_downsize, ndims) if resize else None
-        self.fullsize = layers.ResizeTransform(1 / int_downsize, ndims) if resize else None
+        # configure optional resize layers (downsize)
+        if not unet_half_res and int_steps > 0 and int_downsize > 1:
+            self.resize = layers.ResizeTransform(int_downsize, ndims)
+        else:
+            self.resize = None
+
+        # resize to full res
+        if int_steps > 0 and int_downsize > 1:
+            self.fullsize = layers.ResizeTransform(1 / int_downsize, ndims)
+        else:
+            self.fullsize = None
 
         # configure bidirectional training
         self.bidir = bidir
