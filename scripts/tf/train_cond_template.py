@@ -25,7 +25,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -35,7 +34,9 @@ import voxelmorph as vxm
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
 parser.add_argument('--pheno-csv', required=True, help='cvs file defining training data attributes')
 parser.add_argument('--atlas', help='atlas filename')
 parser.add_argument('--model-dir', default='models',
@@ -77,12 +78,12 @@ args = parser.parse_args()
 
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # load pheno attributes for the training data
-train_vol_attributes, train_vol_names = vxm.py.utils.load_pheno_csv(args.pheno_csv, train_vol_names)
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_vol_attributes, train_files = vxm.py.utils.load_pheno_csv(args.pheno_csv, train_files)
 
 # prepare model folder
 model_dir = args.model_dir
@@ -91,30 +92,31 @@ os.makedirs(model_dir, exist_ok=True)
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
 
-# prepare the initial weights for the atlas "layer"
-if args.atlas:
-    # load atlas from file
-    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
-                                      add_batch_axis=True, add_feat_axis=add_feat_axis)
+# prepare the initial weights for the template
+if args.init_template:
+    # load template from file
+    template = vxm.py.utils.load_volfile(args.init_template,
+                                         add_batch_axis=True, add_feat_axis=add_feat_axis)
 else:
     # generate rough atlas by averaging inputs
-    print('creating input atlas by averaging scans')
-    atlas = 0
-    atlas_scans = train_vol_names[:100]
-    for scan in atlas_scans:
-        atlas += vxm.py.utils.load_volfile(scan, add_batch_axis=True, add_feat_axis=add_feat_axis)
-    atlas /= len(atlas_scans)
+    navgs = min((100, len(train_files)))
+    print('Creating starting template by averaging first %d scans.' % navgs)
+    template = 0
+    for scan in train_files[:navgs]:
+        template += vxm.py.utils.load_volfile(scan, add_batch_axis=True,
+                                              add_feat_axis=add_feat_axis)
+    template /= navgs
 
-# save input atlas for the record
-vxm.py.utils.save_volfile(atlas.squeeze(), os.path.join(model_dir, 'input_atlas.npz'))
+# save input template for the record
+vxm.py.utils.save_volfile(template.squeeze(), os.path.join(model_dir, 'input_atlas.npz'))
 
-# get atlas shape
-inshape = atlas.shape[1:-1]
-nfeats = atlas.shape[-1]
+# get template shape
+inshape = template.shape[1:-1]
+nfeats = template.shape[-1]
 pheno_shape = list(train_vol_attributes.values())[0].shape
 
 # configure generator
-generator = vxm.generators.conditional_template_creation(train_vol_names, atlas,
+generator = vxm.generators.conditional_template_creation(train_files, template,
                                                          train_vol_attributes,
                                                          batch_size=args.batch_size,
                                                          add_feat_axis=add_feat_axis)
@@ -167,7 +169,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 

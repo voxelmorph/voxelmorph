@@ -47,9 +47,7 @@ parser.add_argument('--multichannel', action='store_true',
 
 # training parameters
 parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-parser.add_argument('--epochs', type=int, default=2, help='number of training epochs (default: 2)')
-parser.add_argument('--steps-per-epoch', type=int, default=100,
-                    help='frequency of model saves (default: 100)')
+parser.add_argument('--steps', type=int, default=200, help='num training steps (default: 200)')
 parser.add_argument('--lr', type=float, default=0.001, help='learning rate (default: 0.001)')
 
 # network architecture parameters
@@ -112,8 +110,8 @@ with tf.device(device):
         [moving],
         [fixed, zeros],
         batch_size=None,
-        epochs=args.epochs,
-        steps_per_epoch=args.steps_per_epoch,
+        epochs=args.steps,
+        steps_per_epoch=1,
         verbose=1
     )
 

@@ -26,7 +26,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import backend as K
@@ -37,8 +36,9 @@ import voxelmorph as vxm
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
-parser.add_argument('--atlas', required=True, help='atlas filename')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
 parser.add_argument('--mapping', help='atlas mapping filename')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
@@ -96,12 +96,12 @@ init_mu = np.load(args.init_stat)['init_mu'] if args.init_stat else None
 init_sigma = np.load(args.init_stat)['init_sigma'] if args.init_stat else None
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # scan-to-atlas generator
-generator = vxm.generators.scan_to_atlas(train_vol_names, atlas, batch_size=args.batch_size)
+generator = vxm.generators.scan_to_atlas(train_files, atlas, batch_size=args.batch_size)
 
 # prepare model folder
 model_dir = args.model_dir
@@ -153,7 +153,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 

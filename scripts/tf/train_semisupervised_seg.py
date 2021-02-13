@@ -25,7 +25,6 @@ the License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -35,8 +34,12 @@ import voxelmorph as vxm
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
-parser.add_argument("--labels", required=True, help='labels to use in dice loss')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-suffix', help='input image file suffix')
+parser.add_argument('--seg-suffix', help='input seg file suffix')
+parser.add_argument('--img-prefix', help='input image file prefix')
+parser.add_argument('--seg-prefix', help='input seg file prefix')
+parser.add_argument('--labels', required=True, help='label list (npy format) to use in dice loss')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
 parser.add_argument('--atlas', help='optional atlas to perform scan-to-atlas training')
@@ -71,28 +74,23 @@ parser.add_argument('--dice-loss-weight', type=float, default=0.01,
                     help='weight of dice loss (gamma) (default: 0.01)')
 args = parser.parse_args()
 
-# load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
 
-# the labels cmd argument can either specify an npz file containing a
-# list of labels or one of the following keywords for a predefined list
-if args.labels == 'hippo':
-    train_labels = np.array([17, 53])
-elif args.labels == 'ventricle':
-    train_labels = np.array([4, 43])
-elif args.labels == 'gm':
-    train_labels = np.array([3, 42])
-elif args.labels == 'wm':
-    train_labels = np.array([2, 41])
-else:
-    # otherwise assume it's a label npz file
-    train_labels = np.load(args.labels)['labels']
+# sanity check on inputs
+if args.img_prefix == args.seg_prefix and args.img_suffix == args.seg_suffix:
+    print('Error: Must provide a differing file suffix and/or prefix for images and segs.')
+    exit(1)
+train_imgs = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                         suffix=args.img_suffix)
+train_segs = vxm.py.utils.read_file_list(args.img_list, prefix=args.seg_prefix,
+                                         suffix=args.seg_suffix)
+assert len(train_imgs) > 0, 'Could not find any training data.'
+
+# load labels file
+train_labels = np.load(args.labels)
 
 # generator (scan-to-scan unless the atlas cmd argument was provided)
 generator = vxm.generators.semisupervised(
-    train_vol_names, labels=train_labels, atlas_file=args.atlas)
+    train_imgs, train_segs, labels=train_labels, atlas_file=args.atlas)
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -145,7 +143,7 @@ with tf.device(device):
         save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
         model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
     else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 

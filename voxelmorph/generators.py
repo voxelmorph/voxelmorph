@@ -9,7 +9,7 @@ from . import py
 def volgen(
     vol_names,
     batch_size=1,
-    return_segs=False,
+    segs=None,
     np_var='vol',
     pad_shape=None,
     resize_factor=1,
@@ -18,14 +18,14 @@ def volgen(
     """
     Base generator for random volume loading. Volumes can be passed as a path to
     the parent directory, a glob pattern or a list of file paths. Corresponding
-    segmentations are additionally loaded if return_segs is set to True. If
-    loading segmentations, npz files with variable names 'vol' and 'seg' are
+    segmentations are additionally loaded if `segs` is provided as alist or set to
+    True. If `segs` is True, npz files with variable names 'vol' and 'seg' are
     expected.
 
     Parameters:
         vol_names: Path, glob pattern or list of volume files to load.
         batch_size: Batch size. Default is 1.
-        return_segs: Loads corresponding segmentations. Default is False.
+        segs: Loads corresponding segmentations. Default is None.
         np_var: Name of the volume variable if loading npz files. Default is 'vol'.
         pad_shape: Zero-pads loaded volumes to a given shape. Default is None.
         resize_factor: Volume resize factor. Default is 1.
@@ -38,6 +38,9 @@ def volgen(
             vol_names = os.path.join(vol_names, '*')
         vol_names = glob.glob(vol_names)
 
+    if isinstance(segs, list) and len(segs) != len(vol_names):
+        raise ValueError('Number of image files must match number of seg files.')
+
     while True:
         # generate [batchsize] random image indices
         indices = np.random.randint(len(vol_names), size=batch_size)
@@ -49,10 +52,15 @@ def volgen(
         vols = [np.concatenate(imgs, axis=0)]
 
         # optionally load segmentations and concatenate
-        if return_segs:
+        if segs is True:
+            # assume inputs are npz files with 'seg' key
             load_params['np_var'] = 'seg'  # be sure to load seg
-            segs = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
-            vols.append(np.concatenate(segs, axis=0))
+            s = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
+            vols.append(np.concatenate(s, axis=0))
+        elif isinstance(segs, list):
+            # assume segs is a corresponding file list
+            s = [py.utils.load_volfile(segs[i], **load_params) for i in indices]
+            vols.append(np.concatenate(s, axis=0))
 
         yield tuple(vols)
 
@@ -125,20 +133,20 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, **
         yield (invols, outvols)
 
 
-def semisupervised(vol_names, labels, atlas_file=None, downsize=2):
+def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     """
     Generator for semi-supervised registration training using ground truth segmentations.
-    Scan-to-atlas training can be enabled by providing the atlas_file argument. It's
-    expected that vol_names and atlas_file are npz files with both 'vol' and 'seg' arrays.
+    Scan-to-atlas training can be enabled by providing the atlas_file argument. 
 
     Parameters:
-        vol_names: List of volume npz files to load.
+        vol_names: List of volume files to load.
+        seg_names: List of corresponding seg files to load.
         labels: Array of discrete label values to use in training.
         atlas_file: Atlas npz file for scan-to-atlas training. Default is None.
         downsize: Downsize factor for segmentations. Default is 2.
     """
     # configure base generator
-    gen = volgen(vol_names, return_segs=True, np_var='vol')
+    gen = volgen(vol_names, segs=seg_names, np_var='vol')
     zeros = None
 
     # internal utility to generate downsampled prob seg from discrete seg
@@ -327,7 +335,7 @@ def surf_semisupervised(
             atlas_surface_pts[:, srf_idx, -1] = li
 
     # generator
-    gen = volgen(vol_names, return_segs=True, batch_size=batch_size, add_feat_axis=add_feat_axis)
+    gen = volgen(vol_names, segs=True, batch_size=batch_size, add_feat_axis=add_feat_axis)
 
     assert batch_size == 1, 'only batch size 1 supported for now'
 

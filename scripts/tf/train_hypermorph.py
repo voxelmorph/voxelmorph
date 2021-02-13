@@ -26,7 +26,6 @@ License.
 import os
 import random
 import argparse
-import glob
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
@@ -39,12 +38,16 @@ tf.compat.v1.disable_v2_behavior()
 parser = argparse.ArgumentParser()
 
 # data organization parameters
-parser.add_argument('datadir', help='base data directory')
+parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+parser.add_argument('--img-prefix', help='optional input image file prefix')
+parser.add_argument('--img-suffix', help='optional input image file suffix')
 parser.add_argument('--atlas', help='atlas filename')
 parser.add_argument('--model-dir', default='models',
                     help='model output directory (default: models)')
 parser.add_argument('--multichannel', action='store_true',
                     help='specify that data has multiple channels')
+parser.add_argument('--test-reg', nargs=3,
+                    help='example registration pair and result (moving fixed moved) to test')
 
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
@@ -78,9 +81,9 @@ parser.add_argument('--oversample-rate', type=float, default=0.4,
 args = parser.parse_args()
 
 # load and prepare training data
-train_vol_names = glob.glob(os.path.join(args.datadir, '*.npz'))
-random.shuffle(train_vol_names)  # shuffle volume list
-assert len(train_vol_names) > 0, 'Could not find any training data'
+train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel
@@ -89,13 +92,13 @@ if args.atlas:
     # scan-to-atlas generator
     atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
                                       add_batch_axis=True, add_feat_axis=add_feat_axis)
-    base_generator = vxm.generators.scan_to_atlas(train_vol_names, atlas,
+    base_generator = vxm.generators.scan_to_atlas(train_files, atlas,
                                                   batch_size=args.batch_size,
                                                   add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
     base_generator = vxm.generators.scan_to_scan(
-        train_vol_names, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
+        train_files, batch_size=args.batch_size, add_feat_axis=add_feat_axis)
 
 
 # random hyperparameter generator
@@ -175,7 +178,7 @@ with tf.device(device):
 
     # save starting weights
     model.save(save_filename.format(epoch=args.initial_epoch))
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
     model.fit_generator(generator,
                         initial_epoch=args.initial_epoch,
@@ -183,3 +186,22 @@ with tf.device(device):
                         steps_per_epoch=args.steps_per_epoch,
                         callbacks=[save_callback],
                         verbose=1)
+
+    # save an example registration across lambda values
+    if args.test_reg:
+        moving = vxm.py.utils.load_volfile(args.test_reg[0], add_batch_axis=True,
+                                           add_feat_axis=add_feat_axis)
+        fixed = vxm.py.utils.load_volfile(args.test_reg[1], add_batch_axis=True,
+                                          add_feat_axis=add_feat_axis)
+        moved = []
+
+        # sweep across 20 values of lambda
+        for i, hyp in enumerate(np.linspace(0, 1, 20)):
+            hyp = np.array([[hyp]], dtype='float32')  # reformat hyperparam
+            img = model.predict([moving, fixed, hyp])[0].squeeze()
+            moved.append(img)
+
+        moved = np.stack(moved, axis=-1)
+        if moved.ndim == 3:
+            moved = np.expand_dims(moved, axis=-2)  # if 2D, ensure multi-frame nifti
+        vxm.py.utils.save_volfile(moved, args.test_reg[2])
