@@ -928,6 +928,7 @@ class Unet(tf.keras.Model):
                  half_res=False,
                  hyp_input=None,
                  hyp_tensor=None,
+                 activation_function=None,
                  name='unet'):
         """
         Parameters:
@@ -1021,6 +1022,9 @@ class Unet(tf.keras.Model):
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
             last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
+
+        if activation_function is not None:
+            last = KL.Activation(activation_function)(last)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
