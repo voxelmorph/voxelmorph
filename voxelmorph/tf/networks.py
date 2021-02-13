@@ -928,7 +928,7 @@ class Unet(tf.keras.Model):
                  half_res=False,
                  hyp_input=None,
                  hyp_tensor=None,
-                 activation_function=None,
+                 final_activation_function=None,
                  name='unet'):
         """
         Parameters:
@@ -946,6 +946,7 @@ class Unet(tf.keras.Model):
             half_res: Skip the last decoder upsampling. Default is False.
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
+            final_activation_function: if not None add an activation layer at end
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -1023,8 +1024,8 @@ class Unet(tf.keras.Model):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
             last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
 
-        if activation_function is not None:
-            last = KL.Activation(activation_function)(last)
+        if final_activation_function is not None:
+            last = KL.Activation(final_activation_function, name='Unet_final_activation')(last)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
