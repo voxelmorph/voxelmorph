@@ -1025,7 +1025,7 @@ class Unet(tf.keras.Model):
             last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
 
         if final_activation_function is not None:
-            last = KL.Activation(final_activation_function, name='Unet_final_activation')(last)
+            last = KL.Activation(final_activation_function, name='%s_final_activation' % name)(last)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
