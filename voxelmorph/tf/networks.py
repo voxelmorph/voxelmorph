@@ -1237,6 +1237,7 @@ def _upsample_block(x, connection, factor=2, name=None):
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
 
-    upsampled = UpSampling(size=(factor,) * ndims, name=name)(x)
+    size = (factor,) * ndims if ndims > 1 else factor
+    upsampled = UpSampling(size=size, name=name)(x)
     name = name + '_concat' if name else None
     return KL.concatenate([upsampled, connection], name=name)
