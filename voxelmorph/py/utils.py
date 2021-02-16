@@ -231,14 +231,18 @@ def pad(array, shape):
     return padded, slices
 
 
-def resize(array, factor):
+def resize(array, factor, batch_axis=False):
     """
     Resizes an array by a given factor. This expects the input array to include a feature dimension.
+    Use batch_axis=True to avoid resizing the first (batch) dimension.
     """
     if factor == 1:
         return array
     else:
-        dim_factors = [factor for _ in array.shape[:-1]] + [1]
+        if not batch_axis:
+            dim_factors = [factor for _ in array.shape[:-1]] + [1]
+        else:
+            dim_factors = [1] + [factor for _ in array.shape[1:-1]] + [1]
         return scipy.ndimage.interpolation.zoom(array, dim_factors, order=0)
 
 
