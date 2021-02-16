@@ -529,6 +529,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  stat_post_warp=True,
                  stat_nb_feats=16,
                  network_stat_weight=0.001,
+                 supervised_model=False,
                  **kwargs):
         """ 
         Parameters:
@@ -542,6 +543,8 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
             network_stat_weight: Relative weight of the stats learned by the network. 
                 Default is 0.001.
+            supervised_model: Whether data loss layer should be for a supervised model.
+                Default is False.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -612,14 +615,20 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                               name='unsup_likelihood')([image, stat_mu, stat_logssq])
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
-        def logsum(prob_ll, atl):
+        def log_pdf(prob_ll, atl):
+            logpdf = prob_ll + K.log(atl + K.epsilon())
+        logpdf = KL.Lambda(lambda x: log_pdf(*x), name='log_pdf')([uloglhood, warped_atlas])
+
+        def logsum(logpdf):
             # safe computation using the log sum exp trick (NOTE: this does not normalize p)
             # https://www.xarg.org/2016/06/the-log-sum-exp-trick-in-machine-learning
-            logpdf = prob_ll + K.log(atl + K.epsilon())
             alpha = tf.reduce_max(logpdf, -1, keepdims=True)
             ked = K.exp(logpdf - alpha)
             return alpha + tf.math.log(tf.reduce_sum(ked, -1, keepdims=True) + K.epsilon())
-        loss_vol = KL.Lambda(lambda x: logsum(*x))([uloglhood, warped_atlas])
+        if not supervised_model:
+            loss_vol = KL.Lambda(lambda x: logsum(*x), name='loss_vol')(logpdf)
+        else:
+            loss_vol = KL.Softmax(name='loss_vol')(logpdf)
 
         # initialize the keras model
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
