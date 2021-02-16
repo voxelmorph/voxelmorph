@@ -545,6 +545,9 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             kwargs: Forwarded to the internal VxmDense model.
         """
 
+        # needed for Normal distribution
+        import tensorflow_probability as tfp
+
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
@@ -601,7 +604,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
 
         # unnorm loglike
         def unnorm_loglike(img, mu, logsigmasq, use_log=True):
-            P = tf.distributions.Normal(mu, K.exp(logsigmasq / 2))
+            P = tfp.distributions.Normal(mu, K.exp(logsigmasq / 2))
             return P.log_prob(img) if use_log else P.prob(img)
         uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
                               name='unsup_likelihood')([image, stat_mu, stat_logssq])
