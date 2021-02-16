@@ -104,7 +104,7 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
         yield (invols, outvols)
 
 
-def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, **kwargs):
+def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, segs=None, **kwargs):
     """
     Generator for scan-to-atlas registration.
 
@@ -117,17 +117,24 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, **
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
         no_warp: Excludes null warp in output list if set to True (for affine training). 
-            Default if False.
+            Default is False.
+        segs: Load segmentations as output, for supervised training. Forwarded to the
+            internal volgen generator. Default is None.
         kwargs: Forwarded to the internal volgen generator.
     """
     shape = atlas.shape[1:-1]
     zeros = np.zeros((batch_size, *shape, len(shape)))
     atlas = np.repeat(atlas, batch_size, axis=0)
-    gen = volgen(vol_names, batch_size=batch_size, **kwargs)
+    gen = volgen(vol_names, batch_size=batch_size, segs=segs, **kwargs)
     while True:
-        scan = next(gen)[0]
+        res = next(gen)
+        scan = res[0]
         invols = [scan, atlas]
-        outvols = [atlas, scan] if bidir else [atlas]
+        if not segs:
+            outvols = [atlas, scan] if bidir else [atlas]
+        else:
+            seg = res[1]
+            outvols = [seg, scan] if bidir else [seg]
         if not no_warp:
             outvols.append(zeros)
         yield (invols, outvols)
