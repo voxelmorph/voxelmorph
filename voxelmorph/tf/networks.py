@@ -578,6 +578,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         conv = _conv_block(conv, nb_labels)
 
         Conv = getattr(KL, 'Conv%dD' % ndims)
+        MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
         weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
 
         # convolve into mu and sigma volumes
@@ -586,9 +587,10 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
                                kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
 
-        # pool to get 'final' stat
-        stat_mu = KL.GlobalMaxPooling3D(name='mu_pooling')(stat_mu_vol)
-        stat_logssq = KL.GlobalMaxPooling3D(name='logssq_pooling')(stat_logssq_vol)
+        # global pool to get 'final' stat (without reducing dimensions)
+        max_pool = [i - 2 for i in inshape]
+        stat_mu = MaxPooling(pool_size=max_pool, name='mu_pooling')(stat_mu_vol)
+        stat_logssq = MaxPooling(pool_size=max_pool, name='logssq_pooling')(stat_logssq_vol)
 
         # combine mu with initialization
         if init_mu is not None:
