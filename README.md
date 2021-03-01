@@ -84,7 +84,7 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
 
     **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
     A. Hoopes, M. Hoffmann, B. Fischl, J. Guttag, A.V. Dalca   
-    Preprint. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
+    IPMI2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
 
   * SynthMorph, avoiding the need to have data at training (!):  
