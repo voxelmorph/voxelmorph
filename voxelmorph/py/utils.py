@@ -151,19 +151,21 @@ def load_labels(arg):
     Load label maps and return a list of unique labels as well as all maps.
 
     Parameters:
-        arg: Path to folder containing label maps or string for globbing.
+        arg: Path to folder containing label maps, string for globbing, or a list of these.
 
     Returns:
         np.array: List of unique labels.
         list: List of label maps, each as a np.array.
     """
+    if not isinstance(arg, (tuple, list)):
+        arg = [arg]
+
     # List files.
     import glob
-    if os.path.isdir(arg):
-        ext = ('*.nii.gz', '*.nii', '*.mgz', '*.npy', '*.npz')
-        files = sum((glob.glob(os.path.join(arg, x)) for x in ext), [])
-    else:
-        files = glob.glob(arg)
+    ext = ('.nii.gz', '.nii', '.mgz', '.npy', '.npz')
+    files = [os.path.join(f, '*') if os.path.isdir(f) else f for f in arg]
+    files = sum((glob.glob(f) for f in files), [])
+    files = [f for f in files if f.endswith(ext)]
 
     # Load labels.
     if len(files) == 0:
@@ -173,7 +175,7 @@ def load_labels(arg):
     for f in files:
         x = np.squeeze(load_volfile(f))
         if shape is None:
-            shape = x.shape
+            shape = np.shape(x)
         if not np.issubdtype(x.dtype, np.integer):
             raise ValueError(f'file "{f}" has non-integral data type')
         if not np.all(x.shape == shape):
