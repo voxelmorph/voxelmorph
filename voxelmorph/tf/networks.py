@@ -7,7 +7,7 @@ https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 Copyright 2020 Adrian V. Dalca
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in 
-ompliance with the License. You may obtain a copy of the License at
+compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
