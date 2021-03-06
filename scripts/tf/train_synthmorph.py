@@ -29,6 +29,7 @@ import argparse
 import contextlib
 import numpy as np
 import tensorflow as tf
+import neurite as ne
 import voxelmorph as vxm
 
 
@@ -60,7 +61,7 @@ p.add_argument('--epochs', type=int, default=1500, help='training epochs (defaul
 p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
 p.add_argument('--save-freq', type=int, default=10, help='epochs between model saves (default: 10)')
-p.add_argument('--reg-param', type=float, default=1, help='regularization loss weight (default: 1)')
+p.add_argument('--reg-param', type=float, default=1., help='regularization weight (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
 p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch (default: 0)')
@@ -105,7 +106,7 @@ gen = vxm.generators.synthmorph(
     same_subj=arg.same_subj,
     flip=True,
 )
-inshape = label_maps[0].shape
+in_shape = label_maps[0].shape
 
 if arg.out_labels.endswith('.npy'):
     labels_out = np.load(arg.out_labels)
@@ -116,16 +117,6 @@ else:
     labels_out = labels_in
 
 
-# custom loss
-def data_loss(_, x):
-    shape = x.shape.as_list()
-    assert shape[-1] % 2 == 0, f'shape {shape} incompatible with Dice loss'
-    depth = shape[-1] // 2
-    true = x[..., :depth]
-    pred = x[..., depth:]
-    return 1 + vxm.losses.Dice().loss(true, pred)
-
-
 # multi-GPU support
 context = contextlib.nullcontext()
 if nb_devices > 1:
@@ -133,13 +124,10 @@ if nb_devices > 1:
 
 
 # model configuration
-reg_args = dict(
-    int_steps=arg.int_steps,
-    int_downsize=2,
-    unet_half_res=True,
-    nb_unet_features=(arg.enc, arg.dec),
-)
 gen_args = dict(
+    in_shape=in_shape,
+    in_label_list=labels_in,
+    out_label_list=labels_out,
     warp_std=arg.vel_std,
     warp_res=arg.vel_res,
     blur_std=arg.blur_std,
@@ -148,21 +136,35 @@ gen_args = dict(
     gamma_std=arg.gamma,
 )
 
+reg_args = dict(
+    inshape=in_shape,
+    int_steps=arg.int_steps,
+    int_downsize=2,
+    unet_half_res=True,
+    nb_unet_features=(arg.enc, arg.dec),
+)
+
 
 # build model
 with context:
-    model = vxm.networks.SynthMorphDense(
-        inshape,
-        labels_in,
-        labels_out,
-        reg_args=reg_args,
-        gen_args=gen_args,
-    )
-    model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr),
-        loss=(data_loss, vxm.losses.Grad('l2').loss),
-        loss_weights=(1, arg.reg_param),
-    )
+    # generation
+    gen_model_1 = ne.models.label_to_image(**gen_args, id=0)
+    gen_model_2 = ne.models.label_to_image(**gen_args, id=1)
+    ima_1, map_1 = gen_model_1.outputs
+    ima_2, map_2 = gen_model_2.outputs
+
+    # registration
+    inputs = gen_model_1.inputs + gen_model_2.inputs
+    reg_args['input_model'] = tf.keras.Model(inputs, outputs=(ima_1, ima_2))
+    model = vxm.networks.VxmDense(**reg_args)
+    flow = model.references.pos_flow
+    pred = vxm.layers.SpatialTransformer(interp_method='linear', name='pred')([map_1, flow])
+
+    # losses and compilation
+    model.add_loss(vxm.losses.Dice().loss(map_2, pred) + (1.,))
+    model.add_loss(vxm.losses.Grad('l2').loss(None, flow) * (arg.reg_param,))
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr))
+    model.summary()
 
 
 # callbacks
@@ -182,7 +184,7 @@ if arg.log_dir:
     callbacks.append(log)
 
 
-# compile and fit
+# initialize and fit
 if arg.init_weights:
     model.load_weights(arg.init_weights)
 model.save(save_name.format(epoch=arg.init_epoch))
