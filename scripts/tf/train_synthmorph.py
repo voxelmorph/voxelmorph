@@ -24,92 +24,81 @@ License.
 """
 
 import os
-import random
+import pickle
 import argparse
 import contextlib
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
 
+
 # parse command line
 p = argparse.ArgumentParser()
 
 # data organization parameters
-p.add_argument('--label-dir', default=None,
-               help='path or glob pattern pointing to input label maps')
-p.add_argument('--model-dir', default='model', help='model output directory (default: model)')
-p.add_argument('--sub-dir', default=None,
-               help='sub-directory for logging and saving model weights (default: None)')
-p.add_argument('--log-dir', default=None, help='TensorBoard log directory (default: None)')
+p.add_argument('--label-dir', nargs='+', help='path or glob pattern pointing to input label maps')
+p.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+p.add_argument('--log-dir', help='optional TensorBoard log directory')
+p.add_argument('--sub-dir', help='optional subfolder for logs and model saves')
 
 # generation parameters
-p.add_argument('--out-labels', default='fs_labels.npy',
-               help='labels whose overlap to optimize (default: fs_labels.npy)')
-p.add_argument('--same-subj', action='store_true',
-               help='generate image and label-map pairs from same segmentation')
-p.add_argument('--blur-std', type=float, default=1,
-               help='standard deviation of blurring kernel (default: 1)')
-p.add_argument('--bias-std', type=float, default=0.3,
-               help='standard deviation of bias field (default: 0.3)')
-p.add_argument('--bias-scales', type=float, nargs='+',
-               default=[40], help='Perlin scales of bias field (default: 40)')
-p.add_argument('--vel-std', type=float, default=0.5,
-               help='standard deviation of velocity field (default: 0.5)')
-p.add_argument('--vel-scales', type=float, nargs='+',
-               default=[16], help='Perlin scales of velocity field (default: 16)')
-p.add_argument('--gamma', type=float, default=0.25,
-               help='standard deviation of gamma (default: 0.25)')
+p.add_argument('--same-subj', action='store_true', help='generate image pairs from same label map')
+p.add_argument('--blur-std', type=float, default=1, help='maximum blurring std. dev. (default: 1)')
+p.add_argument('--gamma', type=float, default=0.25, help='std. dev. of gamma (default: 0.25)')
+p.add_argument('--vel-std', type=float, default=0.5, help='std. dev. of SVF (default: 0.5)')
+p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale (default: 16)')
+p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field (default: 0.3)')
+p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale (default: 40)')
+p.add_argument(
+    '--out-labels', default='fs_labels.npy',
+    help='labels whose overlap to optimize (default: fs_labels.npy)',
+)
 
 # training parameters
 p.add_argument('--gpu', type=str, default=0, help='ID of GPU to use (default: 0)')
-p.add_argument('--epochs', type=int, default=1500, help='number of training epochs (default: 1500)')
+p.add_argument('--epochs', type=int, default=1500, help='training epochs (default: 1500)')
 p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
-p.add_argument('--save-freq', type=int, default=10,
-               help='number of epochs between model saves (default: 10)')
-p.add_argument('--reg-param', type=float, default=1,
-               help='weight of regularization loss (default: 1)')
+p.add_argument('--save-freq', type=int, default=10, help='epochs between model saves (default: 10)')
+p.add_argument('--reg-param', type=float, default=1, help='regularization loss weight (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-p.add_argument('--verbose', type=int, default=0,
-               help='0 silent, 1 progress, 2 one line/epoch (default: 0)')
+p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch (default: 0)')
 
 # network architecture parameters
-p.add_argument('--enc', type=int, nargs='+',
-               default=[64] * 4, help='list of U-net encoder filters (default: 64 64 64 64)')
-p.add_argument('--dec', type=int, nargs='+',
-               default=[64] * 6, help='list of U-net decorder filters (default: 64 64 64 64 64 64)')
 p.add_argument('--int-steps', type=int, default=5, help='number of integration steps (default: 5)')
+p.add_argument(
+    '--enc', type=int, nargs='+', default=[64] * 4,
+    help='list of U-net encoder filters (default: 64 64 64 64)',
+)
+p.add_argument(
+    '--dec', type=int, nargs='+', default=[64] * 6,
+    help='list of U-net decorder filters (default: 64 64 64 64 64 64)',
+)
 
 arg = p.parse_args()
 
-# tensorflow handling
+
+# TensorFlow handling
 device, nb_devices = vxm.tf.utils.setup_device(arg.gpu)
 assert np.mod(arg.batch_size, nb_devices) == 0, \
     f'batch size {arg.batch_size} not a multiple of the number of GPUs {nb_devices}'
 assert tf.__version__.startswith('2'), f'TensorFlow version {tf.__version__} is not 2 or later'
 
-# prepare model directory
+
+# prepare directories
 if arg.sub_dir:
     arg.model_dir = os.path.join(arg.model_dir, arg.sub_dir)
 os.makedirs(arg.model_dir, exist_ok=True)
 
-# prepare logging directory
 if arg.log_dir:
     if arg.sub_dir:
         arg.log_dir = os.path.join(arg.log_dir, arg.sub_dir)
     os.makedirs(arg.log_dir, exist_ok=True)
 
+
 # labels and label maps
 labels_in, label_maps = vxm.py.utils.load_labels(arg.label_dir)
-if arg.out_labels.endswith('.npy'):
-    labels_out = np.load(arg.out_labels)
-elif arg.out_labels.endswith('.pickle'):
-    import pickle
-    with open(arg.out_labels, 'rb') as f:
-        labels_out = pickle.load(f)
-else:
-    labels_out = labels_in
 gen = vxm.generators.synthmorph(
     label_maps,
     batch_size=arg.batch_size,
@@ -118,9 +107,16 @@ gen = vxm.generators.synthmorph(
 )
 inshape = label_maps[0].shape
 
+if arg.out_labels.endswith('.npy'):
+    labels_out = np.load(arg.out_labels)
+elif arg.out_labels.endswith('.pickle'):
+    with open(arg.out_labels, 'rb') as f:
+        labels_out = pickle.load(f)
+else:
+    labels_out = labels_in
+
+
 # custom loss
-
-
 def data_loss(_, x):
     shape = x.shape.as_list()
     assert shape[-1] % 2 == 0, f'shape {shape} incompatible with Dice loss'
@@ -130,15 +126,13 @@ def data_loss(_, x):
     return 1 + vxm.losses.Dice().loss(true, pred)
 
 
-losses = (data_loss, vxm.losses.Grad('l2', loss_mult=None).loss)
-weights = (1, arg.reg_param)
-
 # multi-GPU support
 context = contextlib.nullcontext()
 if nb_devices > 1:
     context = tf.distribute.MirroredStrategy().scope()
 
-# build model
+
+# model configuration
 reg_args = dict(
     int_steps=arg.int_steps,
     int_downsize=2,
@@ -146,13 +140,16 @@ reg_args = dict(
     nb_unet_features=(arg.enc, arg.dec),
 )
 gen_args = dict(
-    warp_std_dev=arg.vel_std,
-    warp_shape_factor=arg.vel_scales,
-    blur_std_dev=arg.blur_std,
-    bias_std_dev=arg.bias_std,
-    bias_shape_factor=arg.bias_scales,
-    gamma_std_dev=arg.gamma,
+    warp_std=arg.vel_std,
+    warp_res=arg.vel_res,
+    blur_std=arg.blur_std,
+    bias_std=arg.bias_std,
+    bias_res=arg.bias_res,
+    gamma_std=arg.gamma,
 )
+
+
+# build model
 with context:
     model = vxm.networks.SynthMorphDense(
         inshape,
@@ -163,11 +160,12 @@ with context:
     )
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr),
-        loss=losses,
-        loss_weights=weights,
+        loss=(data_loss, vxm.losses.Grad('l2').loss),
+        loss_weights=(1, arg.reg_param),
     )
 
-# model-save callback
+
+# callbacks
 steps_per_epoch = 100
 save_name = os.path.join(arg.model_dir, '{epoch:04d}.h5')
 save = tf.keras.callbacks.ModelCheckpoint(
@@ -176,7 +174,6 @@ save = tf.keras.callbacks.ModelCheckpoint(
 )
 callbacks = [save]
 
-# TensorBoard callback
 if arg.log_dir:
     log = tf.keras.callbacks.TensorBoard(
         log_dir=arg.log_dir,
@@ -184,7 +181,8 @@ if arg.log_dir:
     )
     callbacks.append(log)
 
-# load weights, save and run
+
+# compile and fit
 if arg.init_weights:
     model.load_weights(arg.init_weights)
 model.save(save_name.format(epoch=arg.init_epoch))
