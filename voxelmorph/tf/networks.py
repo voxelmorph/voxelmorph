@@ -392,48 +392,6 @@ class VxmDenseSemiSupervisedPointCloud(ne.modelio.LoadableModel):
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
-class SynthMorphDense(ne.modelio.LoadableModel):
-    """
-    SynthMorph model for learning subject-to-subject registration from images
-    with arbitrary contrasts synthesized from label maps.
-    """
-
-    @ne.modelio.store_config_args
-    def __init__(self, inshape, labels_in, labels_out, reg_args={}, gen_args={}):
-        """
-        Parameters:
-            inshape: Input shape, e.g. (160, 160, 192).
-            labels_in: List of all labels included in the training segmentations.
-            labels_out: List of labels to encode in the output one-hot maps.
-            reg_args: Keyword arguments passed to the internal registration network.
-            gen_args: Keyword arguments passed to the internal generative model.
-        """
-
-        # synthesis
-        gen_model_1 = ne.models.label_to_image(inshape, labels_in, labels_out, id=1, **gen_args)
-        gen_model_2 = ne.models.label_to_image(inshape, labels_in, labels_out, id=2, **gen_args)
-        img_1, map_1 = gen_model_1.outputs
-        img_2, map_2 = gen_model_2.outputs
-
-        # prediction
-        inputs = gen_model_1.inputs + gen_model_2.inputs
-        input_model = tf.keras.Model(inputs=inputs, outputs=(img_1, img_2))
-        dense_model = VxmDense(inshape, input_model=input_model, **reg_args)
-        flow = dense_model.references.pos_flow
-
-        # transformation
-        pred = layers.SpatialTransformer(interp_method='linear', name='pred')([map_1, flow])
-        maps = KL.Concatenate(name='maps')([map_2, pred])
-        super().__init__(inputs=inputs, outputs=[maps, flow])
-
-        # cache pointers to important layers and tensors for future reference
-        self.references = ne.modelio.LoadableModel.ReferenceContainer()
-        self.references.flow = flow
-        self.references.gen_model_1 = gen_model_1
-        self.references.gen_model_2 = gen_model_2
-        self.references.dense_model = dense_model
-
-
 ###############################################################################
 # Instance Trainers
 ###############################################################################
