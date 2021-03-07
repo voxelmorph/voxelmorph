@@ -161,8 +161,8 @@ with context:
     pred = vxm.layers.SpatialTransformer(interp_method='linear', name='pred')([map_1, flow])
 
     # losses and compilation
-    model.add_loss(vxm.losses.Dice().loss(map_2, pred) + (1.,))
-    model.add_loss(vxm.losses.Grad('l2').loss(None, flow) * (arg.reg_param,))
+    model.add_loss(vxm.losses.Dice().loss(map_2, pred) + tf.repeat(1., arg.batch_size))
+    model.add_loss(vxm.losses.Grad('l2', loss_mult=arg.reg_param).loss(None, flow))
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr))
     model.summary()
 
