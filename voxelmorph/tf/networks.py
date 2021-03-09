@@ -584,7 +584,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             ked = K.exp(logpdf - alpha)
             return alpha + tf.math.log(tf.reduce_sum(ked, -1, keepdims=True) + K.epsilon())
         if not supervised_model:
-            loss_vol = KL.Lambda(lambda x: logsum(*x), name='loss_vol')(logpdf)
+            loss_vol = KL.Lambda(lambda x: logsum(x), name='loss_vol')(logpdf)
         else:
             loss_vol = KL.Softmax(name='loss_vol')(logpdf)
 
