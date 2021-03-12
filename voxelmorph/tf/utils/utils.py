@@ -62,7 +62,7 @@ def setup_device(gpuid=None):
 ###############################################################################
 
 
-def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
+def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij', add_identity=False):
     """
     transform an affine matrix to a dense location shift tensor in tensorflow
 
@@ -105,6 +105,10 @@ def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij'):
         true_shape = str(affine_matrix.shape)
         raise Exception('Affine shape should match %s or %s, but got: %s' %
                         (shape1, shape2, true_shape))
+
+    if add_identity:
+        # add identity, hence affine is a shift from identity
+        affine_matrix += tf.eye(nb_dims + 1)[:nb_dims, :]
 
     # list of volume ndgrid
     # N-long list, each entry of shape volshape
@@ -256,30 +260,49 @@ def batch_transform(vol, loc_shift,
     return K.permute_dimensions(vol_trf_reshape, [ndim + 1] + list(range(ndim + 1)))
 
 
-def compose(disp_1, disp_2, indexing='ij'):
+def compose(trfs, indexing='ij'):
     """
-    compose two dense deformations specified by their displacements
+    Compose a single transform from a series of transforms.
 
-    We have two fields
-        A --> B (so field is in space of B)
-        and
-        B --> C (so field is in the space of C)
-    this function gives a new warp field
-        A --> C (so field is in the sapce of C)
+    Supports both dense and affine transforms, and returns a dense transform unless all
+    inputs are affine. The list of transforms to compose should be in the order in which
+    they would be individually applied to an image. For example, given transforms A, B,
+    and C, to compose a single transform T, where T(x) = C(B(A(x))), the appropriate
+    function call is:
+
+    T = compose([A, B, C])
 
     Parameters:
-        disp_1: first displacement (A-->B) with size [*vol_shape, ndims]
-        disp_2: second  displacement (B-->C) with size [*vol_shape, ndims]
-        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
-            In general, prefer to leave this 'ij'
+        trfs: List of affine and/or dense transforms to compose.
 
     Returns:
-        composed field disp_3 which takes data from A to C
+        Composed transform.
     """
+    if indexing != 'ij':
+        raise ValueError('Compose transform only supports ij indexing')
 
-    assert indexing == 'ij', "currently only ij indexing is implemented in compose"
+    if len(trfs) < 2:
+        raise ValueError('Compose transform list size must be greater than 1')
 
-    return disp_2 + transform(disp_1, disp_2, interp_method='linear', indexing=indexing)
+    def ensure_dense(x, shape):
+        return affine_to_shift(x, shape, add_identity=True) if is_affine(x.shape) else x
+
+    curr = trfs[-1]
+    for nxt in reversed(trfs[:-1]):
+        # check if either transform is dense
+        found_dense = next((t for t in (nxt, curr) if not is_affine(t.shape)), None)
+        if found_dense is not None:
+            # compose dense warps
+            shape = found_dense.shape[:-1]
+            nxt = ensure_dense(nxt, shape)
+            curr = ensure_dense(curr, shape)
+            curr = curr + transform(nxt, curr, interp_method='linear', indexing=indexing)
+        else:
+            # compose affines
+            nxt = affine_shift_to_identity(nxt)
+            curr = affine_shift_to_identity(curr)
+            curr = affine_identity_to_shift(tf.linalg.matmul(nxt, curr))
+    return curr
 
 
 def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
@@ -401,7 +424,6 @@ def is_affine(shape):
     """
     TODO: needs documentation
     """
-
     return len(shape) == 1 or (len(shape) == 2 and shape[0] + 1 == shape[1])
 
 

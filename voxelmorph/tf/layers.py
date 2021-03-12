@@ -370,81 +370,49 @@ class RescaleTransform(Layer):
 
 class ComposeTransform(Layer):
     """ 
-    Composes two transforms specified by their displacements. Affine transforms
-    can also be provided. If only affines are provided, the returned transform
-    is an affine, otherwise it will return a displacement field. For example,
-    given two transforms:
+    Compose a single transform from a series of transforms.
 
-    A --> B (so field/result is in the space of B)
-    B --> C (so field/result is in the space of C)
+    Supports both dense and affine transforms, and returns a dense transform unless all
+    inputs are affine. The list of transforms to compose should be in the order in which
+    they would be individually applied to an image. For example, given transforms A, B,
+    and C, to compose a single transform T, where T(x) = C(B(A(x))), the appropriate
+    function call is:
 
-    This layer composes a new transform:
-
-    A --> C (so field/result is in the space of C)
+    T = ComposeTransform()([A, B, C])
     """
 
     def build(self, input_shape, **kwargs):
 
-        if len(input_shape) != 2:
-            raise Exception('ComposeTransform must be called on a input list of length 2.')
+        if not isinstance(input_shape, (list, tuple)):
+            raise Exception('ComposeTransform must be called for a list of transforms.')
 
-        # figure out if any affines were provided
-        self.input_1_is_affine = is_affine(input_shape[0][1:])
-        self.input_2_is_affine = is_affine(input_shape[1][1:])
-        self.return_affine = self.input_1_is_affine and self.input_2_is_affine
+        if len(input_shape) < 2:
+            raise ValueError('ComposeTransform input list size must be greater than 1.')
 
-        if self.return_affine:
+        # determine output transform type
+        found_dense_shape = next((ts for ts in input_shape if not is_affine(ts[1:])), None)
+
+        if found_dense_shape is not None:
+            # extract shape information from the dense transform
+            self.outshape = (input_shape[0], *found_dense_shape)
+        else:
             # extract dimension information from affine
             shape = input_shape[0][1:]
             if len(shape) == 1:
                 # if vector, just compute ndims since length = N * (N + 1)
-                self.ndims = int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
+                ndims = int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
             else:
-                self.ndims = int(shape[0])
-        else:
-            # extract shape information whichever is the dense transform
-            dense_idx = 1 if self.input_1_is_affine else 0
-            self.ndims = input_shape[dense_idx][-1]
-            self.volshape = input_shape[dense_idx][1:-1]
+                ndims = int(shape[0])
+            self.outshape = (input_shape[0], ndims * (ndims + 1))
 
         super().build(input_shape)
 
     def call(self, inputs):
-        """
-        Parameters
-            inputs: list with two dense deformations
-        """
-        assert len(inputs) == 2, 'inputs has to be len 2, found: %d' % len(inputs)
-
-        input_1 = inputs[0]
-        input_2 = inputs[1]
-
-        if self.return_affine:
-            return tf.map_fn(self._single_affine_compose, [input_1, input_2], dtype=tf.float32)
-        else:
-            # if necessary, convert affine to dense transform
-            if self.input_1_is_affine:
-                input_1 = AffineToDense(self.volshape)(input_1)
-            elif self.input_2_is_affine:
-                input_2 = AffineToDense(self.volshape)(input_2)
-
-            # dense composition
-            return tf.map_fn(self._single_dense_compose, [input_1, input_2], dtype=tf.float32)
-
-    def _single_dense_compose(self, inputs):
-        return utils.compose(inputs[0], inputs[1])
-
-    def _single_affine_compose(self, inputs):
-        affine_1 = affine_shift_to_identity(inputs[0])
-        affine_2 = affine_shift_to_identity(inputs[1])
-        composed = tf.linalg.matmul(affine_1, affine_2)
-        return affine_identity_to_shift(composed)
+        single = lambda x: utils.compose(x)
+        return tf.map_fn(single, inputs, dtype=tf.float32)
 
     def compute_output_shape(self, input_shape):
-        if self.return_affine:
-            return (input_shape[0], self.ndims * (self.ndims + 1))
-        else:
-            return (input_shape[0], *self.volshape, self.ndims)
+        return self.outshape
 
 
 class AffineToDense(Layer):
@@ -479,17 +447,8 @@ class AffineToDense(Layer):
             trf: affine transform either as a matrix with shape (N, N + 1)
             or a flattened vector with shape (N * (N + 1))
         """
-
-        return tf.map_fn(self._single_aff_to_shift, trf, dtype=tf.float32)
-
-    def _single_aff_to_shift(self, trf):
-        # go from vector to matrix
-        if len(trf.shape) == 1:
-            trf = tf.reshape(trf, [self.ndims, self.ndims + 1])
-
-        # add identity, hence affine is a shift from identity
-        trf += tf.eye(self.ndims + 1)[:self.ndims, :]
-        return affine_to_shift(trf, self.volshape, shift_center=True)
+        single = lambda x: affine_to_shift(x, self.volshape, shift_center=True, add_identity=True)
+        return tf.map_fn(single, trf, dtype=tf.float32)
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], *self.volshape, self.ndims)
