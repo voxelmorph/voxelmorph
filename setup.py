@@ -3,7 +3,7 @@ import setuptools
 setuptools.setup(
     name='voxelmorph',
     version='0.1',
-    license='gpl-3.0',
+    license='Apache 2.0',
     description='Image Registration with Convolutional Networks',
     url='https://github.com/voxelmorph/voxelmorph',
     keywords=['deformation', 'registration', 'imaging', 'cnn', 'mri'],
@@ -12,7 +12,7 @@ setuptools.setup(
     classifiers=[
         'Intended Audience :: Science/Research',
         'Programming Language :: Python :: 3',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
     ],
     install_requires=[
