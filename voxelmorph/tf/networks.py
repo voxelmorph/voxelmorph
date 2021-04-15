@@ -586,7 +586,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         if not supervised_model:
             loss_vol = KL.Lambda(lambda x: logsum(x), name='loss_vol')(logpdf)
         else:
-            loss_vol = KL.Softmax(name='loss_vol')(logpdf)
+            loss_vol = KL.Lambda(lambda x: K.exp(x), name='loss_vol')(logpdf)
 
         # initialize the keras model
         super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
