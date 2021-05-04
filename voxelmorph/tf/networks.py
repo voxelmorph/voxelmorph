@@ -929,7 +929,10 @@ class Unet(tf.keras.Model):
             unet_input = KL.Input(shape=inshape, name='%s_input' % name)
             model_inputs = [unet_input]
         else:
-            unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
+            if len(input_model.outputs) == 1:
+                unet_input = input_model.outputs[0]
+            else:
+                unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
             model_inputs = input_model.inputs
 
         # add hyp_input tensor if provided
