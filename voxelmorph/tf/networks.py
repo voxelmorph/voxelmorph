@@ -187,6 +187,8 @@ class VxmDense(ne.modelio.LoadableModel):
         # cache pointers to layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.unet_model = unet_model
+        self.references.source = source
+        self.references.target = target
         self.references.y_source = y_source
         self.references.y_target = y_target if bidir else None
         self.references.pos_flow = pos_flow
@@ -522,7 +524,8 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         # extract necessary layers from the network
         # important to note that we're warping the atlas to the image in this case and
         # we'll swap the input order later
-        atlas, image = vxm_model.inputs
+        atlas = vxm_model.references.source
+        image = vxm_model.references.target
         warped_atlas = vxm_model.references.y_source if warp_atlas else atlas
         flow = vxm_model.references.pos_flow
 
@@ -588,8 +591,9 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         else:
             loss_vol = logpdf
 
-        # initialize the keras model
-        super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
+        # initialize the keras model (need to swap the inputs)
+        super().__init__(inputs=[vxm_model.inputs[1], vxm_model.inputs[0]],
+                         outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
