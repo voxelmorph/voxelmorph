@@ -950,7 +950,7 @@ class Unet(tf.keras.Model):
             half_res: Skip the last decoder upsampling. Default is False.
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
-            final_activation_function: if not None add an activation layer at end
+            final_activation_function: Replace default activation function in final layer of unet.
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -1014,23 +1014,39 @@ class Unet(tf.keras.Model):
             # temporarily use maxpool since downsampling doesn't exist in keras
             last = MaxPooling(max_pool[level], name='%s_enc_pooling_%d' % (name, level))(last)
 
+        # if final_activation_function is set, we need to build a utility that checks
+        # which layer is truly the last, so we know not to apply the activation there
+        if final_activation_function is not None and len(final_convs) == 0:
+            activate = lambda l, c: not (l == (nb_levels - 2) and c == (nb_conv_per_level - 1))
+        else:
+            activate = lambda l, c: True
+
         # configure decoder (up-sampling path)
         for level in range(nb_levels - 1):
             real_level = nb_levels - level - 2
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
+                                   include_activation=activate(level, conv))
             if not half_res or level < (nb_levels - 2):
                 layer_name = '%s_dec_upsample_%d' % (name, real_level)
                 last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level],
                                        name=layer_name)
 
+        # now build function to check which of the 'final convs' is really the last
+        if final_activation_function is not None:
+            activate = lambda n: n != (len(final_convs) - 1)
+        else:
+            activate = lambda n: True
+
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
-            last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
+            last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor,
+                               include_activation=activate(num))
 
+        # add the final activation function is set
         if final_activation_function is not None:
             last = KL.Activation(final_activation_function, name='%s_final_activation' % name)(last)
 
