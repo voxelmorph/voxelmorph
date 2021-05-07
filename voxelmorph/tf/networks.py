@@ -230,6 +230,9 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
                  int_steps=7,
                  int_downsize=2,
                  seg_downsize=2,
+                 bidir=False,
+                 bidir_labels=False,
+                 name='vxm_dense',
                  **kwargs):
         """
         Parameters:
@@ -243,35 +246,60 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
                 The flow field is not downsampled when this value is 1.
             seg_downsize: Interger specifying the downsampled factor of the segmentations.
                 Default is 2.
+            bidir: Enable bidirectional cost function on images. Default is False.
+            bidir_labels: Enable bidirectional cost function on labels and images.
+                Default is False.
             kwargs: Forwarded to the internal VxmDense model.
         """
+
+        # if bidir_labels, make sure bidir is also enabled
+        if bidir_labels:
+            bidir = True
 
         # configure base voxelmorph network
         vxm_model = VxmDense(inshape,
                              nb_unet_features=nb_unet_features,
                              int_steps=int_steps,
                              int_downsize=int_downsize,
+                             bidir=bidir,
                              **kwargs)
 
         # configure downsampled seg input layer
-        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
-        seg_src = tf.keras.Input(shape=(*inshape_downsized, nb_labels))
+        inshape_ds = (np.array(inshape) / seg_downsize).astype(int)
+        seg_src = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_source_seg')
 
         # configure warped seg output layer
         seg_flow = layers.RescaleTransform(
-            1 / seg_downsize, name='seg_resize')(vxm_model.references.pos_flow)
-        y_seg = layers.SpatialTransformer(interp_method='linear',
-                                          indexing='ij',
-                                          name='seg_transformer')([seg_src, seg_flow])
+            1 / seg_downsize, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
+        y_seg_src = layers.SpatialTransformer(interp_method='linear',
+                                              indexing='ij',
+                                              name=f'{name}_seg_transformer')([seg_src, seg_flow])
+
+        inputs = vxm_model.inputs + [seg_src]
+        outputs = vxm_model.outputs + [y_seg_src]
+
+        if bidir_labels:
+
+            # target seg input
+            seg_trg = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_target_seg')
+            inputs.append(seg_trg)
+
+            # warp labels bidirectionally
+            neg_seg_flow = layers.RescaleTransform(
+                1 / seg_downsize, name=f'{name}_seg_neg_resize')(vxm_model.references.neg_flow)
+            y_seg_trg = layers.SpatialTransformer(interp_method='linear',
+                                                  indexing='ij',
+                                                  name=f'{name}_seg_neg_transformer')(
+                                                  [seg_trg, neg_seg_flow])  # nopep8
+            outputs.append(y_seg_trg)
 
         # initialize the keras model
-        inputs = vxm_model.inputs + [seg_src]
-        outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = vxm_model.references.pos_flow
+        self.references.neg_flow = vxm_model.references.neg_flow
 
     def get_registration_model(self):
         """
