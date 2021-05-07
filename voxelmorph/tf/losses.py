@@ -313,7 +313,7 @@ class KL:
         return 0.5 * ndims * (sigma_term + prec_term)
 
 
-class NMI(ne.metrics.MutualInformation):
+class MutualInformation(ne.metrics.MutualInformation):
     """
     Soft Mutual Information approximation for intensity volumes
 
