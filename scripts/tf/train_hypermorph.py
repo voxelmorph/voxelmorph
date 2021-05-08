@@ -31,7 +31,7 @@ import tensorflow as tf
 import voxelmorph as vxm
 from tensorflow.keras import backend as K
 
-tf.compat.v1.disable_v2_behavior()
+tf.compat.v1.disable_eager_execution()
 
 
 # parse the commandline
