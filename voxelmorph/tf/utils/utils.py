@@ -237,7 +237,7 @@ def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'
         raise ValueError('Compose transform list size must be greater than 1')
 
     def ensure_dense(trf, shape):
-        if shape_is_affine(trf.shape):
+        if is_affine_shape(trf.shape):
             return affine_to_dense_shift(trf, shape, shift_center=shift_center, indexing=indexing)
         return trf
 
@@ -249,7 +249,7 @@ def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'
     curr = transforms[-1]
     for nxt in reversed(transforms[:-1]):
         # check if either transform is dense
-        found_dense = next((t for t in (nxt, curr) if not shape_is_affine(t.shape)), None)
+        found_dense = next((t for t in (nxt, curr) if not is_affine_shape(t.shape)), None)
         if found_dense is not None:
             # compose dense warps
             shape = found_dense.shape[:-1]
@@ -469,7 +469,7 @@ def keras_transform(img, trf, interp_method='linear', rescale=None):
 ###############################################################################
 
 
-def shape_is_affine(shape):
+def is_affine_shape(shape):
     """
     Determins whether the given shape (single-batch) represents an
     affine matrix.
@@ -602,12 +602,11 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     return loc - tf.stack(mesh, axis=ndims)
 
 
-def params_to_affine_matrix(
-    par,
-    deg=True,
-    shift_scale=False,
-    last_row=False,
-    ndims=3):
+def params_to_affine_matrix(par,
+                            deg=True,
+                            shift_scale=False,
+                            last_row=False,
+                            ndims=3):
     """
     Constructs an affine transformation matrix from translation, rotation, scaling and shearing
     parameters in 2D or 3D.
