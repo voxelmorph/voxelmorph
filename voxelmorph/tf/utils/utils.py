@@ -57,80 +57,29 @@ def setup_device(gpuid=None):
     return device, nb_devices
 
 
+def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute_val=True):
+    """
+    Extracts value at given point.
+
+    TODO: needs documentation
+    """
+
+    # vol is batch_size, *vol_shape, nb_feats
+    # loc_pts is batch_size, nb_surface_pts, D or D+1
+    vol, loc_pts = x
+
+    fn = lambda y: ne.utils.interpn(y[0], y[1])
+    z = tf.map_fn(fn, [vol, loc_pts], dtype=tf.float32)
+
+    if force_post_absolute_val:
+        z = K.abs(z)
+
+    return z
+
+
 ###############################################################################
 # deformation utilities
 ###############################################################################
-
-
-def affine_to_shift(affine_matrix, volshape, shift_center=True, indexing='ij', add_identity=False):
-    """
-    transform an affine matrix to a dense location shift tensor in tensorflow
-
-    Algorithm:
-        - get grid and shift grid to be centered at the center of the image (optionally)
-        - apply affine matrix to each index.
-        - subtract grid
-
-    Parameters:
-        affine_matrix: ND+1 x ND+1 or ND x ND+1 matrix (Tensor)
-        volshape: 1xN Nd Tensor of the size of the volume.
-        shift_center (optional)
-
-    Returns:
-        shift field (Tensor) of size *volshape x N
-
-    TODO: 
-        allow affine_matrix to be a vector of size nb_dims * (nb_dims + 1)
-    """
-
-    if isinstance(volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
-        volshape = volshape.as_list()
-
-    if affine_matrix.dtype != 'float32':
-        affine_matrix = tf.cast(affine_matrix, 'float32')
-
-    nb_dims = len(volshape)
-
-    if len(affine_matrix.shape) == 1:
-        if len(affine_matrix) != (nb_dims * (nb_dims + 1)):
-            raise ValueError('transform is supposed a vector of len ndims * (ndims + 1).'
-                             'Got len %d' % len(affine_matrix))
-
-        affine_matrix = tf.reshape(affine_matrix, [nb_dims, nb_dims + 1])
-
-    if not ((affine_matrix.shape[0] in [nb_dims, nb_dims + 1])
-            and (affine_matrix.shape[1] == (nb_dims + 1))):
-        shape1 = '(%d x %d)' % (nb_dims + 1, nb_dims + 1)
-        shape2 = '(%d x %s)' % (nb_dims, nb_dims + 1)
-        true_shape = str(affine_matrix.shape)
-        raise Exception('Affine shape should match %s or %s, but got: %s' %
-                        (shape1, shape2, true_shape))
-
-    if add_identity:
-        # add identity, hence affine is a shift from identity
-        affine_matrix += tf.eye(nb_dims + 1)[:nb_dims, :]
-
-    # list of volume ndgrid
-    # N-long list, each entry of shape volshape
-    mesh = ne.utils.volshape_to_meshgrid(volshape, indexing=indexing)
-    mesh = [tf.cast(f, 'float32') for f in mesh]
-
-    if shift_center:
-        mesh = [mesh[f] - (volshape[f] - 1) / 2 for f in range(len(volshape))]
-
-    # add an all-ones entry and transform into a large matrix
-    flat_mesh = [ne.utils.flatten(f) for f in mesh]
-    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype='float32'))
-    mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
-
-    # compute locations
-    loc_matrix = tf.matmul(affine_matrix, mesh_matrix)  # N+1 x nb_voxels
-    loc_matrix = tf.transpose(loc_matrix[:nb_dims, :])  # nb_voxels x N
-    loc = tf.reshape(loc_matrix, list(volshape) + [nb_dims])  # *volshape x N
-    # loc = [loc[..., f] for f in range(nb_dims)]  # N-long list, each entry of shape volshape
-
-    # get shifts and return
-    return loc - tf.stack(mesh, axis=nb_dims)
 
 
 def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None):
@@ -260,7 +209,7 @@ def batch_transform(vol, loc_shift,
     return K.permute_dimensions(vol_trf_reshape, [ndim + 1] + list(range(ndim + 1)))
 
 
-def compose(trfs, indexing='ij'):
+def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'):
     """
     Compose a single transform from a series of transforms.
 
@@ -273,36 +222,76 @@ def compose(trfs, indexing='ij'):
     T = compose([A, B, C])
 
     Parameters:
-        trfs: List of affine and/or dense transforms to compose.
+        transforms: List of affine and/or dense transforms to compose.
+        interp_method: Interpolation method. Must be 'linear' or 'nearest'.
+        shift_center: Shift grid to image center.
+        indexing: Must be 'xy' or 'ij'.
 
     Returns:
-        Composed transform.
+        Composed affine or dense transform.
     """
     if indexing != 'ij':
         raise ValueError('Compose transform only supports ij indexing')
 
-    if len(trfs) < 2:
+    if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
-    def ensure_dense(x, shape):
-        return affine_to_shift(x, shape, add_identity=True) if is_affine(x.shape) else x
+    def ensure_dense(trf, shape):
+        if shape_is_affine(trf.shape):
+            return affine_to_dense_shift(trf, shape, shift_center=shift_center, indexing=indexing)
+        return trf
 
-    curr = trfs[-1]
-    for nxt in reversed(trfs[:-1]):
+    def ensure_square_affine(matrix):
+        if matrix.shape[-1] != matrix.shape[-2]:
+            return make_square_affine(matrix)
+        return matrix
+
+    curr = transforms[-1]
+    for nxt in reversed(transforms[:-1]):
         # check if either transform is dense
-        found_dense = next((t for t in (nxt, curr) if not is_affine(t.shape)), None)
+        found_dense = next((t for t in (nxt, curr) if not shape_is_affine(t.shape)), None)
         if found_dense is not None:
             # compose dense warps
             shape = found_dense.shape[:-1]
             nxt = ensure_dense(nxt, shape)
             curr = ensure_dense(curr, shape)
-            curr = curr + transform(nxt, curr, interp_method='linear', indexing=indexing)
+            curr = curr + transform(nxt, curr, interp_method=interp_method, indexing=indexing)
         else:
             # compose affines
-            nxt = affine_shift_to_identity(nxt)
-            curr = affine_shift_to_identity(curr)
-            curr = affine_identity_to_shift(tf.linalg.matmul(nxt, curr))
+            nxt = ensure_square_affine(nxt)
+            curr = ensure_square_affine(curr)
+            curr = tf.linalg.matmul(nxt, curr)[:-1]
+
     return curr
+
+
+def rescale_dense_transform(transform, factor, interp_method='linear'):
+    """
+    Rescales a dense transform. this involves resizing and rescaling the vector field.
+
+    Parameters:
+        transform: A dense warp of shape [..., D1, ..., DN, N].
+        factor: Scaling factor.
+        interp_method: Interpolation method. Must be 'linear' or 'nearest'.
+    """
+
+    def single_batch(trf):
+        if factor < 1:
+            trf = ne.utils.resize(trf, factor, interp_method=interp_method)
+            trf = trf * factor
+        else:
+            # multiply first to save memory (multiply in smaller space)
+            trf = trf * factor
+            trf = ne.utils.resize(trf, factor, interp_method=interp_method)
+        return trf
+
+    # enable batched or non-batched input
+    if len(transform.shape) > (transform.shape[-1] + 1):
+        rescaled = tf.map_fn(single_batch, transform, dtype=tf.float32)
+    else:
+        rescaled = single_batch(transform)
+
+    return rescaled
 
 
 def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
@@ -420,68 +409,6 @@ def integrate_vec(vec, time_dep=False, method='ss', **kwargs):
     return disp
 
 
-def is_affine(shape):
-    """
-    TODO: needs documentation
-    """
-    return len(shape) == 1 or (len(shape) == 2 and shape[0] + 1 == shape[1])
-
-
-def extract_affine_ndims(shape):
-    """
-    TODO: needs documentation
-    """
-
-    if len(shape) == 1:
-        # if vector, just compute ndims since length = N * (N + 1)
-        return int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
-    else:
-        return int(shape[0])
-
-
-def affine_shift_to_identity(trf):
-    """
-    TODO: needs documentation
-    """
-
-    ndims = extract_affine_ndims(trf.shape.as_list())
-    trf = tf.reshape(trf, [ndims, ndims + 1])
-    trf = tf.concat([trf, tf.zeros((1, ndims + 1))], axis=0)
-    trf += tf.eye(ndims + 1)
-    return trf
-
-
-def affine_identity_to_shift(trf):
-    """
-    TODO: needs documentation
-    """
-
-    ndims = int(trf.shape.as_list()[-1]) - 1
-    trf = trf - tf.eye(ndims + 1)
-    trf = trf[:ndims, :]
-    return tf.reshape(trf, [ndims * (ndims + 1)])
-
-
-def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute_val=True):
-    """
-    Extracts value at given point.
-
-    TODO: needs documentation
-    """
-
-    # vol is batch_size, *vol_shape, nb_feats
-    # loc_pts is batch_size, nb_surface_pts, D or D+1
-    vol, loc_pts = x
-
-    fn = lambda y: ne.utils.interpn(y[0], y[1])
-    z = tf.map_fn(fn, [vol, loc_pts], dtype=tf.float32)
-
-    if force_post_absolute_val:
-        z = K.abs(z)
-
-    return z
-
-
 def point_spatial_transformer(x, single=False, sdt_vol_resize=1):
     """
     Transforms surface points with a given deformation.
@@ -535,3 +462,318 @@ def keras_transform(img, trf, interp_method='linear', rescale=None):
     trf_scaled = trf_input if rescale is None else layers.RescaleTransform(rescale)(trf_input)
     y_img = layers.SpatialTransformer(interp_method=interp_method)([img_input, trf_scaled])
     return tf.keras.Model([img_input, trf_input], y_img).predict([img, trf])
+
+
+###############################################################################
+# affine utilities
+###############################################################################
+
+
+def shape_is_affine(shape):
+    """
+    Determins whether the given shape (single-batch) represents an
+    affine matrix.
+
+    Parameters:
+        shape:  List of integers of the form [N, N+1], assuming an affine.
+    """
+    if len(shape) == 2 and shape[-1] != 1:
+        validate_affine_shape(shape)
+        return True
+    return False
+
+
+def validate_affine_shape(shape):
+    """
+    Validates whether the given input shape represents a valid affine matrix.
+    Throws error if the shape is valid.
+
+    Parameters:
+        shape: List of integers of the form [..., N, N+1].
+    """
+    ndim = shape[-1] - 1
+    actual = tuple(shape[-2:])
+    if ndim not in (2, 3) or actual != (ndim, ndim + 1):
+        raise ValueError(f'Affine matrix must be of shape (2, 3) or (3, 4), got {actual}.')
+
+
+def make_square_affine(mat):
+    """
+    Converts a [N, N+1] affine matrix to square shape [N+1, N+1].
+
+    Parameters:
+        mat: Affine matrix of shape [..., N, N+1].
+    """
+    validate_affine_shape(mat.shape)
+    bs = mat.shape[:-2]
+    zeros = tf.zeros((*bs, 1, mat.shape[-2]), dtype=mat.dtype)
+    one = tf.ones((*bs, 1, 1), dtype=mat.dtype)
+    row = tf.concat((zeros, one), axis=-1)
+    mat = tf.concat([mat, row], axis=-2)
+    return mat
+
+
+def affine_add_identity(mat):
+    """
+    Adds the identity matrix to a 'shift' affine.
+
+    Parameters:
+        mat: Affine matrix of shape [..., N, N+1].
+    """
+    ndims = mat.shape[-2]
+    return mat + tf.eye(ndims + 1)[:ndims]
+
+
+def affine_remove_identity(mat):
+    """
+    Subtracts the identity matrix from an affine.
+
+    Parameters:
+        mat: Affine matrix of shape [..., N, N+1].
+    """
+    ndims = mat.shape[-2]
+    return mat - tf.eye(ndims + 1)[:ndims]
+
+
+def rescale_affine(mat, factor):
+    """
+    Rescales affine matrix by some factor.
+
+    Parameters:
+        mat: Affine matrix of shape [..., N, N+1].
+        factor: Zoom factor.
+    """
+    scaled_translation = tf.expand_dims(mat[..., -1] * factor, -1)
+    scaled_matrix = tf.concat([mat[..., :-1], scaled_translation], -1)
+    return scaled_matrix
+
+
+def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
+    """
+    Transforms an affine matrix to a dense location shift.
+
+    Algorithm:
+        1. Build and (optionally) shift grid to center of image.
+        2. Apply affine matrix to each index.
+        3. Subtract grid.
+
+    Parameters:
+        matrix: affine matrix of shape (N, N+1).
+        shape: ND shape of the target warp.
+        shift_center: Shift grid to image center.
+        indexing: Must be 'xy' or 'ij'.
+
+    Returns:
+        Dense shift (warp) of shape (*shape, N).
+    """
+
+    if isinstance(shape, (tf.compat.v1.Dimension, tf.TensorShape)):
+        shape = shape.as_list()
+
+    if matrix.dtype != 'float32':
+        matrix = tf.cast(matrix, 'float32')
+
+    # check input shapes
+    ndims = len(shape)
+    if matrix.shape[-1] != (ndims + 1):
+        matdim = matrix.shape[-1] - 1
+        raise ValueError(f'Affine ({matdim}D) does not match target shape ({ndims}D).')
+    validate_affine_shape(matrix.shape)
+
+    # list of volume ndgrid
+    # N-long list, each entry of shape
+    mesh = ne.utils.volshape_to_meshgrid(shape, indexing=indexing)
+    mesh = [tf.cast(f, 'float32') for f in mesh]
+
+    if shift_center:
+        mesh = [mesh[f] - (shape[f] - 1) / 2 for f in range(len(shape))]
+
+    # add an all-ones entry and transform into a large matrix
+    flat_mesh = [ne.utils.flatten(f) for f in mesh]
+    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype='float32'))
+    mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
+
+    # compute locations
+    loc_matrix = tf.matmul(matrix, mesh_matrix)  # N+1 x nb_voxels
+    loc_matrix = tf.transpose(loc_matrix[:ndims, :])  # nb_voxels x N
+    loc = tf.reshape(loc_matrix, list(shape) + [ndims])  # *shape x N
+
+    # get shifts and return
+    return loc - tf.stack(mesh, axis=ndims)
+
+
+def params_to_affine_matrix(
+    par,
+    deg=True,
+    shift_scale=False,
+    last_row=False,
+    ndims=3):
+    """
+    Constructs an affine transformation matrix from translation, rotation, scaling and shearing
+    parameters in 2D or 3D.
+
+    Arguments:
+        par: Parameters as a scalar, numpy array, TensorFlow tensor, or list or tuple of these.
+            Elements of lists and tuples will be stacked along the last dimension, which
+            corresponds to translations, rotations, scaling and shear. The size of the last
+            axis must not exceed (N, N+1), for N dimensions. If the size is less than that,
+            the missing parameters will be set to identity.
+        deg: Whether the input rotations are specified in degrees. Defaults to True.
+        shift_scale: Add 1 to any specified scaling parameters. This may be desirable
+            when the parameters are estimated by a network. Defaults to False.
+        last_row: Append the last row and return the full matrix. Defaults to False.
+        ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
+
+    Returns:
+        Affine transformation matrices as a (..., M, N+1) tensor, where M is N or N+1,
+        depending on `last_row`.
+
+    Author:
+        mu40
+
+    If you use this function, please cite:
+        https://arxiv.org/abs/2004.10282
+    """
+    if ndims not in (2, 3):
+        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
+
+    if isinstance(par, (list, tuple)):
+        par = tf.stack(par, axis=-1)
+
+    if not tf.is_tensor(par) or not par.dtype.is_floating:
+        par = tf.cast(par, dtype='float32')
+
+    # Add dimension to scalars
+    if not par.shape.as_list():
+        par = tf.reshape(par, shape=(1,))
+
+    # Validate shape
+    num_par = 6 if ndims == 2 else 12
+    shape = par.shape.as_list()
+    if shape[-1] > num_par:
+        raise ValueError(f'Number of params exceeds value {num_par} expected for dimensionality.')
+
+    # Set defaults if incomplete and split by type
+    width = np.zeros((len(shape), 2))
+    splits = (2, 1) * 2 if ndims == 2 else (3,) * 4
+    for i in (2, 3, 4):
+        width[-1, -1] = max(sum(splits[:i]) - shape[-1], 0)
+        default = 1. if i == 3 and not shift_scale else 0.
+        par = tf.pad(par, paddings=width, constant_values=default)
+        shape = par.shape.as_list()
+    shift, rot, scale, shear = tf.split(par, num_or_size_splits=splits, axis=-1)
+
+    # Construct shear matrix
+    s = tf.split(shear, num_or_size_splits=splits[-1], axis=-1)
+    one, zero = tf.ones_like(s[0]), tf.zeros_like(s[0])
+    if ndims == 2:
+        mat_shear = tf.stack((
+            tf.concat([one, s[0]], axis=-1),
+            tf.concat([zero, one], axis=-1),
+        ), axis=-2)
+    else:
+        mat_shear = tf.stack((
+            tf.concat([one, s[0], s[1]], axis=-1),
+            tf.concat([zero, one, s[2]], axis=-1),
+            tf.concat([zero, zero, one], axis=-1),
+        ), axis=-2)
+
+    mat_scale = tf.linalg.diag(scale + 1. if shift_scale else scale)
+    mat_rot = angles_to_rotation_matrix(rot, deg=deg, ndims=ndims)
+    out = tf.matmul(mat_rot, tf.matmul(mat_scale, mat_shear))
+
+    # Append translations
+    shift = tf.expand_dims(shift, axis=-1)
+    out = tf.concat((out, shift), axis=-1)
+
+    # Append last row
+    if last_row:
+        batch_shape = shift.shape.as_list()[:-2]
+        zeros = tf.zeros((*batch_shape, 1, splits[0]), dtype=shift.dtype)
+        one = tf.ones((*batch_shape, 1, 1), dtype=shift.dtype)
+        row = tf.concat((zeros, one), axis=-1)
+        out = tf.concat([out, row], axis=-2)
+
+    return tf.squeeze(out) if len(shape) < 2 else out
+
+
+def angles_to_rotation_matrix(ang, deg=True, ndims=3):
+    """
+    Construct N-dimensional rotation matrices from angles, where N is 2 or 3. The direction of
+    rotation for all axes follows the right-hand rule. The rotations are intrinsic, i.e. carried
+    out in the body-centered frame of reference.
+
+    Arguments:
+        ang: Input angles as a scalar, NumPy array, TensorFlow tensor, or list or tuple of these.
+            Elements of lists and tuples will be stacked along the last dimension, which
+            corresponds to the rotation axes (x, y, z in 3D), and its size must not exceed N.
+            If the size is less than N, the missing angles will be set to zero.
+        deg: Whether the input angles are specified in degrees. Defaults to True.
+        ndims: Dimensionality of rotation matrices. Must be 2 or 3. Defaults to 3.
+
+    Returns:
+        ND rotation matrices as a (..., N, N) tensor.
+
+    Author:
+        mu40
+
+    If you use this function, please cite:
+        https://arxiv.org/abs/2004.10282
+    """
+    if ndims not in (2, 3):
+        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
+
+    if isinstance(ang, (list, tuple)):
+        ang = tf.stack(ang, axis=-1)
+
+    if not tf.is_tensor(ang) or not ang.dtype.is_floating:
+        ang = tf.cast(ang, dtype='float32')
+
+    # Add dimension to scalars
+    if not ang.shape.as_list():
+        ang = tf.reshape(ang, shape=(1,))
+
+    # Validate shape
+    num_ang = 1 if ndims == 2 else 3
+    shape = ang.shape.as_list()
+    if shape[-1] > num_ang:
+        raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
+
+    # Set missing angles to zero
+    width = np.zeros((len(shape), 2))
+    width[-1, -1] = max(num_ang - shape[-1], 0)
+    ang = tf.pad(ang, paddings=width)
+
+    # Compute sine and cosine
+    if deg:
+        ang *= np.pi / 180
+    c = tf.split(tf.cos(ang), num_or_size_splits=num_ang, axis=-1)
+    s = tf.split(tf.sin(ang), num_or_size_splits=num_ang, axis=-1)
+
+    # Construct matrices
+    if ndims == 2:
+        out = tf.stack((
+            tf.concat([c[0], -s[0]], axis=-1),
+            tf.concat([s[0], c[0]], axis=-1),
+        ), axis=-2)
+
+    else:
+        one, zero = tf.ones_like(c[0]), tf.zeros_like(c[0])
+        rot_x = tf.stack((
+            tf.concat([one, zero, zero], axis=-1),
+            tf.concat([zero, c[0], -s[0]], axis=-1),
+            tf.concat([zero, s[0], c[0]], axis=-1),
+        ), axis=-2)
+        rot_y = tf.stack((
+            tf.concat([c[1], zero, s[1]], axis=-1),
+            tf.concat([zero, one, zero], axis=-1),
+            tf.concat([-s[1], zero, c[1]], axis=-1),
+        ), axis=-2)
+        rot_z = tf.stack((
+            tf.concat([c[2], -s[2], zero], axis=-1),
+            tf.concat([s[2], c[2], zero], axis=-1),
+            tf.concat([zero, zero, one], axis=-1),
+        ), axis=-2)
+        out = tf.matmul(rot_x, tf.matmul(rot_y, rot_z))
+
+    return tf.squeeze(out) if len(shape) < 2 else out

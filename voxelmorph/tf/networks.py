@@ -891,7 +891,7 @@ class Transform(tf.keras.Model):
         scan_input = tf.keras.Input((*inshape, nb_feats), name='scan_input')
 
         if affine:
-            trf_input = tf.keras.Input((ndims * (ndims + 1),), name='trf_input')
+            trf_input = tf.keras.Input((ndims, ndims + 1), name='trf_input')
         else:
             trf_shape = inshape if rescale is None else [int(d / rescale) for d in inshape]
             trf_input = tf.keras.Input((*trf_shape, ndims), name='trf_input')

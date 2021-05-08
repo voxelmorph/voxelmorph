@@ -17,46 +17,38 @@ implied. See the License for the specific language governing permissions and lim
 License.
 """
 
-# internal python imports
 import os
-
-# third party
 import numpy as np
+import neurite as ne
+
+# tensorflow
 import tensorflow as tf
-from tensorflow import keras as keras
 import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Layer
 
-
 # local utils
-import neurite as ne
-# TODO: simply import utils and use utils.is_affine, etc...
-from .utils import is_affine, extract_affine_ndims, affine_shift_to_identity
-from .utils import transform, integrate_vec, affine_to_shift, affine_identity_to_shift
 from . import utils
 
 
 class SpatialTransformer(Layer):
     """
-    N-D Spatial Transformer Tensorflow / Keras Layer
+    ND spatial transformer layer
 
-    The Layer can handle both affine and dense transforms. 
-    Both transforms are meant to give a 'shift' from the current position.
-    Therefore, a dense transform gives displacements (not absolute locations) at each voxel,
-    and an affine transform gives the *difference* of the affine matrix from 
-    the identity matrix (unless specified otherwise).
+    Applies affine and dense transforms to images. A dense transform gives
+    displacements (not absolute locations) at each voxel.
 
-    If you find this function useful, please cite:
+    If you find this layer useful, please cite:
+
       Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
       Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
       MICCAI 2018.
 
     Originally, this code was based on voxelmorph code, which 
     was in turn transformed to be dense with the help of (affine) STN code 
-    via https://github.com/kevinzakka/spatial-transformer-network
+    via https://github.com/kevinzakka/spatial-transformer-network.
 
     Since then, we've re-written the code to be generalized to any 
-    dimensions, and along the way wrote grid and interpolation functions
+    dimensions, and along the way wrote grid and interpolation functions.
     """
 
     def __init__(self,
@@ -64,34 +56,26 @@ class SpatialTransformer(Layer):
                  indexing='ij',
                  single_transform=False,
                  fill_value=None,
-                 add_identity=True,
                  shift_center=True,
                  **kwargs):
         """
         Parameters: 
-            interp_method: 'linear' or 'nearest'
-            single_transform: whether a single transform supplied for the whole batch
-            indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian)
-                'xy' indexing will have the first two entries of the flow 
-                (along last axis) flipped compared to 'ij' indexing
-            fill_value (default: None): value to use for points outside the domain.
+            interp_method: Interpolation method. Must be 'linear' or 'nearest'.
+            indexing: Must be 'ij' (matrix) or 'xy' (cartesian). 'xy' indexing will
+                have the first two entries of the flow (along last axis) flipped
+                compared to 'ij' indexing.
+            single_transform: Use single transform for the entire image batch.
+            fill_value: Value to use for points sampled outside the domain.
                 If None, the nearest neighbors will be used.
-            add_identity (default: True): whether the identity matrix is added
-                to affine transforms.
-            shift_center (default: True): whether the grid is shifted to the center
-                of the image when converting affine transforms to warp fields.
+            shift_center: Shift grid to image center when converting affine
+                transforms to dense transforms.
         """
         self.interp_method = interp_method
-        self.fill_value = fill_value
-        self.add_identity = add_identity
-        self.shift_center = shift_center
-        self.ndims = None
-        self.inshape = None
-        self.single_transform = single_transform
-
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
-
+        self.single_transform = single_transform
+        self.fill_value = fill_value
+        self.shift_center = shift_center
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -101,54 +85,35 @@ class SpatialTransformer(Layer):
             'indexing': self.indexing,
             'single_transform': self.single_transform,
             'fill_value': self.fill_value,
-            'add_identity': self.add_identity,
             'shift_center': self.shift_center,
         })
         return config
 
     def build(self, input_shape):
-        """
-        input_shape should be a list for two inputs:
-        input1: image.
-        input2: transform Tensor
-            if affine:
-                should be a N x N+1 matrix
-                *or* a N*N+1 tensor (which will be reshape to N x (N+1) and an identity row added)
-            if not affine:
-                should be a *vol_shape x N
-        """
 
+        # sanity check on input list
         if len(input_shape) > 2:
-            raise Exception('Spatial Transformer must be called on a list of length 2.'
-                            'First argument is the image, second is the transform.')
+            raise ValueError('Spatial Transformer must be called on a list of length 2: '
+                             'first argument is the image, second is the transform.')
 
         # set up number of dimensions
         self.ndims = len(input_shape[0]) - 2
-        self.inshape = input_shape
-        vol_shape = input_shape[0][1:-1]
-        trf_shape = input_shape[1][1:]
+        self.imshape = input_shape[0][1:]
+        self.trfshape = input_shape[1][1:]
+        self.is_affine = utils.shape_is_affine(input_shape[1][1:])
 
-        # the transform is an affine iff:
-        # it's a 1D Tensor [dense transforms need to be at least ndims + 1]
-        # it's a 2D Tensor and shape == [N+1, N+1] or [N, N+1]
-        #   [dense with N=1, which is the only one that could have a transform shape of 2,
-        #   would be of size Mx1]
-        is_matrix = (len(trf_shape) == 2) and \
-                    (trf_shape[0] in (self.ndims, self.ndims + 1)) and \
-                    (trf_shape[1] == self.ndims + 1)
-        self.is_affine = len(trf_shape) == 1 or is_matrix
-
-        # check sizes
-        if self.is_affine and len(trf_shape) == 1:
-            ex = self.ndims * (self.ndims + 1)
-            if trf_shape[0] != ex:
-                raise Exception('Expected flattened affine of len %d but got %d'
-                                % (ex, trf_shape[0]))
-
-        if not self.is_affine:
-            if trf_shape[-1] != self.ndims:
-                raise Exception('Offset flow field size expected: %d, found: %d'
-                                % (self.ndims, trf_shape[-1]))
+        # make sure inputs are reasonable shapes
+        if self.is_affine:
+            expected = (self.ndims, self.ndims + 1)
+            actual = tuple(self.trfshape[-2:])
+            if expected != actual:
+                raise ValueError(f'Expected {expected} affine matrix, got {actual}.')
+        else:
+            image_shape = tuple(self.imshape[:-1])
+            dense_shape = tuple(self.trfshape[:-1])
+            if image_shape != dense_shape:
+                raise ValueError(f'Dense transform must match image shape, got '
+                                  'got {image_shape} and {dense_shape}.')
 
         # confirm built
         self.built = True
@@ -156,30 +121,20 @@ class SpatialTransformer(Layer):
     def call(self, inputs):
         """
         Parameters
-            inputs: list with two entries
+            inputs: List of [img, trf], where img is the ND moving image and trf
+            is either a dense warp of shape [B, D1, ..., DN, N] or an affine matrix
+            of shape [B, N, N+1].
         """
 
-        # check shapes
-        assert len(inputs) == 2, "inputs has to be len 2, found: %d" % len(inputs)
-        vol = inputs[0]
-        trf = inputs[1]
+        # necessary for multi-gpu models
+        vol = K.reshape(inputs[0], (-1, *self.imshape))
+        trf = K.reshape(inputs[1], (-1, *self.trfshape))
 
-        # necessary for multi_gpu models...
-        vol = K.reshape(vol, [-1, *self.inshape[0][1:]])
-        trf = K.reshape(trf, [-1, *self.inshape[1][1:]])
-
-        # convert matrix to warp field
+        # convert affine matrix to warp field
         if self.is_affine:
-            ncols = self.ndims + 1
-            nrows = self.ndims
-            if np.prod(trf.shape.as_list()[1:]) == (self.ndims + 1) ** 2:
-                nrows += 1
-            if len(trf.shape[1:]) == 1:
-                trf = tf.reshape(trf, shape=(-1, nrows, ncols))
-            if self.add_identity:
-                trf += tf.eye(nrows, ncols, batch_shape=(tf.shape(trf)[0],))
-
-            fun = lambda x: affine_to_shift(x, vol.shape[1:-1], shift_center=self.shift_center)
+            fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
+                                                  shift_center=self.shift_center,
+                                                  indexing=self.indexing)
             trf = tf.map_fn(fun, trf, dtype=tf.float32)
 
         # prepare location shift
@@ -196,33 +151,38 @@ class SpatialTransformer(Layer):
             return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
 
     def _single_transform(self, inputs):
-        return transform(inputs[0], inputs[1],
-                         interp_method=self.interp_method, fill_value=self.fill_value)
+        return utils.transform(inputs[0], inputs[1], interp_method=self.interp_method,
+                               fill_value=self.fill_value)
 
 
 class VecInt(Layer):
     """
-    Vector Integration Layer
+    Vector integration layer
 
-    Enables vector integration via several methods 
-    (ode or quadrature for time-dependent vector fields, 
-    scaling and squaring for stationary fields)
+    Enables vector integration via several methods (ode or quadrature for
+    time-dependent vector fields and scaling-and-squaring for stationary fields)
 
     If you find this function useful, please cite:
+
       Unsupervised Learning for Fast Probabilistic Diffeomorphic Registration
       Adrian V. Dalca, Guha Balakrishnan, John Guttag, Mert R. Sabuncu
       MICCAI 2018.
     """
 
-    def __init__(self, indexing='ij', method='ss', int_steps=7, out_time_pt=1,
+    def __init__(self,
+                 indexing='ij',
+                 method='ss',
+                 int_steps=7,
+                 out_time_pt=1,
                  ode_args=None,
-                 odeint_fn=None, **kwargs):
+                 odeint_fn=None,
+                 **kwargs):
         """        
         Parameters:
-            method can be any of the methods in neuron.utils.integrate_vec
-            indexing can be 'xy' (switches first two dimensions) or 'ij'
-            int_steps is the number of integration steps
-            out_time_pt is time point at which to output if using odeint integration
+            indexing: Must be 'xy' or 'ij'.
+            method: Must be any of the methods in neuron.utils.integrate_vec.
+            int_steps: Number of integration steps.
+            out_time_pt: Time point at which to output if using odeint integration.
         """
 
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
@@ -267,7 +227,7 @@ class VecInt(Layer):
             inputs = [inputs]
         loc_shift = inputs[0]
 
-        # necessary for multi_gpu models...
+        # necessary for multi-gpu models
         loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
         if hasattr(inputs[0], '_keras_shape'):
             loc_shift._keras_shape = inputs[0]._keras_shape
@@ -294,11 +254,11 @@ class VecInt(Layer):
         out_time_pt = self.out_time_pt
         if len(inputs) == 2:
             out_time_pt = inputs[1]
-        return integrate_vec(vel, method=self.method,
-                             nb_steps=self.int_steps,
-                             ode_args=self.ode_args,
-                             out_time_pt=out_time_pt,
-                             odeint_fn=self.odeint_fn)
+        return utils.integrate_vec(vel, method=self.method,
+                                   nb_steps=self.int_steps,
+                                   ode_args=self.ode_args,
+                                   out_time_pt=out_time_pt,
+                                   odeint_fn=self.odeint_fn)
 
 
 # full wording.
@@ -307,70 +267,58 @@ VecIntegration = VecInt
 
 class RescaleTransform(Layer):
     """ 
-    Rescales a transform, which involves resizing the vector field *and* rescaling it.
+    Rescale transform layer
+
+    Rescales a dense or affine transform. If dense, this involves resizing and
+    rescaling the vector field.
     """
 
     def __init__(self, zoom_factor, interp_method='linear', **kwargs):
+        """
+        Parameters:
+            zoom_factor: Scaling factor.
+            interp_method: Interpolation method. Must be 'linear' or 'nearest'.
+        """
         self.zoom_factor = zoom_factor
         self.interp_method = interp_method
         super().__init__(**kwargs)
-        self.init_config = {'zoom_factor': zoom_factor, 'interp_method': interp_method, **kwargs}
 
     def get_config(self):
-        return self.init_config
+        config = super().get_config().copy()
+        config.update({
+            'zoom_factor': self.zoom_factor,
+            'interp_method': self.interp_method,
+        })
+        return config
 
     def build(self, input_shape):
-
-        if isinstance(input_shape[0], (list, tuple)) and len(input_shape) > 1:
-            raise Exception('RescaleTransform must be called on a list of length 1.')
-
-        if isinstance(input_shape[0], (list, tuple)):
-            input_shape = input_shape[0]
-
-        self.is_affine = is_affine(input_shape[1:])
-        self.ndims = extract_affine_ndims(
-            input_shape[1:]) if self.is_affine else int(input_shape[-1])
-
-        super().build(input_shape)
-
-    def call(self, inputs):
-
-        # check shapes
-        if isinstance(inputs, (list, tuple)):
-            assert len(inputs) == 1, "inputs has to be len 1. found: %d" % len(inputs)
-            trf = inputs[0]
-        else:
-            trf = inputs
-
-        if self.is_affine:
-            return tf.map_fn(self._single_affine_rescale, trf, dtype=tf.float32)
-        else:
-            if self.zoom_factor < 1:
-                # resize
-                trf = ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
-                return ne.layers.RescaleValues(self.zoom_factor, name=self.name + '_rescale')(trf)
-            else:
-                # multiply first to save memory (multiply in smaller space)
-                trf = ne.layers.RescaleValues(self.zoom_factor, name=self.name + '_rescale')(trf)
-                return ne.layers.Resize(self.zoom_factor, name=self.name + '_resize')(trf)
-
-    def _single_affine_rescale(self, trf):
-        matrix = affine_shift_to_identity(trf)
-        scaled_translation = tf.expand_dims(matrix[:, -1] * self.zoom_factor, 1)
-        scaled_matrix = tf.concat([matrix[:, :-1], scaled_translation], 1)
-        return affine_identity_to_shift(scaled_matrix)
+        # check if transform is affine
+        self.is_affine = utils.shape_is_affine(input_shape[1:])
+        self.ndims = input_shape[-1] - 1 if self.is_affine else input_shape[-1]
 
     def compute_output_shape(self, input_shape):
         if self.is_affine:
-            return (input_shape[0], self.ndims * (self.ndims + 1))
+            return (input_shape[0], self.ndims, self.ndims + 1)
         else:
-            output_shape = [int(dim * self.zoom_factor) for dim in input_shape[1:-1]]
-            return (input_shape[0], *output_shape, self.ndims)
+            shape = [int(d * self.zoom_factor) for d in input_shape[1:-1]]
+            return (input_shape[0], *shape, self.ndims)
+
+    def call(self, transform):
+        """
+        Parameters
+            transform: Transform to rescale. Either a dense warp of shape [B, D1, ..., DN, N]
+            or an affine matrix of shape [B, N, N+1].
+        """
+        if self.is_affine:
+            return utils.rescale_affine(transform, self.zoom_factor)
+        else:
+            return utils.rescale_dense_transform(transform, self.zoom_factor,
+                                                 interp_method=self.interp_method)
 
 
 class ComposeTransform(Layer):
     """ 
-    Compose a single transform from a series of transforms.
+    Composes a single transform from a series of transforms.
 
     Supports both dense and affine transforms, and returns a dense transform unless all
     inputs are affine. The list of transforms to compose should be in the order in which
@@ -381,218 +329,202 @@ class ComposeTransform(Layer):
     T = ComposeTransform()([A, B, C])
     """
 
+    def __init__(self, interp_method='linear', shift_center=True, indexing='ij', **kwargs):
+        """
+        Parameters:
+            shape: Target shape of dense shift.
+            interp_method: Interpolation method. Must be 'linear' or 'nearest'.
+            shift_center: Shift grid to image center.
+            indexing: Must be 'xy' or 'ij'.
+        """
+        self.interp_method = interp_method
+        self.shift_center = shift_center
+        self.indexing = indexing
+        super().__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'interp_method': self.interp_method,
+            'shift_center': self.shift_center,
+            'indexing': self.indexing,
+        })
+        return config
+
     def build(self, input_shape, **kwargs):
 
+        # sanity check on the inputs
         if not isinstance(input_shape, (list, tuple)):
             raise Exception('ComposeTransform must be called for a list of transforms.')
-
         if len(input_shape) < 2:
             raise ValueError('ComposeTransform input list size must be greater than 1.')
 
         # determine output transform type
-        found_dense_shape = next((ts for ts in input_shape if not is_affine(ts[1:])), None)
-
-        if found_dense_shape is not None:
+        dense_shape = next((t for t in input_shape if not utils.shape_is_affine(t[1:])), None)
+        if dense_shape is not None:
             # extract shape information from the dense transform
-            self.outshape = (input_shape[0], *found_dense_shape)
+            self.outshape = (input_shape[0], *dense_shape)
         else:
             # extract dimension information from affine
-            shape = input_shape[0][1:]
-            if len(shape) == 1:
-                # if vector, just compute ndims since length = N * (N + 1)
-                ndims = int((np.sqrt(4 * int(shape[0]) + 1) - 1) / 2)
-            else:
-                ndims = int(shape[0])
-            self.outshape = (input_shape[0], ndims * (ndims + 1))
+            ndims = input_shape[0][-1] - 1
+            self.outshape = (input_shape[0], ndims, ndims + 1)
 
-        super().build(input_shape)
-
-    def call(self, inputs):
-        single = lambda x: utils.compose(x)
-        return tf.map_fn(single, inputs, dtype=tf.float32)
+    def call(self, transforms):
+        """
+        Parameters:
+            transforms: List of affine or dense transforms to compose.
+        """
+        compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
+                                            shift_center=self.shift_center, indexing=self.indexing)
+        return tf.map_fn(compose, transforms, dtype=tf.float32)
 
     def compute_output_shape(self, input_shape):
         return self.outshape
 
 
-class AffineToDense(Layer):
+class AddIdentity(Layer):
     """
-    Converts an affine transform to a dense shift transform. The affine must represent
-    the shift between images (not over the identity).
+    Adds the identity matrix to the input. This is useful when predicting
+    affine parameters directly.
     """
-
-    def __init__(self, volshape, **kwargs):
-        self.volshape = volshape
-        self.ndims = len(volshape)
-        super().__init__(**kwargs)
 
     def build(self, input_shape):
-
         shape = input_shape[1:]
-
+        
         if len(shape) == 1:
-            ex = self.ndims * (self.ndims + 1)
-            if shape[0] != ex:
-                raise ValueError('Expected flattened affine of len %d but got %d' % (ex, shape[0]))
-
-        if len(shape) == 2 and (shape[0] != self.ndims or shape[1] != self.ndims + 1):
-            err_msg = 'Expected affine matrix of shape %s but got %s'
-            raise ValueError(err_msg % (str((self.ndims, self.ndims + 1)), str(shape)))
-
-        super().build(input_shape)
-
-    def call(self, trf):
-        """
-        Parameters
-            trf: affine transform either as a matrix with shape (N, N + 1)
-            or a flattened vector with shape (N * (N + 1))
-        """
-        single = lambda x: affine_to_shift(x, self.volshape, shift_center=True, add_identity=True)
-        return tf.map_fn(single, trf, dtype=tf.float32)
+            # let's support 1D flattened affines here, since it's
+            # likely the input is coming right from a dense layer
+            length = shape[0]
+            if length == 6:
+                self.ndims = 2
+            elif length == 12:
+                self.ndims = 3
+            else:
+                raise ValueError('Flat affine must be of length 6 (2D) or 12 (3D), got {length}.')
+        elif len(shape) == 2:
+            # or it could be a 2D matrix
+            utils.validate_affine_shape(input_shape)
+            self.ndims = shape[1] - 1
+        else:
+            raise ValueError(f'Input to AddIdentity must be a flat 1D array or 2D matrix, '
+                              'got shape {input_shape}.')
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], *self.volshape, self.ndims)
+        return (input_shape[0], self.ndims, self.ndims + 1)
+
+    def call(self, transform):
+        """
+        Parameters
+            transform: Affine transform of shape [B, N, N+1] or [B, N*(N+1)].
+        """
+        transform = tf.reshape(transform, (-1, self.ndims, self.ndims + 1))
+        transform = utils.affine_add_identity(transform)
+        return transform
 
 
 class InvertAffine(Layer):
     """
-    Inverts an affine transform. The transform must represent
-    the shift between images (not over the identity).
+    Inverts an affine transform.
     """
 
     def build(self, input_shape):
-        self.ndims = extract_affine_ndims(input_shape[1:])
-        super().build(input_shape)
+        utils.validate_affine_shape(input_shape)
+        self.ndims = input_shape[-1] - 1
 
-    def compute_output_shape(self, input_shape, **kwargs):
-        return (input_shape[0], self.ndims * (self.ndims + 1))
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.ndims, self.ndims + 1)
 
-    def call(self, trf):
+    def call(self, matrix):
         """
         Parameters
-            trf: affine transform either as a matrix with shape (N, N + 1)
-            or a flattened vector with shape (N * (N + 1))
+            matrix: Affine matrix of shape [B, N, N+1] to invert.
         """
-        return tf.map_fn(self._single_invert, trf, dtype=tf.float32)
-
-    def _single_invert(self, trf):
-        matrix = affine_shift_to_identity(trf)
-        inverse = tf.linalg.inv(matrix)
-        return affine_identity_to_shift(inverse)
+        return tf.linalg.inv(utils.make_square_affine(matrix))[:, :self.ndims, :]
 
 
-class AffineTransformationsToMatrix(Layer):
+class ParamsToAffineMatrix(Layer):
     """
-    Computes the corresponding (flattened) affine from a vector of transform
-    components. The components are in the order of (translation, rotation), so the
-    input must a 1D array of length (ndim * 2).
-
-    TODO: right now only supports 4x4 transforms - make this dimension-independent
-    TODO: allow for scaling and shear components
+    Constructs an affine transformation matrix from translation, rotation, scaling and shearing
+    parameters in 2D or 3D.
     """
 
-    def __init__(self, ndims, scale=False, **kwargs):
+    def __init__(self, ndims=3, deg=True, shift_scale=False, **kwargs):
+        """
+        Parameters:
+            ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
+            identity_included: Return affine matrix with identity included. Defaults to False.
+            deg: Whether the input rotations are specified in degrees. Defaults to True.
+            shift_scale: Add 1 to any specified scaling parameters. This may be desirable
+                when the parameters are estimated by a network. Defaults to False.
+        """
         self.ndims = ndims
-        self.scale = scale
-        if ndims != 3 and ndims != 2:
-            raise NotImplementedError('rigid registration is limited to 3D for now')
-
+        self.deg = deg
+        self.shift_scale = shift_scale
         super().__init__(**kwargs)
 
     def get_config(self):
         config = super().get_config().copy()
         config.update({
             'ndims': self.ndims,
-            'scale': self.scale,
+            'deg': self.deg,
+            'shift_scale': self.shift_scale,
         })
         return config
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.ndims * (self.ndims + 1))
+        return (input_shape[0], self.ndims, self.ndims + 1)
 
-    def call(self, vector):
+    def call(self, params):
         """
-        Parameters
-            vector: tensor of affine components
+        Parameters:
+            params: Parameters as a vector which corresponds to translations, rotations, scaling
+                    and shear. The size of the last axis must not exceed (N, N+1), for N
+                    dimensions. If the size is less than that, the missing parameters will be
+                    set to the identity.
         """
-        return tf.map_fn(self._single_conversion, vector, dtype=tf.float32)
+        matrix = utils.params_to_affine_matrix(
+            par=params,
+            deg=self.deg,
+            shift_scale=self.shift_scale,
+            ndims=self.ndims)
+        return matrix
 
-    def _single_conversion(self, vector):
 
-        if self.ndims == 3:
-            # extract components of input vector
-            translation = vector[:3]
-            angle_x = vector[3]
-            angle_y = vector[4]
-            angle_z = vector[5]
+class AffineToDenseShift(Layer):
+    """
+    Converts an affine transform to a dense shift transform.
+    """
 
-            # x rotation matrix
-            cosx = tf.math.cos(angle_x)
-            sinx = tf.math.sin(angle_x)
-            x_rot = tf.convert_to_tensor([
-                [1, 0, 0],
-                [0, cosx, -sinx],
-                [0, sinx, cosx]
-            ], name='x_rot')
+    def __init__(self, shape, shift_center=True, **kwargs):
+        """
+        Parameters:
+            shape: Target shape of dense shift.
+        """
+        self.shape = shape
+        self.ndims = len(shape)
+        self.shift_center = shift_center
+        super().__init__(**kwargs)
 
-            # y rotation matrix
-            cosy = tf.math.cos(angle_y)
-            siny = tf.math.sin(angle_y)
-            y_rot = tf.convert_to_tensor([
-                [cosy, 0, siny],
-                [0, 1, 0],
-                [-siny, 0, cosy]
-            ], name='y_rot')
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'shape': self.shape,
+            'ndims': self.ndims,
+            'shift_center': self.shift_center,
+        })
+        return config
 
-            # z rotation matrix
-            cosz = tf.math.cos(angle_z)
-            sinz = tf.math.sin(angle_z)
-            z_rot = tf.convert_to_tensor([
-                [cosz, -sinz, 0],
-                [sinz, cosz, 0],
-                [0, 0, 1]
-            ], name='z_rot')
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], *self.shape, self.ndims)
 
-            # compose matrices
-            t_rot = tf.tensordot(x_rot, y_rot, 1)
-            m_rot = tf.tensordot(t_rot, z_rot, 1)
+    def build(self, input_shape):
+        utils.validate_affine_shape(input_shape)
 
-            # build scale matrix
-            s = vector[6] if self.scale else 1.0
-            m_scale = tf.convert_to_tensor([
-                [s, 0, 0],
-                [0, s, 0],
-                [0, 0, s]
-            ], name='scale')
-
-        elif self.ndims == 2:
-            # extract components of input vector
-            translation = vector[:2]
-            angle = vector[2]
-
-            # rotation matrix
-            cosz = tf.math.cos(angle)
-            sinz = tf.math.sin(angle)
-            m_rot = tf.convert_to_tensor([
-                [cosz, -sinz],
-                [sinz, cosz]
-            ], name='rot')
-
-            s = vector[3] if self.scale else 1.0
-            m_scale = tf.convert_to_tensor([
-                [s, 0],
-                [0, s]
-            ], name='scale')
-
-        # we want to encode shift transforms, so remove identity
-        m_rot -= tf.eye(self.ndims)
-
-        # scale the matrix
-        m_rot = tf.tensordot(m_rot, m_scale, 1)
-
-        # concat the linear translation
-        matrix = tf.concat([m_rot, tf.expand_dims(translation, 1)], 1)
-
-        # flatten
-        affine = tf.reshape(matrix, [self.ndims * (self.ndims + 1)])
-        return affine
+    def call(self, matrix):
+        """
+        Parameters:
+            matrix: Affine matrix of shape [B, N, N+1].
+        """
+        single = lambda mat: utils.affine_to_dense_shift(mat, self.shape,
+                                                         shift_center=self.shift_center)
+        return tf.map_fn(single, matrix, dtype=tf.float32)
