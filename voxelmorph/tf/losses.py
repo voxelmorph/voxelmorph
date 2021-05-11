@@ -45,6 +45,8 @@ class NCC:
         # set window size
         if self.win is None:
             self.win = [9] * ndims
+        elif not isinstance(self.win, list):  # user specified a single number not a list
+            self.win = [self.win] * ndims
 
         # get convolution function
         conv_fn = getattr(tf.nn, 'conv%dd' % ndims)
