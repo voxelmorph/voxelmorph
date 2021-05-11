@@ -994,10 +994,11 @@ class Unet(tf.keras.Model):
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
-            last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
-
-        if final_activation_function is not None:
-            last = KL.Activation(final_activation_function, name='%s_final_activation' % name)(last)
+            if num + 1 == len(final_convs):  # add activation func (if specified) to last layer
+                last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor, 
+                                   final_activation_function=final_activation_function)
+            else:
+                last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
@@ -1166,7 +1167,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
-                include_activation=True):
+                include_activation=True, final_activation_function=None):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -1194,9 +1195,12 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
                              name='resfix_' + name, **extra_conv_params)(conv_inputs)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
 
-    if include_activation:
-        name = name + '_activation' if name else None
-        convolved = KL.LeakyReLU(0.2, name=name)(convolved)
+    if final_activation_function is not None:
+        this_name = final_activation_function + '_activation' if name else None
+        convolved = KL.Activation(final_activation_function, name=this_name)(convolved)
+    elif include_activation:
+        this_name = name + '_relu_activation' if name else None
+        convolved = KL.LeakyReLU(0.2, name=this_name)(convolved)
 
     return convolved
 
