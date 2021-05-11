@@ -31,7 +31,7 @@ import tensorflow as tf
 import voxelmorph as vxm
 from tensorflow.keras import backend as K
 
-tf.compat.v1.disable_v2_behavior()
+tf.compat.v1.disable_eager_execution()
 
 
 # parse the commandline
@@ -52,10 +52,10 @@ parser.add_argument('--test-reg', nargs=3,
 # training parameters
 parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
 parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
-parser.add_argument('--epochs', type=int, default=1500,
-                    help='number of training epochs (default: 1500)')
+parser.add_argument('--epochs', type=int, default=6000,
+                    help='number of training epochs (default: 6000)')
 parser.add_argument('--steps-per-epoch', type=int, default=100,
-                    help='frequency of model saves (default: 100)')
+                    help='steps per epoch (default: 100)')
 parser.add_argument('--load-weights', help='optional weights file to initialize with')
 parser.add_argument('--initial-epoch', type=int, default=0,
                     help='initial epoch number (default: 0)')
@@ -76,8 +76,8 @@ parser.add_argument('--image-loss', default='mse',
                     help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--image-sigma', type=float, default=0.05,
                     help='estimated image noise for mse image scaling (default: 0.05)')
-parser.add_argument('--oversample-rate', type=float, default=0.4,
-                    help='end-point hyperparameter over-sample rate (default 0.4)')
+parser.add_argument('--oversample-rate', type=float, default=0.2,
+                    help='hyperparameter end-point over-sample rate (default 0.2)')
 args = parser.parse_args()
 
 # load and prepare training data
@@ -176,9 +176,7 @@ with tf.device(device):
 
     model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=[image_loss, grad_loss])
 
-    # save starting weights
-    model.save(save_filename.format(epoch=args.initial_epoch))
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=100)
 
     model.fit_generator(generator,
                         initial_epoch=args.initial_epoch,
@@ -186,6 +184,9 @@ with tf.device(device):
                         steps_per_epoch=args.steps_per_epoch,
                         callbacks=[save_callback],
                         verbose=1)
+
+    # save final weights
+    model.save(save_filename.format(epoch=args.epochs))
 
     # save an example registration across lambda values
     if args.test_reg:

@@ -187,6 +187,8 @@ class VxmDense(ne.modelio.LoadableModel):
         # cache pointers to layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.unet_model = unet_model
+        self.references.source = source
+        self.references.target = target
         self.references.y_source = y_source
         self.references.y_target = y_target if bidir else None
         self.references.pos_flow = pos_flow
@@ -228,6 +230,9 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
                  int_steps=7,
                  int_downsize=2,
                  seg_downsize=2,
+                 bidir=False,
+                 bidir_labels=False,
+                 name='vxm_dense',
                  **kwargs):
         """
         Parameters:
@@ -241,35 +246,60 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
                 The flow field is not downsampled when this value is 1.
             seg_downsize: Interger specifying the downsampled factor of the segmentations.
                 Default is 2.
+            bidir: Enable bidirectional cost function on images. Default is False.
+            bidir_labels: Enable bidirectional cost function on labels and images.
+                Default is False.
             kwargs: Forwarded to the internal VxmDense model.
         """
+
+        # if bidir_labels, make sure bidir is also enabled
+        if bidir_labels:
+            bidir = True
 
         # configure base voxelmorph network
         vxm_model = VxmDense(inshape,
                              nb_unet_features=nb_unet_features,
                              int_steps=int_steps,
                              int_downsize=int_downsize,
+                             bidir=bidir,
                              **kwargs)
 
         # configure downsampled seg input layer
-        inshape_downsized = (np.array(inshape) / seg_downsize).astype(int)
-        seg_src = tf.keras.Input(shape=(*inshape_downsized, nb_labels))
+        inshape_ds = (np.array(inshape) / seg_downsize).astype(int)
+        seg_src = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_source_seg')
 
         # configure warped seg output layer
         seg_flow = layers.RescaleTransform(
-            1 / seg_downsize, name='seg_resize')(vxm_model.references.pos_flow)
-        y_seg = layers.SpatialTransformer(interp_method='linear',
-                                          indexing='ij',
-                                          name='seg_transformer')([seg_src, seg_flow])
+            1 / seg_downsize, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
+        y_seg_src = layers.SpatialTransformer(interp_method='linear',
+                                              indexing='ij',
+                                              name=f'{name}_seg_transformer')([seg_src, seg_flow])
+
+        inputs = vxm_model.inputs + [seg_src]
+        outputs = vxm_model.outputs + [y_seg_src]
+
+        if bidir_labels:
+
+            # target seg input
+            seg_trg = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_target_seg')
+            inputs.append(seg_trg)
+
+            # warp labels bidirectionally
+            neg_seg_flow = layers.RescaleTransform(
+                1 / seg_downsize, name=f'{name}_seg_neg_resize')(vxm_model.references.neg_flow)
+            y_seg_trg = layers.SpatialTransformer(interp_method='linear',
+                                                  indexing='ij',
+                                                  name=f'{name}_seg_neg_transformer')(
+                                                  [seg_trg, neg_seg_flow])  # nopep8
+            outputs.append(y_seg_trg)
 
         # initialize the keras model
-        inputs = vxm_model.inputs + [seg_src]
-        outputs = vxm_model.outputs + [y_seg]
         super().__init__(inputs=inputs, outputs=outputs)
 
         # cache pointers to important layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.pos_flow = vxm_model.references.pos_flow
+        self.references.neg_flow = vxm_model.references.neg_flow
 
     def get_registration_model(self):
         """
@@ -522,7 +552,8 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         # extract necessary layers from the network
         # important to note that we're warping the atlas to the image in this case and
         # we'll swap the input order later
-        atlas, image = vxm_model.inputs
+        atlas = vxm_model.references.source
+        image = vxm_model.references.target
         warped_atlas = vxm_model.references.y_source if warp_atlas else atlas
         flow = vxm_model.references.pos_flow
 
@@ -586,10 +617,11 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         if not supervised_model:
             loss_vol = KL.Lambda(lambda x: logsum(x), name='loss_vol')(logpdf)
         else:
-            loss_vol = KL.Softmax(name='loss_vol')(logpdf)
+            loss_vol = logpdf
 
-        # initialize the keras model
-        super().__init__(inputs=[image, atlas], outputs=[loss_vol, flow])
+        # initialize the keras model (need to swap the inputs)
+        super().__init__(inputs=[vxm_model.inputs[1], vxm_model.inputs[0]],
+                         outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
@@ -918,7 +950,7 @@ class Unet(tf.keras.Model):
             half_res: Skip the last decoder upsampling. Default is False.
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
-            final_activation_function: if not None add an activation layer at end
+            final_activation_function: Replace default activation function in final layer of unet.
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -929,7 +961,10 @@ class Unet(tf.keras.Model):
             unet_input = KL.Input(shape=inshape, name='%s_input' % name)
             model_inputs = [unet_input]
         else:
-            unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
+            if len(input_model.outputs) == 1:
+                unet_input = input_model.outputs[0]
+            else:
+                unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
             model_inputs = input_model.inputs
 
         # add hyp_input tensor if provided
@@ -979,26 +1014,41 @@ class Unet(tf.keras.Model):
             # temporarily use maxpool since downsampling doesn't exist in keras
             last = MaxPooling(max_pool[level], name='%s_enc_pooling_%d' % (name, level))(last)
 
+        # if final_activation_function is set, we need to build a utility that checks
+        # which layer is truly the last, so we know not to apply the activation there
+        if final_activation_function is not None and len(final_convs) == 0:
+            activate = lambda l, c: not (l == (nb_levels - 2) and c == (nb_conv_per_level - 1))
+        else:
+            activate = lambda l, c: True
+
         # configure decoder (up-sampling path)
         for level in range(nb_levels - 1):
             real_level = nb_levels - level - 2
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
+                                   include_activation=activate(level, conv))
             if not half_res or level < (nb_levels - 2):
                 layer_name = '%s_dec_upsample_%d' % (name, real_level)
                 last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level],
                                        name=layer_name)
 
+        # now build function to check which of the 'final convs' is really the last
+        if final_activation_function is not None:
+            activate = lambda n: n != (len(final_convs) - 1)
+        else:
+            activate = lambda n: True
+
         # now we take care of any remaining convolutions
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
-            if num + 1 == len(final_convs):  # add activation func (if specified) to last layer
-                last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor, 
-                                   final_activation_function=final_activation_function)
-            else:
-                last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor)
+            last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor,
+                               include_activation=activate(num))
+
+        # add the final activation function is set
+        if final_activation_function is not None:
+            last = KL.Activation(final_activation_function, name='%s_final_activation' % name)(last)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
 
@@ -1167,7 +1217,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
-                include_activation=True, final_activation_function=None):
+                include_activation=True):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -1195,12 +1245,9 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
                              name='resfix_' + name, **extra_conv_params)(conv_inputs)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
 
-    if final_activation_function is not None:
-        this_name = final_activation_function + '_activation' if name else None
-        convolved = KL.Activation(final_activation_function, name=this_name)(convolved)
-    elif include_activation:
-        this_name = name + '_relu_activation' if name else None
-        convolved = KL.LeakyReLU(0.2, name=this_name)(convolved)
+    if include_activation:
+        name = name + '_activation' if name else None
+        convolved = KL.LeakyReLU(0.2, name=name)(convolved)
 
     return convolved
 
