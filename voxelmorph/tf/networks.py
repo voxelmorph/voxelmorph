@@ -189,6 +189,7 @@ class VxmDense(ne.modelio.LoadableModel):
         self.references.unet_model = unet_model
         self.references.source = source
         self.references.target = target
+        self.references.velocity = preint_flow
         self.references.y_source = y_source
         self.references.y_target = y_target if bidir else None
         self.references.pos_flow = pos_flow
