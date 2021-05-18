@@ -1017,9 +1017,9 @@ class Unet(tf.keras.Model):
         # if final_activation_function is set, we need to build a utility that checks
         # which layer is truly the last, so we know not to apply the activation there
         if final_activation_function is not None and len(final_convs) == 0:
-            activate = lambda l, c: not (l == (nb_levels - 2) and c == (nb_conv_per_level - 1))
+            activate = lambda lvl, c: not (lvl == (nb_levels - 2) and c == (nb_conv_per_level - 1))
         else:
-            activate = lambda l, c: True
+            activate = lambda lvl, c: True
 
         # configure decoder (up-sampling path)
         for level in range(nb_levels - 1):

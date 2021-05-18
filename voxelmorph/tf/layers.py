@@ -100,7 +100,7 @@ class SpatialTransformer(Layer):
         self.ndims = len(input_shape[0]) - 2
         self.imshape = input_shape[0][1:]
         self.trfshape = input_shape[1][1:]
-        self.is_affine = utils.shape_is_affine(input_shape[1][1:])
+        self.is_affine = utils.is_affine_shape(input_shape[1][1:])
 
         # make sure inputs are reasonable shapes
         if self.is_affine:
@@ -112,8 +112,8 @@ class SpatialTransformer(Layer):
             image_shape = tuple(self.imshape[:-1])
             dense_shape = tuple(self.trfshape[:-1])
             if image_shape != dense_shape:
-                raise ValueError(f'Dense transform must match image shape, got '
-                                  'got {image_shape} and {dense_shape}.')
+                raise ValueError('Dense transform must match image shape, got '
+                                 f'got {image_shape} and {dense_shape}.')
 
         # confirm built
         self.built = True
@@ -133,8 +133,8 @@ class SpatialTransformer(Layer):
         # convert affine matrix to warp field
         if self.is_affine:
             fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
-                                                  shift_center=self.shift_center,
-                                                  indexing=self.indexing)
+                                                        shift_center=self.shift_center,
+                                                        indexing=self.indexing)
             trf = tf.map_fn(fun, trf, dtype=tf.float32)
 
         # prepare location shift
@@ -293,7 +293,7 @@ class RescaleTransform(Layer):
 
     def build(self, input_shape):
         # check if transform is affine
-        self.is_affine = utils.shape_is_affine(input_shape[1:])
+        self.is_affine = utils.is_affine_shape(input_shape[1:])
         self.ndims = input_shape[-1] - 1 if self.is_affine else input_shape[-1]
 
     def compute_output_shape(self, input_shape):
@@ -360,7 +360,7 @@ class ComposeTransform(Layer):
             raise ValueError('ComposeTransform input list size must be greater than 1.')
 
         # determine output transform type
-        dense_shape = next((t for t in input_shape if not utils.shape_is_affine(t[1:])), None)
+        dense_shape = next((t for t in input_shape if not utils.is_affine_shape(t[1:])), None)
         if dense_shape is not None:
             # extract shape information from the dense transform
             self.outshape = (input_shape[0], *dense_shape)
@@ -390,7 +390,7 @@ class AddIdentity(Layer):
 
     def build(self, input_shape):
         shape = input_shape[1:]
-        
+
         if len(shape) == 1:
             # let's support 1D flattened affines here, since it's
             # likely the input is coming right from a dense layer
@@ -406,8 +406,8 @@ class AddIdentity(Layer):
             utils.validate_affine_shape(input_shape)
             self.ndims = shape[1] - 1
         else:
-            raise ValueError(f'Input to AddIdentity must be a flat 1D array or 2D matrix, '
-                              'got shape {input_shape}.')
+            raise ValueError('Input to AddIdentity must be a flat 1D array or 2D matrix, '
+                             f'got shape {input_shape}.')
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.ndims, self.ndims + 1)
