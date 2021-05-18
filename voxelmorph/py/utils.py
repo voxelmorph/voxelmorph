@@ -75,10 +75,11 @@ def load_volfile(
     ret_affine=False
 ):
     """
-    Loads a file in nii, nii.gz, mgz, npz, or npy format.
+    Loads a file in nii, nii.gz, mgz, npz, or npy format. If input file is not a string,
+    returns it directly (allows files preloaded in memory to be passed to a generator)
 
     Parameters:
-        filename: Filename to load.
+        filename: Filename to load, or preloaded volume to be returned.
         np_var: If the file is a npz (compressed numpy) with multiple variables,
             the desired variable can be specified with np_var. Default is 'vol'.
         add_batch_axis: Adds an axis to the beginning of the array. Default is False.
@@ -87,10 +88,13 @@ def load_volfile(
         resize: Volume resize factor. Default is 1
         ret_affine: Additionally returns the affine transform (or None if it doesn't exist).
     """
-    if not os.path.isfile(filename):
-        raise ValueError("'%s' is not a file." % filename)
 
-    if filename.endswith(('.nii', '.nii.gz', '.mgz')):
+    if not os.path.isfile(filename):
+        if ret_affine:
+            (vol, affine) = filename
+        else:
+            vol = filename
+    elif filename.endswith(('.nii', '.nii.gz', '.mgz')):
         import nibabel as nib
         img = nib.load(filename)
         vol = img.get_data().squeeze()

@@ -17,13 +17,16 @@ def volgen(
 ):
     """
     Base generator for random volume loading. Volumes can be passed as a path to
-    the parent directory, a glob pattern or a list of file paths. Corresponding
-    segmentations are additionally loaded if `segs` is provided as alist or set to
-    True. If `segs` is True, npz files with variable names 'vol' and 'seg' are
-    expected.
+    the parent directory, a glob pattern, a list of file paths, or a list of
+    preloaded volumes. Corresponding segmentations are additionally loaded if
+    `segs` is provided as a list (of file paths or preloaded segmentations) or set
+    to True. If `segs` is True, npz files with variable names 'vol' and 'seg' are
+    expected. Passing in preloaded volumes (with optional preloaded segmentations)
+    allows volumes preloaded in memory to be passed to a generator.
 
     Parameters:
-        vol_names: Path, glob pattern or list of volume files to load.
+        vol_names: Path, glob pattern, list of volume files to load, or list of
+            preloaded volumes.
         batch_size: Batch size. Default is 1.
         segs: Loads corresponding segmentations. Default is None.
         np_var: Name of the volume variable if loading npz files. Default is 'vol'.
@@ -58,7 +61,7 @@ def volgen(
             s = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
             vols.append(np.concatenate(s, axis=0))
         elif isinstance(segs, list):
-            # assume segs is a corresponding file list
+            # assume segs is a corresponding list of files or preloaded volumes
             s = [py.utils.load_volfile(segs[i], **load_params) for i in indices]
             vols.append(np.concatenate(s, axis=0))
 
@@ -70,7 +73,7 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
     Generator for scan-to-scan registration.
 
     Parameters:
-        vol_names: List of volume files to load.
+        vol_names: List of volume files to load, or list of preloaded volumes.
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
         prob_same: Induced probability that source and target inputs are the same. Default is 0.
@@ -112,7 +115,7 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
     argument like in semisupervised().
 
     Parameters:
-        vol_names: List of volume files to load.
+        vol_names: List of volume files to load, or list of preloaded volumes.
         atlas: Atlas volume data.
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
@@ -146,8 +149,8 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     Scan-to-atlas training can be enabled by providing the atlas_file argument. 
 
     Parameters:
-        vol_names: List of volume files to load.
-        seg_names: List of corresponding seg files to load.
+        vol_names: List of volume files to load, or list of preloaded volumes.
+        seg_names: List of corresponding seg files to load, or list of preloaded volumes.
         labels: Array of discrete label values to use in training.
         atlas_file: Atlas npz file for scan-to-atlas training. Default is None.
         downsize: Downsize factor for segmentations. Default is 2.
@@ -196,7 +199,7 @@ def template_creation(vol_names, bidir=False, batch_size=1, **kwargs):
     Generator for unconditional template creation.
 
     Parameters:
-        vol_names: List of volume files to load.
+        vol_names: List of volume files to load, or list of preloaded volumes.
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
         kwargs: Forwarded to the internal volgen generator.
@@ -222,7 +225,7 @@ def conditional_template_creation(vol_names, atlas, attributes,
     Generator for conditional template creation.
 
     Parameters:
-        vol_names: List of volume files to load.
+        vol_names: List of volume files to load, or list of preloaded volumes.
         atlas: Atlas input volume data.
         attributes: Dictionary of phenotype data for each vol name.
         batch_size: Batch size. Default is 1.
