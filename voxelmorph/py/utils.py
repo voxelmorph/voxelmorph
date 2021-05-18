@@ -88,6 +88,8 @@ def load_volfile(
         resize: Volume resize factor. Default is 1
         ret_affine: Additionally returns the affine transform (or None if it doesn't exist).
     """
+    if isinstance(filename, string) and not os.path.isfile(filename):
+        raise ValueError("'%s' is not a file." % filename)
 
     if not os.path.isfile(filename):
         if ret_affine:
