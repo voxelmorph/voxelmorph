@@ -620,8 +620,10 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         else:
             loss_vol = logpdf
 
-        # initialize the keras model (need to swap the inputs)
-        super().__init__(inputs=[vxm_model.inputs[1], vxm_model.inputs[0]],
+        # initialize the keras model
+        # need to swap the first two inputs, in order to warp the atlas to the image
+        # then append any additional inputs that an input_model (via kwargs) might have
+        super().__init__(inputs=[vxm_model.inputs[1], vxm_model.inputs[0]] + vxm_model.inputs[2:],
                          outputs=[loss_vol, flow])
 
         # cache pointers to layers and tensors for future reference
