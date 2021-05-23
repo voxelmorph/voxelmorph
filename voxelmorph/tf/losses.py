@@ -34,7 +34,7 @@ class NCC:
 
         # compute filters
         in_ch = J.get_shape().as_list()[-1]
-        sum_filt = tf.ones([*self.win, in_ch, 1])
+        sum_filt = tf.ones([*self.win, 1, in_ch])
         strides = 1
         if ndims > 1:
             strides = [1] * (ndims + 2)
@@ -48,7 +48,7 @@ class NCC:
         IJ_sum = conv_fn(IJ, sum_filt, strides, padding)
 
         # compute cross correlation
-        win_size = np.prod(self.win) * in_ch
+        win_size = np.prod(self.win)
         u_I = I_sum / win_size
         u_J = J_sum / win_size
 
