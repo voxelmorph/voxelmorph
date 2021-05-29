@@ -439,7 +439,10 @@ class InvertAffine(Layer):
         Parameters
             matrix: Affine matrix of shape [B, N, N+1] to invert.
         """
-        return tf.linalg.inv(utils.make_square_affine(matrix))[:, :self.ndims, :]
+        return tf.map_fn(self._single_invert, matrix, dtype='float32')
+
+    def _single_invert(self, matrix):
+        return tf.linalg.inv(utils.make_square_affine(matrix))[:self.ndims, :]
 
 
 class ParamsToAffineMatrix(Layer):
@@ -482,12 +485,16 @@ class ParamsToAffineMatrix(Layer):
                     dimensions. If the size is less than that, the missing parameters will be
                     set to the identity.
         """
-        matrix = utils.params_to_affine_matrix(
-            par=params,
-            deg=self.deg,
-            shift_scale=self.shift_scale,
-            ndims=self.ndims)
-        return matrix
+        def to_matrix(x):
+            return utils.params_to_affine_matrix(par=x,
+                                                 deg=self.deg,
+                                                 shift_scale=self.shift_scale,
+                                                 ndims=self.ndims)
+
+        if params.shape[0] is None:
+            return tf.map_fn(to_matrix, params, dtype=tf.float32)
+        else:
+            return to_matrix(params)
 
 
 class AffineToDenseShift(Layer):
