@@ -535,6 +535,17 @@ def affine_remove_identity(mat):
     return mat - tf.eye(ndims + 1)[:ndims]
 
 
+def invert_affine(mat):
+    """
+    Compute the multiplicative inverse of an affine matrix.
+
+    Parameters:
+        mat: Affine matrix of shape [..., N, N+1].
+    """
+    ndims = mat.shape[-1] - 1
+    return tf.linalg.inv(make_square_affine(mat))[:ndims, :]
+
+
 def rescale_affine(mat, factor):
     """
     Rescales affine matrix by some factor.
