@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
 
-"""
-Example script for training a SynthMorph model on images synthesized from label maps. Requires
-TensorFlow 2.0 and Python 3.7 (or later).
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at:
+#
+# https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
 
-If you use this code, please cite the following:
-
-    M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca. 
-    Learning image registration without images.
-    arXiv preprint arXiv:2004.10282, 2020. https://arxiv.org/abs/2004.10282
-
-Copyright 2020 Malte Hoffmann
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
-"""
 
 import os
 import pickle
@@ -33,8 +23,21 @@ import neurite as ne
 import voxelmorph as vxm
 
 
+# reference
+ref = (
+    'If you find this code useful, please cite:\n\n'
+    '\tLearning MRI Contrast-Agnostic Registration.\n'
+    '\tM Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.\n'
+    '\tISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.\n'
+    '\thttps://doi.org/10.1109/ISBI48211.2021.9434113\n'
+)
+
+
 # parse command line
-p = argparse.ArgumentParser()
+p = argparse.ArgumentParser(
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    description=f'Train a SynthMorph model on images synthesized from label maps. {ref}',
+)
 
 # data organization parameters
 p.add_argument('--label-dir', nargs='+', help='path or glob pattern pointing to input label maps')
@@ -50,10 +53,9 @@ p.add_argument('--vel-std', type=float, default=0.5, help='std. dev. of SVF (def
 p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale (default: 16)')
 p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field (default: 0.3)')
 p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale (default: 40)')
-p.add_argument(
-    '--out-labels', default='fs_labels.npy',
-    help='labels whose overlap to optimize (default: fs_labels.npy)',
-)
+p.add_argument('--out-labels', default='fs_labels.npy', help='''
+    labels whose overlap to optimize (default: fs_labels.npy from  README)
+''')
 
 # training parameters
 p.add_argument('--gpu', type=str, default=0, help='ID of GPU to use (default: 0)')
@@ -64,18 +66,16 @@ p.add_argument('--save-freq', type=int, default=10, help='epochs between model s
 p.add_argument('--reg-param', type=float, default=1., help='regularization weight (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch (default: 0)')
+p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch (default: 1)')
 
 # network architecture parameters
 p.add_argument('--int-steps', type=int, default=5, help='number of integration steps (default: 5)')
-p.add_argument(
-    '--enc', type=int, nargs='+', default=[64] * 4,
-    help='list of U-net encoder filters (default: 64 64 64 64)',
-)
-p.add_argument(
-    '--dec', type=int, nargs='+', default=[64] * 6,
-    help='list of U-net decorder filters (default: 64 64 64 64 64 64)',
-)
+p.add_argument('--enc', type=int, nargs='+', default=[64] * 4, help='''
+    U-net encoder filters (default: 64 64 64 64)
+''')
+p.add_argument('--dec', type=int, nargs='+', default=[64] * 6, help='''
+    U-net decorder filters (default: 64 64 64 64 64 64)
+''')
 
 arg = p.parse_args()
 
@@ -147,6 +147,7 @@ reg_args = dict(
 
 # build model
 with context:
+
     # generation
     gen_model_1 = ne.models.labels_to_image(**gen_args, id=0)
     gen_model_2 = ne.models.labels_to_image(**gen_args, id=1)
@@ -196,3 +197,4 @@ model.fit(
     steps_per_epoch=steps_per_epoch,
     verbose=arg.verbose,
 )
+print(f'\nThank you for using SynthMorph! {ref}')
