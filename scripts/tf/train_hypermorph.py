@@ -8,7 +8,7 @@ If you use this code, please cite the following:
 
     A Hoopes, M Hoffmann, B Fischl, J Guttag, AV Dalca. 
     HyperMorph: Amortized Hyperparameter Learning for Image Registration
-    arXiv preprint arXiv:2101.01035, 2021. https://arxiv.org/abs/2101.01035
+    IPMI: Information Processing in Medical Imaging. 2021. https://arxiv.org/abs/2101.01035
 
 Copyright 2020 Andrew Hoopes
 
