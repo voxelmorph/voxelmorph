@@ -132,4 +132,4 @@ class Grad:
         if self.loss_mult is not None:
             grad *= self.loss_mult
 
-        return torch.mean(grad)
+        return grad
