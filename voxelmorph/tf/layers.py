@@ -18,6 +18,7 @@ License.
 """
 
 import os
+import warnings
 import numpy as np
 import neurite as ne
 
@@ -112,8 +113,8 @@ class SpatialTransformer(Layer):
             image_shape = tuple(self.imshape[:-1])
             dense_shape = tuple(self.trfshape[:-1])
             if image_shape != dense_shape:
-                raise ValueError('Dense transform must match image shape, got '
-                                 f'got {image_shape} and {dense_shape}.')
+                warnings.warn(f'Dense transform shape {dense_shape} does not match '
+                              f'image shape {image_shape}.')
 
         # confirm built
         self.built = True
