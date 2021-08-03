@@ -135,7 +135,7 @@ class SpatialTransformer(Layer):
             fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
                                                         shift_center=self.shift_center,
                                                         indexing=self.indexing)
-            trf = tf.map_fn(fun, trf, dtype=tf.float32)
+            trf = tf.map_fn(fun, trf)
 
         # prepare location shift
         if self.indexing == 'xy':  # shift the first two dimensions
@@ -145,10 +145,9 @@ class SpatialTransformer(Layer):
 
         # map transform across batch
         if self.single_transform:
-            fn = lambda x: self._single_transform([x, trf[0, :]])
-            return tf.map_fn(fn, vol, dtype=tf.float32)
+            return tf.map_fn(lambda x: self._single_transform([x, trf[0, :]]), vol)
         else:
-            return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
+            return tf.map_fn(self._single_transform, [vol, trf], fn_output_signature=vol.dtype)
 
     def _single_transform(self, inputs):
         return utils.transform(inputs[0], inputs[1], interp_method=self.interp_method,
@@ -243,7 +242,9 @@ class VecInt(Layer):
                 'out_time_pt should be None if providing batch_based out_time_pt'
 
         # map transform across batch
-        out = tf.map_fn(self._single_int, [loc_shift] + inputs[1:], dtype=tf.float32)
+        out = tf.map_fn(self._single_int,
+                        [loc_shift] + inputs[1:],
+                        fn_output_signature=loc_shift.dtype)
         if hasattr(inputs[0], '_keras_shape'):
             out._keras_shape = inputs[0]._keras_shape
         return out
@@ -376,7 +377,7 @@ class ComposeTransform(Layer):
         """
         compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
                                             shift_center=self.shift_center, indexing=self.indexing)
-        return tf.map_fn(compose, transforms, dtype=tf.float32)
+        return tf.map_fn(compose, transforms, dtype=transforms[0].dtype)
 
     def compute_output_shape(self, input_shape):
         return self.outshape

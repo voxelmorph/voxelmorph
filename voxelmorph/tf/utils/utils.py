@@ -124,11 +124,14 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
 
     # location should be mesh and delta
     mesh = ne.utils.volshape_to_meshgrid(loc_volshape, indexing=indexing)  # volume mesh
-    loc = [tf.cast(mesh[d], 'float32') + loc_shift[..., d] for d in range(nb_dims)]
+    for d, m in enumerate(mesh):
+        if m.dtype != loc_shift.dtype:
+            mesh[d] = tf.cast(m, loc_shift.dtype)
+    loc = [m + loc_shift[..., d] for d, m in enumerate(mesh)]
 
     # if channelwise location, then append the channel as part of the location lookup
     if is_channelwise:
-        loc.append(tf.cast(mesh[-1], 'float32'))
+        loc.append(mesh[-1])
 
     # test single
     return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
@@ -581,8 +584,8 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     if isinstance(shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         shape = shape.as_list()
 
-    if matrix.dtype != 'float32':
-        matrix = tf.cast(matrix, 'float32')
+    if not tf.is_tensor(matrix) or not matrix.dtype.is_floating:
+        matrix = tf.cast(matrix, tf.float32)
 
     # check input shapes
     ndims = len(shape)
@@ -594,14 +597,14 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     # list of volume ndgrid
     # N-long list, each entry of shape
     mesh = ne.utils.volshape_to_meshgrid(shape, indexing=indexing)
-    mesh = [tf.cast(f, 'float32') for f in mesh]
+    mesh = [f if f.dtype == matrix.dtype else tf.cast(f, matrix.dtype) for f in mesh]
 
     if shift_center:
         mesh = [mesh[f] - (shape[f] - 1) / 2 for f in range(len(shape))]
 
     # add an all-ones entry and transform into a large matrix
     flat_mesh = [ne.utils.flatten(f) for f in mesh]
-    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype='float32'))
+    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype=matrix.dtype))
     mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
 
     # compute locations
