@@ -533,4 +533,4 @@ class AffineToDenseShift(Layer):
         """
         single = lambda mat: utils.affine_to_dense_shift(mat, self.shape,
                                                          shift_center=self.shift_center)
-        return tf.map_fn(single, matrix, dtype=tf.float32)
+        return tf.map_fn(single, matrix)
