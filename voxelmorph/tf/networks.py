@@ -58,6 +58,7 @@ class VxmDense(ne.modelio.LoadableModel):
                  trg_feats=1,
                  unet_half_res=False,
                  input_model=None,
+                 hyp_model=None,
                  fill_value=None,
                  name='vxm_dense'):
         """ 
@@ -83,6 +84,7 @@ class VxmDense(ne.modelio.LoadableModel):
             unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
                 Default is False.
             input_model: Model to replace default input layer before concatenation. Default is None.
+            hyp_model: HyperMorph hypernetwork model. Default is None.
             name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
         """
 
@@ -98,6 +100,16 @@ class VxmDense(ne.modelio.LoadableModel):
         else:
             source, target = input_model.outputs[:2]
 
+        # configure inputs
+        inputs = input_model.inputs
+        if hyp_model is not None:
+            hyp_input = hyp_model.input
+            hyp_tensor = hyp_model.output
+            inputs = (*inputs, hyp_input)
+        else:
+            hyp_input = None
+            hyp_tensor = None
+
         # build core unet model and grab inputs
         unet_model = Unet(
             input_model=input_model,
@@ -106,6 +118,8 @@ class VxmDense(ne.modelio.LoadableModel):
             feat_mult=unet_feat_mult,
             nb_conv_per_level=nb_unet_conv_per_level,
             half_res=unet_half_res,
+            hyp_input=hyp_input,
+            hyp_tensor=hyp_tensor,
             name='%s_unet' % name
         )
 
@@ -182,7 +196,7 @@ class VxmDense(ne.modelio.LoadableModel):
             # compute smoothness loss on pre-integrated warp
             outputs += [preint_flow]
 
-        super().__init__(name=name, inputs=input_model.inputs, outputs=outputs)
+        super().__init__(name=name, inputs=inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
@@ -194,6 +208,7 @@ class VxmDense(ne.modelio.LoadableModel):
         self.references.y_target = y_target if bidir else None
         self.references.pos_flow = pos_flow
         self.references.neg_flow = neg_flow if bidir else None
+        self.references.hyp_input = hyp_input
 
     def get_registration_model(self):
         """
