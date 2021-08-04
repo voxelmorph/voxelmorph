@@ -453,11 +453,10 @@ class ParamsToAffineMatrix(Layer):
     def __init__(self, ndims=3, deg=True, shift_scale=False, **kwargs):
         """
         Parameters:
-            ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
-            identity_included: Return affine matrix with identity included. Defaults to False.
-            deg: Whether the input rotations are specified in degrees. Defaults to True.
+            ndims: Dimensionality of transform matrices. Must be 2 or 3.
+            deg: Whether the input rotations are specified in degrees.
             shift_scale: Add 1 to any specified scaling parameters. This may be desirable
-                when the parameters are estimated by a network. Defaults to False.
+                when the parameters are estimated by a network.
         """
         self.ndims = ndims
         self.deg = deg
