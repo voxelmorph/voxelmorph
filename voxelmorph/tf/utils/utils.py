@@ -623,7 +623,7 @@ def params_to_affine_matrix(par,
                             ndims=3):
     """
     Constructs an affine transformation matrix from translation, rotation, scaling and shearing
-    parameters in 2D or 3D.
+    parameters in 2D or 3D. Supports batched inputs.
 
     Arguments:
         par: Parameters as a scalar, numpy array, TensorFlow tensor, or list or tuple of these.
@@ -644,8 +644,11 @@ def params_to_affine_matrix(par,
     Author:
         mu40
 
-    If you use this function, please cite:
-        https://arxiv.org/abs/2004.10282
+    If you find this function useful, please cite:
+        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
+        Learning MRI Contrast-Agnostic Registration.
+        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
+        https://doi.org/10.1109/ISBI48211.2021.9434113
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
@@ -667,7 +670,7 @@ def params_to_affine_matrix(par,
         raise ValueError(f'Number of params exceeds value {num_par} expected for dimensionality.')
 
     # Set defaults if incomplete and split by type
-    width = np.zeros((len(shape), 2))
+    width = np.zeros((len(shape), 2), dtype=np.int32)
     splits = (2, 1) * 2 if ndims == 2 else (3,) * 4
     for i in (2, 3, 4):
         width[-1, -1] = max(sum(splits[:i]) - shape[-1], 0)
@@ -699,11 +702,13 @@ def params_to_affine_matrix(par,
     shift = tf.expand_dims(shift, axis=-1)
     out = tf.concat((out, shift), axis=-1)
 
-    # Append last row
+    # Append last row: store shapes as tensors to support batched inputs
     if last_row:
-        batch_shape = shift.shape.as_list()[:-2]
-        zeros = tf.zeros((*batch_shape, 1, splits[0]), dtype=shift.dtype)
-        one = tf.ones((*batch_shape, 1, 1), dtype=shift.dtype)
+        shape_batch = tf.shape(shift)[:-2]
+        shape_zeros = tf.concat((shape_batch, (1,), splits[:1]), axis=0)
+        zeros = tf.zeros(shape_zeros, dtype=shift.dtype)
+        shape_one = tf.concat((shape_batch, (1,), (1,)), axis=0)
+        one = tf.ones(shape_one, dtype=shift.dtype)
         row = tf.concat((zeros, one), axis=-1)
         out = tf.concat([out, row], axis=-2)
 
@@ -714,7 +719,7 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     """
     Construct N-dimensional rotation matrices from angles, where N is 2 or 3. The direction of
     rotation for all axes follows the right-hand rule. The rotations are intrinsic, i.e. carried
-    out in the body-centered frame of reference.
+    out in the body-centered frame of reference. Supports batched inputs.
 
     Arguments:
         ang: Input angles as a scalar, NumPy array, TensorFlow tensor, or list or tuple of these.
@@ -730,8 +735,11 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     Author:
         mu40
 
-    If you use this function, please cite:
-        https://arxiv.org/abs/2004.10282
+    If you find this function useful, please cite:
+        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
+        Learning MRI Contrast-Agnostic Registration.
+        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
+        https://doi.org/10.1109/ISBI48211.2021.9434113
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
@@ -753,7 +761,7 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
         raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
 
     # Set missing angles to zero
-    width = np.zeros((len(shape), 2))
+    width = np.zeros((len(shape), 2), dtype=np.int32)
     width[-1, -1] = max(num_ang - shape[-1], 0)
     ang = tf.pad(ang, paddings=width)
 
