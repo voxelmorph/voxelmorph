@@ -290,7 +290,7 @@ def rescale_dense_transform(transform, factor, interp_method='linear'):
 
     # enable batched or non-batched input
     if len(transform.shape) > (transform.shape[-1] + 1):
-        rescaled = tf.map_fn(single_batch, transform, dtype=tf.float32)
+        rescaled = tf.map_fn(single_batch, transform)
     else:
         rescaled = single_batch(transform)
 
