@@ -31,6 +31,8 @@ import tensorflow as tf
 import voxelmorph as vxm
 from tensorflow.keras import backend as K
 
+
+# disable eager execution
 tf.compat.v1.disable_eager_execution()
 
 
@@ -139,70 +141,71 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
-with tf.device(device):
+# build the model
+model = vxm.networks.HyperVxmDense(
+    inshape=inshape,
+    nb_unet_features=[enc_nf, dec_nf],
+    int_steps=args.int_steps,
+    int_downsize=args.int_downsize,
+    src_feats=nfeats,
+    trg_feats=nfeats,
+    unet_half_res=True
+)
 
-    # build the model
-    model = vxm.networks.HyperVxmDense(
-        inshape=inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        int_steps=args.int_steps,
-        int_downsize=args.int_downsize,
-        src_feats=nfeats,
-        trg_feats=nfeats,
-        unet_half_res=True
-    )
+# load initial weights (if provided)
+if args.load_weights:
+    model.load_weights(args.load_weights)
 
-    # load initial weights (if provided)
-    if args.load_weights:
-        model.load_weights(args.load_weights)
+# prepare image loss
+if args.image_loss == 'ncc':
+    image_loss_func = vxm.losses.NCC().loss
+elif args.image_loss == 'mse':
+    scaling = 1.0 / (args.image_sigma ** 2)
+    image_loss_func = lambda x1, x2: scaling * K.mean(K.batch_flatten(K.square(x1 - x2)), -1)
+else:
+    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare image loss
-    if args.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
-    elif args.image_loss == 'mse':
-        scaling = 1.0 / (args.image_sigma ** 2)
-        image_loss_func = lambda x1, x2: scaling * K.mean(K.batch_flatten(K.square(x1 - x2)), -1)
-    else:
-        raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare loss functions and compile model
-    def image_loss(y_true, y_pred):
-        hyp = (1 - tf.squeeze(model.references.hyper_val))
-        return hyp * image_loss_func(y_true, y_pred)
+# prepare loss functions and compile model
+def image_loss(y_true, y_pred):
+    hyp = (1 - tf.squeeze(model.references.hyper_val))
+    return hyp * image_loss_func(y_true, y_pred)
 
-    def grad_loss(y_true, y_pred):
-        hyp = tf.squeeze(model.references.hyper_val)
-        return hyp * vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss(y_true, y_pred)
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=[image_loss, grad_loss])
+def grad_loss(y_true, y_pred):
+    hyp = tf.squeeze(model.references.hyper_val)
+    return hyp * vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss(y_true, y_pred)
 
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=100)
 
-    model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback],
-                        verbose=1)
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=[image_loss, grad_loss])
 
-    # save final weights
-    model.save(save_filename.format(epoch=args.epochs))
+save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=100)
 
-    # save an example registration across lambda values
-    if args.test_reg:
-        moving = vxm.py.utils.load_volfile(args.test_reg[0], add_batch_axis=True,
-                                           add_feat_axis=add_feat_axis)
-        fixed = vxm.py.utils.load_volfile(args.test_reg[1], add_batch_axis=True,
-                                          add_feat_axis=add_feat_axis)
-        moved = []
+model.fit_generator(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    steps_per_epoch=args.steps_per_epoch,
+                    callbacks=[save_callback],
+                    verbose=1)
 
-        # sweep across 20 values of lambda
-        for i, hyp in enumerate(np.linspace(0, 1, 20)):
-            hyp = np.array([[hyp]], dtype='float32')  # reformat hyperparam
-            img = model.predict([moving, fixed, hyp])[0].squeeze()
-            moved.append(img)
+# save final weights
+model.save(save_filename.format(epoch=args.epochs))
 
-        moved = np.stack(moved, axis=-1)
-        if moved.ndim == 3:
-            moved = np.expand_dims(moved, axis=-2)  # if 2D, ensure multi-frame nifti
-        vxm.py.utils.save_volfile(moved, args.test_reg[2])
+# save an example registration across lambda values
+if args.test_reg:
+    moving = vxm.py.utils.load_volfile(args.test_reg[0], add_batch_axis=True,
+                                       add_feat_axis=add_feat_axis)
+    fixed = vxm.py.utils.load_volfile(args.test_reg[1], add_batch_axis=True,
+                                      add_feat_axis=add_feat_axis)
+    moved = []
+
+    # sweep across 20 values of lambda
+    for i, hyp in enumerate(np.linspace(0, 1, 20)):
+        hyp = np.array([[hyp]], dtype='float32')  # reformat hyperparam
+        img = model.predict([moving, fixed, hyp])[0].squeeze()
+        moved.append(img)
+
+    moved = np.stack(moved, axis=-1)
+    if moved.ndim == 3:
+        moved = np.expand_dims(moved, axis=-2)  # if 2D, ensure multi-frame nifti
+    vxm.py.utils.save_volfile(moved, args.test_reg[2])

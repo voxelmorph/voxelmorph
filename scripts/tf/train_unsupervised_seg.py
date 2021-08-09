@@ -32,6 +32,10 @@ from tensorflow.keras import backend as K
 import voxelmorph as vxm
 
 
+# disable eager execution
+tf.compat.v1.disable_eager_execution()
+
+
 # parse the commandline
 parser = argparse.ArgumentParser()
 
@@ -119,51 +123,51 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-with tf.device(device):
+warp_atlas = not args.no_warp_atlas
 
-    warp_atlas = not args.no_warp_atlas
+# build the model
+model = vxm.networks.ProbAtlasSegmentation(
+    inshape,
+    nb_unet_features=[enc_nf, dec_nf],
+    nb_labels=nb_labels,
+    stat_post_warp=(not args.stat_pre_warp),
+    warp_atlas=warp_atlas,
+    init_mu=init_mu,
+    init_sigma=init_sigma
+)
 
-    # build the model
-    model = vxm.networks.ProbAtlasSegmentation(
-        inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        nb_labels=nb_labels,
-        stat_post_warp=(not args.stat_pre_warp),
-        warp_atlas=warp_atlas,
-        init_mu=init_mu,
-        init_sigma=init_sigma
-    )
+# load initial weights (if provided)
+if args.load_weights:
+    model.load_weights(args.load_weights)
 
-    # load initial weights (if provided)
-    if args.load_weights:
-        model.load_weights(args.load_weights)
 
-    # prepare loss
-    def loss(_, yp):
-        m = tf.cast(model.inputs[0] > 0, tf.float32)
-        return -K.sum(yp * m) / K.sum(m)
+# prepare loss
+def loss(_, yp):
+    m = tf.cast(model.inputs[0] > 0, tf.float32)
+    return -K.sum(yp * m) / K.sum(m)
 
-    grad_weight = args.grad_loss_weight if warp_atlas else 0
 
-    losses = [loss, vxm.losses.Grad('l2', loss_mult=2).loss]
-    weights = [1.0, grad_weight]
+grad_weight = args.grad_loss_weight if warp_atlas else 0
 
-    # multi-gpu support
-    if nb_devices > 1:
-        save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
-    else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+losses = [loss, vxm.losses.Grad('l2', loss_mult=2).loss]
+weights = [1.0, grad_weight]
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+# multi-gpu support
+if nb_devices > 1:
+    save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
+    model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
+else:
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
-    # save starting weights
-    model.save(save_filename.format(epoch=args.initial_epoch))
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-    model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback],
-                        verbose=1
-                        )
+# save starting weights
+model.save(save_filename.format(epoch=args.initial_epoch))
+
+model.fit_generator(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    steps_per_epoch=args.steps_per_epoch,
+                    callbacks=[save_callback],
+                    verbose=1
+                    )

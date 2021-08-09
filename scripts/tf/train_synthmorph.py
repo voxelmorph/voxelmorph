@@ -23,6 +23,10 @@ import neurite as ne
 import voxelmorph as vxm
 
 
+# disable eager execution
+tf.compat.v1.disable_eager_execution()
+
+
 # reference
 ref = (
     'If you find this code useful, please cite:\n\n'

@@ -21,15 +21,10 @@ implied. See the License for the specific language governing permissions and lim
 License.
 """
 
-# core python
 import os
 import argparse
-
-# third party
 import numpy as np
 import tensorflow as tf
-
-# local
 import voxelmorph as vxm
 
 
@@ -74,50 +69,48 @@ moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_ax
 fixed, fixed_affine = vxm.py.utils.load_volfile(
     args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
-with tf.device(device):
+# initialize instance network
+inshape = moving.shape[1:-1]
+nb_feats = moving.shape[-1]
+model = vxm.networks.InstanceDense(
+    inshape,
+    nb_feats=nb_feats,
+    mult=args.multiplier,
+    int_steps=args.int_steps,
+    int_downsize=args.int_downsize
+)
 
-    # initialize instance network
-    inshape = moving.shape[1:-1]
-    nb_feats = moving.shape[-1]
-    model = vxm.networks.InstanceDense(
-        inshape,
-        nb_feats=nb_feats,
-        mult=args.multiplier,
-        int_steps=args.int_steps,
-        int_downsize=args.int_downsize
-    )
+# load model and predict
+if args.model is not None:
+    initialization = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
+    model.set_flow(initialization)
 
-    # load model and predict
-    if args.model is not None:
-        initialization = vxm.networks.VxmDense.load(args.model).register(moving, fixed)
-        model.set_flow(initialization)
+# prepare image loss
+if args.image_loss == 'ncc':
+    image_loss_func = vxm.losses.NCC().loss
+elif args.image_loss == 'mse':
+    image_loss_func = vxm.losses.MSE().loss
+else:
+    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare image loss
-    if args.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
-    elif args.image_loss == 'mse':
-        image_loss_func = vxm.losses.MSE().loss
-    else:
-        raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
+losses = [image_loss_func, vxm.losses.Grad('l2').loss]
+weights = [1, args.lambda_weight]
 
-    losses = [image_loss_func, vxm.losses.Grad('l2').loss]
-    weights = [1, args.lambda_weight]
+# train
+zeros = np.zeros((1, *inshape, len(inshape)), dtype='float32')
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+model.fit(
+    [moving],
+    [fixed, zeros],
+    batch_size=None,
+    epochs=args.steps,
+    steps_per_epoch=1,
+    verbose=1
+)
 
-    # train
-    zeros = np.zeros((1, *inshape, len(inshape)), dtype='float32')
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
-    model.fit(
-        [moving],
-        [fixed, zeros],
-        batch_size=None,
-        epochs=args.steps,
-        steps_per_epoch=1,
-        verbose=1
-    )
-
-    # get warped image and deformation field
-    warp = model.register(moving)
-    moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
+# get warped image and deformation field
+warp = model.register(moving)
+moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
 
 # save moved image
 vxm.py.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)

@@ -29,6 +29,8 @@ import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
 
+
+# disable eager execution
 tf.compat.v1.disable_eager_execution()
 
 
@@ -123,58 +125,55 @@ generator = vxm.generators.template_creation(
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-# prepare the model
-with tf.device(device):
+# build model
+model = vxm.networks.TemplateCreation(
+    template_shape,
+    nb_unet_features=[enc_nf, dec_nf],
+    atlas_feats=nfeats,
+    src_feats=nfeats
+)
 
-    # build model
-    model = vxm.networks.TemplateCreation(
-        template_shape,
-        nb_unet_features=[enc_nf, dec_nf],
-        atlas_feats=nfeats,
-        src_feats=nfeats
-    )
+# set initial template weights
+model.set_atlas(template)
 
-    # set initial template weights
-    model.set_atlas(template)
+# load initial weights (if provided)
+if args.load_weights:
+    model.load_weights(args.load_weights, by_name=True)
 
-    # load initial weights (if provided)
-    if args.load_weights:
-        model.load_weights(args.load_weights, by_name=True)
+# prepare image loss
+if args.image_loss == 'ncc':
+    image_loss_func = vxm.losses.NCC().loss
+elif args.image_loss == 'mse':
+    image_loss_func = vxm.losses.MSE().loss
+else:
+    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare image loss
-    if args.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
-    elif args.image_loss == 'mse':
-        image_loss_func = vxm.losses.MSE().loss
-    else:
-        raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
+# make sure the warped target is compared to the generated atlas and not the input atlas
+neg_loss_func = lambda _, y_pred: image_loss_func(model.references.atlas_tensor, y_pred)
 
-    # make sure the warped target is compared to the generated atlas and not the input atlas
-    neg_loss_func = lambda _, y_pred: image_loss_func(model.references.atlas_tensor, y_pred)
+losses = [image_loss_func, neg_loss_func,
+          vxm.losses.MSE().loss, vxm.losses.Grad('l2', loss_mult=2).loss]
+weights = [args.image_loss_weight, 1 - args.image_loss_weight,
+           args.mean_loss_weight, args.grad_loss_weight]
 
-    losses = [image_loss_func, neg_loss_func,
-              vxm.losses.MSE().loss, vxm.losses.Grad('l2', loss_mult=2).loss]
-    weights = [args.image_loss_weight, 1 - args.image_loss_weight,
-               args.mean_loss_weight, args.grad_loss_weight]
+# multi-gpu support
+if nb_devices > 1:
+    save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
+    model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
+else:
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
-    # multi-gpu support
-    if nb_devices > 1:
-        save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
-    else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+# save starting weights
+model.save(save_filename.format(epoch=args.initial_epoch))
 
-    # save starting weights
-    model.save(save_filename.format(epoch=args.initial_epoch))
+model.fit_generator(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    callbacks=[save_callback],
+                    steps_per_epoch=args.steps_per_epoch,
+                    verbose=1
+                    )
 
-    model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        callbacks=[save_callback],
-                        steps_per_epoch=args.steps_per_epoch,
-                        verbose=1
-                        )
-
-    vxm.py.utils.save_volfile(model.get_atlas(), os.path.join(model_dir, 'template.nii.gz'))
+vxm.py.utils.save_volfile(model.get_atlas(), os.path.join(model_dir, 'template.nii.gz'))

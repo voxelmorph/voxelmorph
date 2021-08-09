@@ -30,6 +30,10 @@ import tensorflow as tf
 import voxelmorph as vxm
 
 
+# disable eager execution
+tf.compat.v1.disable_eager_execution()
+
+
 # parse the commandline
 parser = argparse.ArgumentParser()
 
@@ -142,68 +146,66 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-with tf.device(device):
+# build the model
+model = vxm.networks.VxmDenseSemiSupervisedPointCloud(
+    inshape=inshape,
+    nb_unet_features=[enc_nf, dec_nf],
+    nb_surface_points=args.surf_points,
+    nb_labels_sample=num_labels,
+    sdt_vol_resize=args.sdt_resize,
+    surf_bidir=args.surf_bidir,
+    use_probs=args.use_probs,
+    int_steps=args.int_steps,
+    int_downsize=args.int_downsize,
+    src_feats=nfeats,
+    trg_feats=nfeats
+)
 
-    # build the model
-    model = vxm.networks.VxmDenseSemiSupervisedPointCloud(
-        inshape=inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        nb_surface_points=args.surf_points,
-        nb_labels_sample=num_labels,
-        sdt_vol_resize=args.sdt_resize,
-        surf_bidir=args.surf_bidir,
-        use_probs=args.use_probs,
-        int_steps=args.int_steps,
-        int_downsize=args.int_downsize,
-        src_feats=nfeats,
-        trg_feats=nfeats
-    )
+# load initial weights (if provided)
+if args.load_weights:
+    model.load_weights(args.load_weights)
 
-    # load initial weights (if provided)
-    if args.load_weights:
-        model.load_weights(args.load_weights)
+# prepare image loss
+if args.image_loss == 'ncc':
+    image_loss_func = vxm.losses.NCC().loss
+elif args.image_loss == 'mse':
+    image_loss_func = vxm.losses.MSE(args.image_sigma).loss
+else:
+    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare image loss
-    if args.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
-    elif args.image_loss == 'mse':
-        image_loss_func = vxm.losses.MSE(args.image_sigma).loss
-    else:
-        raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
+# base dense network is bidirectional
+losses = [image_loss_func, image_loss_func]
+weights = [0.5, 0.5]
 
-    # base dense network is bidirectional
-    losses = [image_loss_func, image_loss_func]
-    weights = [0.5, 0.5]
+# prepare deformation loss
+if args.use_probs:
+    flow_shape = model.outputs[-1].shape[1:-1]
+    losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
+else:
+    losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
+weights += [args.lambda_weight]
 
-    # prepare deformation loss
-    if args.use_probs:
-        flow_shape = model.outputs[-1].shape[1:-1]
-        losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
-    else:
-        losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
-    weights += [args.lambda_weight]
+# prepare sdt loss
+nb_dst_outputs = 2 if args.surf_bidir else 1
+losses += [vxm.losses.MSE().loss] * nb_dst_outputs
+weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
 
-    # prepare sdt loss
-    nb_dst_outputs = 2 if args.surf_bidir else 1
-    losses += [vxm.losses.MSE().loss] * nb_dst_outputs
-    weights += [0.25 / (args.dt_sigma**2)] * nb_dst_outputs
+# multi-gpu support
+if nb_devices > 1:
+    save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
+    model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
+else:
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
-    # multi-gpu support
-    if nb_devices > 1:
-        save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
-    else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+# save starting weights
+model.save(save_filename.format(epoch=args.initial_epoch))
 
-    # save starting weights
-    model.save(save_filename.format(epoch=args.initial_epoch))
-
-    model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback],
-                        verbose=1
-                        )
+model.fit_generator(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    steps_per_epoch=args.steps_per_epoch,
+                    callbacks=[save_callback],
+                    verbose=1
+                    )

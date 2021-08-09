@@ -30,6 +30,10 @@ import tensorflow as tf
 import voxelmorph as vxm
 
 
+# disable eager execution
+tf.compat.v1.disable_eager_execution()
+
+
 # parse the commandline
 parser = argparse.ArgumentParser()
 
@@ -109,51 +113,49 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-with tf.device(device):
+# build the model
+model = vxm.networks.VxmDenseSemiSupervisedSeg(
+    inshape=inshape,
+    nb_unet_features=[enc_nf, dec_nf],
+    nb_labels=len(train_labels),
+    int_steps=args.int_steps,
+    int_downsize=args.int_downsize
+)
 
-    # build the model
-    model = vxm.networks.VxmDenseSemiSupervisedSeg(
-        inshape=inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        nb_labels=len(train_labels),
-        int_steps=args.int_steps,
-        int_downsize=args.int_downsize
-    )
+# load initial weights (if provided)
+if args.load_weights:
+    model.load_weights(args.load_weights)
 
-    # load initial weights (if provided)
-    if args.load_weights:
-        model.load_weights(args.load_weights)
+# prepare image loss
+if args.image_loss == 'ncc':
+    image_loss_func = vxm.losses.NCC().loss
+elif args.image_loss == 'mse':
+    image_loss_func = vxm.losses.MSE().loss
+else:
+    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-    # prepare image loss
-    if args.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
-    elif args.image_loss == 'mse':
-        image_loss_func = vxm.losses.MSE().loss
-    else:
-        raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
+# losses
+losses = [image_loss_func, vxm.losses.Grad(
+    'l2', loss_mult=args.int_downsize).loss, vxm.losses.Dice().loss]
+weights = [1, args.grad_loss_weight, args.dice_loss_weight]
 
-    # losses
-    losses = [image_loss_func, vxm.losses.Grad(
-        'l2', loss_mult=args.int_downsize).loss, vxm.losses.Dice().loss]
-    weights = [1, args.grad_loss_weight, args.dice_loss_weight]
+# multi-gpu support
+nb_devices = len(args.gpu.split(','))
+if nb_devices > 1:
+    save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
+    model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
+else:
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
-    # multi-gpu support
-    nb_devices = len(args.gpu.split(','))
-    if nb_devices > 1:
-        save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
-        model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
-    else:
-        save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+# save starting weights
+model.save(save_filename.format(epoch=args.initial_epoch))
 
-    # save starting weights
-    model.save(save_filename.format(epoch=args.initial_epoch))
-
-    model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback],
-                        verbose=1
-                        )
+model.fit_generator(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    steps_per_epoch=args.steps_per_epoch,
+                    callbacks=[save_callback],
+                    verbose=1
+                    )
