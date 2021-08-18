@@ -18,6 +18,7 @@ License.
 """
 
 import os
+import warnings
 import numpy as np
 import neurite as ne
 
@@ -112,8 +113,8 @@ class SpatialTransformer(Layer):
             image_shape = tuple(self.imshape[:-1])
             dense_shape = tuple(self.trfshape[:-1])
             if image_shape != dense_shape:
-                raise ValueError('Dense transform must match image shape, got '
-                                 f'got {image_shape} and {dense_shape}.')
+                warnings.warn(f'Dense transform shape {dense_shape} does not match '
+                              f'image shape {image_shape}.')
 
         # confirm built
         self.built = True
@@ -135,7 +136,7 @@ class SpatialTransformer(Layer):
             fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
                                                         shift_center=self.shift_center,
                                                         indexing=self.indexing)
-            trf = tf.map_fn(fun, trf, dtype=tf.float32)
+            trf = tf.map_fn(fun, trf)
 
         # prepare location shift
         if self.indexing == 'xy':  # shift the first two dimensions
@@ -145,10 +146,9 @@ class SpatialTransformer(Layer):
 
         # map transform across batch
         if self.single_transform:
-            fn = lambda x: self._single_transform([x, trf[0, :]])
-            return tf.map_fn(fn, vol, dtype=tf.float32)
+            return tf.map_fn(lambda x: self._single_transform([x, trf[0, :]]), vol)
         else:
-            return tf.map_fn(self._single_transform, [vol, trf], dtype=tf.float32)
+            return tf.map_fn(self._single_transform, [vol, trf], fn_output_signature=vol.dtype)
 
     def _single_transform(self, inputs):
         return utils.transform(inputs[0], inputs[1], interp_method=self.interp_method,
@@ -243,7 +243,9 @@ class VecInt(Layer):
                 'out_time_pt should be None if providing batch_based out_time_pt'
 
         # map transform across batch
-        out = tf.map_fn(self._single_int, [loc_shift] + inputs[1:], dtype=tf.float32)
+        out = tf.map_fn(self._single_int,
+                        [loc_shift] + inputs[1:],
+                        fn_output_signature=loc_shift.dtype)
         if hasattr(inputs[0], '_keras_shape'):
             out._keras_shape = inputs[0]._keras_shape
         return out
@@ -376,7 +378,7 @@ class ComposeTransform(Layer):
         """
         compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
                                             shift_center=self.shift_center, indexing=self.indexing)
-        return tf.map_fn(compose, transforms, dtype=tf.float32)
+        return tf.map_fn(compose, transforms, dtype=transforms[0].dtype)
 
     def compute_output_shape(self, input_shape):
         return self.outshape
@@ -446,20 +448,27 @@ class ParamsToAffineMatrix(Layer):
     """
     Constructs an affine transformation matrix from translation, rotation, scaling and shearing
     parameters in 2D or 3D.
+
+    If you find this layer useful, please cite:
+        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
+        Learning MRI Contrast-Agnostic Registration.
+        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
+        https://doi.org/10.1109/ISBI48211.2021.9434113
     """
 
-    def __init__(self, ndims=3, deg=True, shift_scale=False, **kwargs):
+    def __init__(self, ndims=3, deg=True, shift_scale=False, last_row=False, **kwargs):
         """
         Parameters:
-            ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
-            identity_included: Return affine matrix with identity included. Defaults to False.
-            deg: Whether the input rotations are specified in degrees. Defaults to True.
+            ndims: Dimensionality of transform matrices. Must be 2 or 3.
+            deg: Whether the input rotations are specified in degrees.
             shift_scale: Add 1 to any specified scaling parameters. This may be desirable
-                when the parameters are estimated by a network. Defaults to False.
+                when the parameters are estimated by a network.
+            last_row: Whether to return a full matrix, including the last row.
         """
         self.ndims = ndims
         self.deg = deg
         self.shift_scale = shift_scale
+        self.last_row = last_row
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -468,11 +477,12 @@ class ParamsToAffineMatrix(Layer):
             'ndims': self.ndims,
             'deg': self.deg,
             'shift_scale': self.shift_scale,
+            'last_row': self.last_row,
         })
         return config
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.ndims, self.ndims + 1)
+        return (input_shape[0], self.ndims + int(self.last_row), self.ndims + 1)
 
     def call(self, params):
         """
@@ -482,16 +492,11 @@ class ParamsToAffineMatrix(Layer):
                     dimensions. If the size is less than that, the missing parameters will be
                     set to the identity.
         """
-        def to_matrix(x):
-            return utils.params_to_affine_matrix(par=x,
-                                                 deg=self.deg,
-                                                 shift_scale=self.shift_scale,
-                                                 ndims=self.ndims)
-
-        if params.shape[0] is None:
-            return tf.map_fn(to_matrix, params, dtype=tf.float32)
-        else:
-            return to_matrix(params)
+        return utils.params_to_affine_matrix(par=params,
+                                             deg=self.deg,
+                                             shift_scale=self.shift_scale,
+                                             ndims=self.ndims,
+                                             last_row=self.last_row)
 
 
 class AffineToDenseShift(Layer):
@@ -531,4 +536,4 @@ class AffineToDenseShift(Layer):
         """
         single = lambda mat: utils.affine_to_dense_shift(mat, self.shape,
                                                          shift_center=self.shift_center)
-        return tf.map_fn(single, matrix, dtype=tf.float32)
+        return tf.map_fn(single, matrix)

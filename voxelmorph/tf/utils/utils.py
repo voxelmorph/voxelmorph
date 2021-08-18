@@ -124,11 +124,14 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
 
     # location should be mesh and delta
     mesh = ne.utils.volshape_to_meshgrid(loc_volshape, indexing=indexing)  # volume mesh
-    loc = [tf.cast(mesh[d], 'float32') + loc_shift[..., d] for d in range(nb_dims)]
+    for d, m in enumerate(mesh):
+        if m.dtype != loc_shift.dtype:
+            mesh[d] = tf.cast(m, loc_shift.dtype)
+    loc = [m + loc_shift[..., d] for d, m in enumerate(mesh)]
 
     # if channelwise location, then append the channel as part of the location lookup
     if is_channelwise:
-        loc.append(tf.cast(mesh[-1], 'float32'))
+        loc.append(mesh[-1])
 
     # test single
     return ne.utils.interpn(vol, loc, interp_method=interp_method, fill_value=fill_value)
@@ -287,7 +290,7 @@ def rescale_dense_transform(transform, factor, interp_method='linear'):
 
     # enable batched or non-batched input
     if len(transform.shape) > (transform.shape[-1] + 1):
-        rescaled = tf.map_fn(single_batch, transform, dtype=tf.float32)
+        rescaled = tf.map_fn(single_batch, transform)
     else:
         rescaled = single_batch(transform)
 
@@ -581,8 +584,8 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     if isinstance(shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         shape = shape.as_list()
 
-    if matrix.dtype != 'float32':
-        matrix = tf.cast(matrix, 'float32')
+    if not tf.is_tensor(matrix) or not matrix.dtype.is_floating:
+        matrix = tf.cast(matrix, tf.float32)
 
     # check input shapes
     ndims = len(shape)
@@ -594,14 +597,14 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     # list of volume ndgrid
     # N-long list, each entry of shape
     mesh = ne.utils.volshape_to_meshgrid(shape, indexing=indexing)
-    mesh = [tf.cast(f, 'float32') for f in mesh]
+    mesh = [f if f.dtype == matrix.dtype else tf.cast(f, matrix.dtype) for f in mesh]
 
     if shift_center:
         mesh = [mesh[f] - (shape[f] - 1) / 2 for f in range(len(shape))]
 
     # add an all-ones entry and transform into a large matrix
     flat_mesh = [ne.utils.flatten(f) for f in mesh]
-    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype='float32'))
+    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype=matrix.dtype))
     mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
 
     # compute locations
@@ -620,7 +623,7 @@ def params_to_affine_matrix(par,
                             ndims=3):
     """
     Constructs an affine transformation matrix from translation, rotation, scaling and shearing
-    parameters in 2D or 3D.
+    parameters in 2D or 3D. Supports batched inputs.
 
     Arguments:
         par: Parameters as a scalar, numpy array, TensorFlow tensor, or list or tuple of these.
@@ -641,8 +644,11 @@ def params_to_affine_matrix(par,
     Author:
         mu40
 
-    If you use this function, please cite:
-        https://arxiv.org/abs/2004.10282
+    If you find this function useful, please cite:
+        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
+        Learning MRI Contrast-Agnostic Registration.
+        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
+        https://doi.org/10.1109/ISBI48211.2021.9434113
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
@@ -664,7 +670,7 @@ def params_to_affine_matrix(par,
         raise ValueError(f'Number of params exceeds value {num_par} expected for dimensionality.')
 
     # Set defaults if incomplete and split by type
-    width = np.zeros((len(shape), 2))
+    width = np.zeros((len(shape), 2), dtype=np.int32)
     splits = (2, 1) * 2 if ndims == 2 else (3,) * 4
     for i in (2, 3, 4):
         width[-1, -1] = max(sum(splits[:i]) - shape[-1], 0)
@@ -696,11 +702,13 @@ def params_to_affine_matrix(par,
     shift = tf.expand_dims(shift, axis=-1)
     out = tf.concat((out, shift), axis=-1)
 
-    # Append last row
+    # Append last row: store shapes as tensors to support batched inputs
     if last_row:
-        batch_shape = shift.shape.as_list()[:-2]
-        zeros = tf.zeros((*batch_shape, 1, splits[0]), dtype=shift.dtype)
-        one = tf.ones((*batch_shape, 1, 1), dtype=shift.dtype)
+        shape_batch = tf.shape(shift)[:-2]
+        shape_zeros = tf.concat((shape_batch, (1,), splits[:1]), axis=0)
+        zeros = tf.zeros(shape_zeros, dtype=shift.dtype)
+        shape_one = tf.concat((shape_batch, (1,), (1,)), axis=0)
+        one = tf.ones(shape_one, dtype=shift.dtype)
         row = tf.concat((zeros, one), axis=-1)
         out = tf.concat([out, row], axis=-2)
 
@@ -711,7 +719,7 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     """
     Construct N-dimensional rotation matrices from angles, where N is 2 or 3. The direction of
     rotation for all axes follows the right-hand rule. The rotations are intrinsic, i.e. carried
-    out in the body-centered frame of reference.
+    out in the body-centered frame of reference. Supports batched inputs.
 
     Arguments:
         ang: Input angles as a scalar, NumPy array, TensorFlow tensor, or list or tuple of these.
@@ -727,8 +735,11 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     Author:
         mu40
 
-    If you use this function, please cite:
-        https://arxiv.org/abs/2004.10282
+    If you find this function useful, please cite:
+        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
+        Learning MRI Contrast-Agnostic Registration.
+        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
+        https://doi.org/10.1109/ISBI48211.2021.9434113
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
@@ -750,7 +761,7 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
         raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
 
     # Set missing angles to zero
-    width = np.zeros((len(shape), 2))
+    width = np.zeros((len(shape), 2), dtype=np.int32)
     width[-1, -1] = max(num_ang - shape[-1], 0)
     ang = tf.pad(ang, paddings=width)
 
