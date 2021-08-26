@@ -127,7 +127,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     for d, m in enumerate(mesh):
         if m.dtype != loc_shift.dtype:
             mesh[d] = tf.cast(m, loc_shift.dtype)
-    loc = [m + loc_shift[..., d] for d, m in enumerate(mesh)]
+    loc = [mesh[d] + loc_shift[..., d] for d in range(nb_dims)]
 
     # if channelwise location, then append the channel as part of the location lookup
     if is_channelwise:
