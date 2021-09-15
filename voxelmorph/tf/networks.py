@@ -19,6 +19,7 @@ the License.
 
 
 # internal python imports
+import warnings
 from collections.abc import Iterable
 
 # third party imports
@@ -51,7 +52,9 @@ class VxmDense(ne.modelio.LoadableModel):
                  unet_feat_mult=1,
                  nb_unet_conv_per_level=1,
                  int_steps=7,
-                 int_downsize=2,
+                 svf_resolution=1,
+                 int_resolution=2,
+                 int_downsize=None,
                  bidir=False,
                  use_probs=False,
                  src_feats=1,
@@ -60,6 +63,7 @@ class VxmDense(ne.modelio.LoadableModel):
                  input_model=None,
                  hyp_model=None,
                  fill_value=None,
+                 reg_field='preintegrated',
                  name='vxm_dense'):
         """ 
         Parameters:
@@ -75,16 +79,22 @@ class VxmDense(ne.modelio.LoadableModel):
             nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
             int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
                 value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. 
-                The flow field is not downsampled when this value is 1.
+            svf_resolution: Resolution (relative voxel size) of the predicted SVF.
+                Default is 1.
+            int_resolution: Resolution (relative voxel size) of the flow field during
+                vector integration. Default is 2.
+            int_downsize: Deprecated - use int_resolution instead.
             bidir: Enable bidirectional cost function. Default is False.
             use_probs: Use probabilities in flow field. Default is False.
             src_feats: Number of source image features. Default is 1.
             trg_feats: Number of target image features. Default is 1.
-            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
-                Default is False.
+            unet_half_res: Deprecated - use svf_resolution instead.
             input_model: Model to replace default input layer before concatenation. Default is None.
             hyp_model: HyperMorph hypernetwork model. Default is None.
+            reg_field: Field to regularize in the loss. Options are 'svf' to return the
+                SVF predicted by the Unet, 'preintegrated' to return the SVF that's been
+                rescaled for vector-integration (default), 'postintegrated' to return the
+                rescaled vector-integrated field, and 'warp' to return the final, full-res warp.
             name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
         """
 
@@ -110,6 +120,17 @@ class VxmDense(ne.modelio.LoadableModel):
             hyp_input = None
             hyp_tensor = None
 
+        if int_downsize is not None:
+            warnings.warn('int_downsize is deprecated, use the int_resolution parameter.')
+            int_resolution = int_downsize
+
+        # compute number of upsampling skips in the decoder (to downsize the predicted field)
+        if unet_half_res:
+            warnings.warn('unet_half_res is deprecated, use the svf_resolution parameter.')
+            svf_resolution = 2
+
+        nb_upsample_skips = int(np.floor(np.log(svf_resolution) / np.log(2)))
+
         # build core unet model and grab inputs
         unet_model = Unet(
             input_model=input_model,
@@ -117,7 +138,7 @@ class VxmDense(ne.modelio.LoadableModel):
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult,
             nb_conv_per_level=nb_unet_conv_per_level,
-            half_res=unet_half_res,
+            nb_upsample_skips=nb_upsample_skips,
             hyp_input=hyp_input,
             hyp_tensor=hyp_tensor,
             name='%s_unet' % name
@@ -140,14 +161,26 @@ class VxmDense(ne.modelio.LoadableModel):
             flow_inputs = [flow_mean, flow_logsigma]
             flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)(flow_inputs)
         else:
-            flow_params = flow_mean
             flow = flow_mean
 
-        if not unet_half_res:
-            # optionally resize for integration
-            if int_steps > 0 and int_downsize > 1:
-                flow = layers.RescaleTransform(1 / int_downsize, name='%s_flow_resize' % name)(flow)
+        # rescale field to target svf resolution
+        pre_svf_size = np.array(flow.shape[1:-1])
+        svf_size = np.array([np.round(dim / svf_resolution) for dim in inshape])
+        if not np.array_equal(pre_svf_size, svf_size):
+            rescale_factor = svf_size[0] / pre_svf_size[0]
+            flow = layers.RescaleTransform(rescale_factor, name=f'{name}_svf_resize')(flow)
 
+        # cache svf
+        svf = flow
+
+        # rescale field to target integration resolution
+        if int_steps > 0 and int_resolution > 1:
+            int_size = np.array([np.round(dim / int_resolution) for dim in inshape])
+            if not np.array_equal(svf_size, int_size):
+                rescale_factor = int_size[0] / svf_size[0]
+                flow = layers.RescaleTransform(rescale_factor, name=f'{name}_flow_resize')(flow)
+
+        # cache pre-integrated flow field
         preint_flow = flow
 
         # optionally negate flow for bidirectional model
@@ -165,13 +198,16 @@ class VxmDense(ne.modelio.LoadableModel):
                                          name='%s_neg_flow_int' % name,
                                          int_steps=int_steps)(neg_flow)
 
-            # resize to final resolution
-            if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(
-                    int_downsize, name='%s_diffflow' % name)(pos_flow)
-                if bidir:
-                    neg_flow = layers.RescaleTransform(
-                        int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
+        # cache the intgrated flow field
+        postint_flow = pos_flow
+
+        # resize to final resolution
+        if int_steps > 0 and int_resolution > 1:
+            rescale_factor = inshape[0] / int_size[0]
+            pos_flow = layers.RescaleTransform(rescale_factor, name='%s_diffflow' % name)(pos_flow)
+            if bidir:
+                neg_flow = layers.RescaleTransform(rescale_factor,
+                                                   name='%s_neg_diffflow' % name)(neg_flow)
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(
@@ -179,6 +215,7 @@ class VxmDense(ne.modelio.LoadableModel):
             indexing='ij',
             fill_value=fill_value,
             name='%s_transformer' % name)([source, pos_flow])
+
         if bidir:
             st_inputs = [target, neg_flow]
             y_target = layers.SpatialTransformer(interp_method='linear',
@@ -189,12 +226,25 @@ class VxmDense(ne.modelio.LoadableModel):
         # initialize the keras model
         outputs = [y_source, y_target] if bidir else [y_source]
 
+        # determine regularization output
+        reg_field = reg_field.lower()
         if use_probs:
             # compute loss on flow probabilities
-            outputs += [flow_params]
+            outputs.append(flow_params)
+        elif reg_field == 'svf':
+            # regularize the immediate, predicted SVF
+            outputs.append(svf)
+        elif reg_field == 'preintegrated':
+            # regularize the rescaled, pre-integrated SVF
+            outputs.append(preint_flow)
+        elif reg_field == 'postintegrated':
+            # regularize the rescaled, integrated field
+            outputs.append(postint_flow)
+        elif reg_field == 'warp':
+            # regularize the final, full-resolution deformation field
+            outputs.append(pos_flow)
         else:
-            # compute smoothness loss on pre-integrated warp
-            outputs += [preint_flow]
+            raise ValueError(f'Unknown option "{reg_field}" for reg_field.')
 
         super().__init__(name=name, inputs=inputs, outputs=outputs)
 
@@ -203,11 +253,13 @@ class VxmDense(ne.modelio.LoadableModel):
         self.references.unet_model = unet_model
         self.references.source = source
         self.references.target = target
-        self.references.velocity = preint_flow
-        self.references.y_source = y_source
-        self.references.y_target = y_target if bidir else None
+        self.references.svf = svf
+        self.references.preint_flow = preint_flow
+        self.references.postint_flow = postint_flow
         self.references.pos_flow = pos_flow
         self.references.neg_flow = neg_flow if bidir else None
+        self.references.y_source = y_source
+        self.references.y_target = y_target if bidir else None
         self.references.hyp_input = hyp_input
 
     def get_registration_model(self):
@@ -243,9 +295,8 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
                  inshape,
                  nb_labels,
                  nb_unet_features=None,
-                 int_steps=7,
-                 int_downsize=2,
-                 seg_downsize=2,
+                 seg_resolution=2,
+                 seg_downsize=None,
                  bidir=False,
                  bidir_labels=False,
                  name='vxm_dense',
@@ -256,12 +307,9 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
             nb_labels: Number of labels used for ground truth segmentations.
             nb_unet_features: Unet convolutional features. 
                 See VxmDense documentation for more information.
-            int_steps: Number of flow integration steps. 
-                The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. 
-                The flow field is not downsampled when this value is 1.
-            seg_downsize: Interger specifying the downsampled factor of the segmentations.
+            seg_resolution: Resolution (relative voxel size) of the segmentation.
                 Default is 2.
+            seg_downsize: Deprecated - use seg_resolution instead.
             bidir: Enable bidirectional cost function on images. Default is False.
             bidir_labels: Enable bidirectional cost function on labels and images.
                 Default is False.
@@ -272,21 +320,23 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
         if bidir_labels:
             bidir = True
 
+        if seg_downsize is not None:
+            warnings.warn('seg_downsize is deprecated, use the seg_resolution parameter.')
+            seg_resolution = seg_downsize
+
         # configure base voxelmorph network
         vxm_model = VxmDense(inshape,
                              nb_unet_features=nb_unet_features,
-                             int_steps=int_steps,
-                             int_downsize=int_downsize,
                              bidir=bidir,
                              **kwargs)
 
         # configure downsampled seg input layer
-        inshape_ds = (np.array(inshape) / seg_downsize).astype(int)
+        inshape_ds = (np.array(inshape) / seg_resolution).astype(int)
         seg_src = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_source_seg')
 
         # configure warped seg output layer
         seg_flow = layers.RescaleTransform(
-            1 / seg_downsize, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
+            1 / seg_resolution, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
         y_seg_src = layers.SpatialTransformer(interp_method='linear',
                                               indexing='ij',
                                               name=f'{name}_seg_transformer')([seg_src, seg_flow])
@@ -302,7 +352,7 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
 
             # warp labels bidirectionally
             neg_seg_flow = layers.RescaleTransform(
-                1 / seg_downsize, name=f'{name}_seg_neg_resize')(vxm_model.references.neg_flow)
+                1 / seg_resolution, name=f'{name}_seg_neg_resize')(vxm_model.references.neg_flow)
             y_seg_trg = layers.SpatialTransformer(interp_method='linear',
                                                   indexing='ij',
                                                   name=f'{name}_seg_neg_transformer')(
@@ -448,7 +498,13 @@ class InstanceDense(ne.modelio.LoadableModel):
     """
 
     @ne.modelio.store_config_args
-    def __init__(self, inshape, nb_feats=1, mult=1000, int_steps=7, int_downsize=2):
+    def __init__(self,
+                 inshape,
+                 nb_feats=1,
+                 mult=1000,
+                 int_steps=7,
+                 int_downsize=None,
+                 int_resolution=2):
         """ 
         Parameters:
             inshape: Input shape of moving image. e.g. (192, 192, 192)
@@ -456,12 +512,17 @@ class InstanceDense(ne.modelio.LoadableModel):
             mult: Bias multiplier for local parameter layer. Default is 1000.
             int_steps: Number of flow integration steps. 
                 The warp is non-diffeomorphic when this value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. 
-                The flow field is not downsampled when this value is 1.
+            int_resolution: Resolution (relative voxel size) of the flow field during
+                vector integration. Default is 2.
+            int_downsize: Deprecated - use int_resolution instead.
         """
 
+        if int_downsize is not None:
+            warnings.warn('int_downsize is deprecated, use the int_resolution parameter.')
+            int_resolution = int_downsize
+
         # downsample warp shape
-        ds_warp_shape = [int(dim / float(int_downsize)) for dim in inshape]
+        ds_warp_shape = [int(dim / float(int_resolution)) for dim in inshape]
 
         source = tf.keras.Input(shape=(*inshape, nb_feats))
         flow_layer = ne.layers.LocalParamWithInput(shape=(*ds_warp_shape, len(inshape)), mult=mult)
@@ -473,8 +534,8 @@ class InstanceDense(ne.modelio.LoadableModel):
             pos_flow = layers.VecInt(method='ss', name='flow_int', int_steps=int_steps)(pos_flow)
 
             # resize to final resolution
-            if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(int_downsize, name='diffflow')(pos_flow)
+            if int_resolution > 1:
+                pos_flow = layers.RescaleTransform(int_resolution, name='diffflow')(pos_flow)
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(interp_method='linear',
@@ -947,7 +1008,7 @@ class Unet(tf.keras.Model):
                  feat_mult=1,
                  nb_conv_per_level=1,
                  do_res=False,
-                 half_res=False,
+                 nb_upsample_skips=0,
                  hyp_input=None,
                  hyp_tensor=None,
                  final_activation_function=None,
@@ -965,7 +1026,8 @@ class Unet(tf.keras.Model):
             feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
                 Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
-            half_res: Skip the last decoder upsampling. Default is False.
+            nb_upsample_skips: Number of upsamples to skip in the decoder (to downsize the
+                the output resolution). Default is 0.
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
             final_activation_function: Replace default activation function in final layer of unet.
@@ -1047,7 +1109,9 @@ class Unet(tf.keras.Model):
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
                 last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
                                    include_activation=activate(level, conv))
-            if not half_res or level < (nb_levels - 2):
+
+            # upsample
+            if level < (nb_levels - 1 - nb_upsample_skips):
                 layer_name = '%s_dec_upsample_%d' % (name, real_level)
                 last = _upsample_block(last, enc_layers.pop(), factor=max_pool[real_level],
                                        name=layer_name)
@@ -1077,60 +1141,26 @@ class Unet(tf.keras.Model):
 
 class HyperVxmDense(ne.modelio.LoadableModel):
     """
-    HyperMorph-VxmDense network amortized hyperparameter learning.
+    Dense HyperMorph network for amortized hyperparameter learning.
     """
 
     @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
-                 nb_unet_features=None,
-                 nb_unet_levels=None,
-                 unet_feat_mult=1,
-                 nb_unet_conv_per_level=1,
-                 int_steps=7,
-                 int_downsize=2,
-                 bidir=False,
-                 use_probs=False,
-                 src_feats=1,
-                 trg_feats=1,
-                 unet_half_res=False,
                  nb_hyp_params=1,
-                 nb_hyp_layers=4,
-                 nb_hyp_units=64,
-                 name='hyper_vxm_dense'):
+                 nb_hyp_layers=6,
+                 nb_hyp_units=128,
+                 name='hyper_vxm_dense',
+                 **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config described in 
-                the unet class documentation.
-            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer. 
-                Default is None.
-            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an 
-                integer. Default is 1.
-            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
-                value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. 
-                The flow field is not downsampled when this value is 1.
-            bidir: Enable bidirectional cost function. Default is False.
-            use_probs: Use probabilities in flow field. Default is False.
-            src_feats: Number of source image features. Default is 1.
-            trg_feats: Number of target image features. Default is 1.
-            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
-                Default is False.
+            nb_hyp_params: Number of input hyperparameters.
+            nb_hyp_layers: Number of dense layers in the hypernetwork.
+            nb_hyp_units: Number of units in each dense layer of the hypernetwork.
             name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
+            kwargs: Forwarded to the internal VxmDense model.
         """
-
-        # ensure correct dimensionality
-        ndims = len(inshape)
-        assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-
-        # configure default input layers if an input model is not provided
-        source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
-        target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
-        input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
 
         # build hypernetwork
         hyp_input = tf.keras.Input(shape=[nb_hyp_params], name='%s_hyp_input' % name)
@@ -1139,95 +1169,16 @@ class HyperVxmDense(ne.modelio.LoadableModel):
             hyp_last = KL.Dense(nb_hyp_units, activation='relu',
                                 name='%s_hyp_dense_%d' % (name, n + 1))(hyp_last)
 
-        # build core unet model and grab inputs
-        unet_model = Unet(
-            input_model=input_model,
-            nb_features=nb_unet_features,
-            nb_levels=nb_unet_levels,
-            feat_mult=unet_feat_mult,
-            nb_conv_per_level=nb_unet_conv_per_level,
-            half_res=unet_half_res,
-            hyp_input=hyp_input,
-            hyp_tensor=hyp_last,
-            name='%s_unet' % name
-        )
+        # attach hypernetwork to vxm dense network
+        hyp_model = tf.keras.Model(inputs=hyp_input, outputs=hyp_last, name='%s_hypernet' % name)
+        vxm_model = VxmDense(inshape, hyp_model=hyp_model, name=name, **kwargs)
 
-        # transform unet output into a flow field
-        Conv = getattr(ne.layers, 'HyperConv%dDFromDense' % ndims)
-        flow_mean = Conv(ndims, kernel_size=3, padding='same',
-                         name='%s_flow' % name)([unet_model.output, hyp_last])
-
-        # optionally include probabilities
-        if use_probs:
-            # initialize the velocity variance very low, to start stable
-            flow_logsigma = Conv(ndims, kernel_size=3, padding='same',
-                                 name='%s_log_sigma' % name)([unet_model.output, hyp_last])
-            flow_params = KL.concatenate([flow_mean, flow_logsigma], name='%s_prob_concat' % name)
-            flow_inputs = [flow_mean, flow_logsigma]
-            flow = ne.layers.SampleNormalLogVar(name='%s_z_sample' % name)(flow_inputs)
-        else:
-            flow_params = flow_mean
-            flow = flow_mean
-
-        if not unet_half_res:
-            # optionally resize for integration
-            if int_steps > 0 and int_downsize > 1:
-                flow = layers.RescaleTransform(1 / int_downsize, name='%s_flow_resize' % name)(flow)
-
-        preint_flow = flow
-
-        # optionally negate flow for bidirectional model
-        pos_flow = flow
-        if bidir:
-            neg_flow = ne.layers.Negate(name='%s_neg_flow' % name)(flow)
-
-        # integrate to produce diffeomorphic warp (i.e. treat flow as a stationary velocity field)
-        if int_steps > 0:
-            pos_flow = layers.VecInt(method='ss',
-                                     name='%s_flow_int' % name,
-                                     int_steps=int_steps)(pos_flow)
-            if bidir:
-                neg_flow = layers.VecInt(method='ss',
-                                         name='%s_neg_flow_int' % name,
-                                         int_steps=int_steps)(neg_flow)
-
-            # resize to final resolution
-            if int_downsize > 1:
-                pos_flow = layers.RescaleTransform(
-                    int_downsize, name='%s_diffflow' % name)(pos_flow)
-                if bidir:
-                    neg_flow = layers.RescaleTransform(
-                        int_downsize, name='%s_neg_diffflow' % name)(neg_flow)
-
-        # warp image with flow field
-        y_source = layers.SpatialTransformer(
-            interp_method='linear', indexing='ij', name='%s_transformer' % name)([source, pos_flow])
-        if bidir:
-            st_inputs = [target, neg_flow]
-            y_target = layers.SpatialTransformer(interp_method='linear',
-                                                 indexing='ij',
-                                                 name='%s_neg_transformer' % name)(st_inputs)
-
-        # initialize the keras model
-        outputs = [y_source, y_target] if bidir else [y_source]
-
-        if use_probs:
-            # compute loss on flow probabilities
-            outputs += [flow_params]
-        else:
-            # compute smoothness loss on pre-integrated warp
-            outputs += [preint_flow]
-
-        super().__init__(name=name, inputs=[source, target, hyp_input], outputs=outputs)
+        # rebuild model
+        super().__init__(name=name, inputs=vxm_model.inputs, outputs=vxm_model.outputs)
 
         # cache pointers to layers and tensors for future reference
-        self.references = ne.modelio.LoadableModel.ReferenceContainer()
+        self.references = vxm_model.references
         self.references.hyper_val = hyp_input
-        self.references.unet_model = unet_model
-        self.references.y_source = y_source
-        self.references.y_target = y_target if bidir else None
-        self.references.pos_flow = pos_flow
-        self.references.neg_flow = neg_flow if bidir else None
 
 
 ###############################################################################
