@@ -143,8 +143,8 @@ gen_args = dict(
 reg_args = dict(
     inshape=in_shape,
     int_steps=arg.int_steps,
-    int_downsize=2,
-    unet_half_res=True,
+    int_resolution=2,
+    svf_resolution=2,
     nb_unet_features=(arg.enc, arg.dec),
 )
 

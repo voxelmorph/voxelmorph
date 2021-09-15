@@ -156,7 +156,7 @@ model = vxm.networks.VxmDenseSemiSupervisedPointCloud(
     surf_bidir=args.surf_bidir,
     use_probs=args.use_probs,
     int_steps=args.int_steps,
-    int_downsize=args.int_downsize,
+    int_resolution=args.int_downsize,
     src_feats=nfeats,
     trg_feats=nfeats
 )

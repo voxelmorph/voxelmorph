@@ -77,7 +77,7 @@ model = vxm.networks.InstanceDense(
     nb_feats=nb_feats,
     mult=args.multiplier,
     int_steps=args.int_steps,
-    int_downsize=args.int_downsize
+    int_resolution=args.int_downsize
 )
 
 # load model and predict
@@ -93,7 +93,7 @@ elif args.image_loss == 'mse':
 else:
     raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
-losses = [image_loss_func, vxm.losses.Grad('l2').loss]
+losses = [image_loss_func, vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights = [1, args.lambda_weight]
 
 # train

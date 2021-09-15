@@ -119,7 +119,7 @@ model = vxm.networks.VxmDenseSemiSupervisedSeg(
     nb_unet_features=[enc_nf, dec_nf],
     nb_labels=len(train_labels),
     int_steps=args.int_steps,
-    int_downsize=args.int_downsize
+    int_resolution=args.int_downsize
 )
 
 # load initial weights (if provided)
