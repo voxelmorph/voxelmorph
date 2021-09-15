@@ -30,7 +30,6 @@ import argparse
 import numpy as np
 import voxelmorph as vxm
 import tensorflow as tf
-import keras
 
 
 # parse commandline args
