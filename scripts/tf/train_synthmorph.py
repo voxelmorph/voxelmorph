@@ -23,10 +23,6 @@ import neurite as ne
 import voxelmorph as vxm
 
 
-# disable eager execution
-tf.compat.v1.disable_eager_execution()
-
-
 # reference
 ref = (
     'If you find this code useful, please cite:\n\n'
@@ -58,11 +54,11 @@ p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale
 p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field (default: 0.3)')
 p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale (default: 40)')
 p.add_argument('--out-labels', default='fs_labels.npy', help='''
-    labels whose overlap to optimize (default: fs_labels.npy from  README)
+    labels whose overlap to optimize (default: fs_labels.npy from README)
 ''')
 
 # training parameters
-p.add_argument('--gpu', type=str, default=0, help='ID of GPU to use (default: 0)')
+p.add_argument('--gpu', type=str, default='0', help='ID of GPU to use (default: 0)')
 p.add_argument('--epochs', type=int, default=1500, help='training epochs (default: 1500)')
 p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
