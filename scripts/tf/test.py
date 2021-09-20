@@ -78,7 +78,8 @@ dice_means = []
 with tf.device(device):
 
     # load model and build nearest-neighbor transfer model
-    registration_model = vxm.networks.VxmDense.load(args.model).get_registration_model()
+    model = vxm.networks.VxmDense.load(args.model, input_model=None)
+    registration_model = model.get_registration_model()
     inshape = registration_model.inputs[0].shape[1:-1]
     transform_model = vxm.networks.Transform(inshape, interp_method='nearest')
 
