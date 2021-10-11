@@ -9,8 +9,9 @@ class NCC:
     Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, win=None):
+    def __init__(self, win=None, eps=1e-5):
         self.win = win
+	self.eps = eps
 
     def loss(self, y_true, y_pred):
 
@@ -55,14 +56,13 @@ class NCC:
         IJ_sum = conv_fn(IJ, sum_filt, stride=stride, padding=padding)
 
         win_size = np.prod(win)
-        u_I = I_sum / win_size
-        u_J = J_sum / win_size
-
-        cross = IJ_sum - u_J * I_sum - u_I * J_sum + u_I * u_J * win_size
-        I_var = I2_sum - 2 * u_I * I_sum + u_I * u_I * win_size
-        J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
-
-        cc = cross * cross / (I_var * J_var + 1e-5)
+        cross = IJ_sum - I_sum * J_sum / win_size
+        cross = torch.clamp(cross, min = self.eps)
+        I_var = I2_sum - I_sum * I_sum / win_size
+        I_var = torch.clamp(I_var, min = self.eps)
+        J_var = J2_sum - J_sum * J_sum / win_size
+        J_var = torch.clamp(J_var, min = self.eps)
+        cc = (cross / I_var) * (cross / J_var)
 
         return -torch.mean(cc)
 
