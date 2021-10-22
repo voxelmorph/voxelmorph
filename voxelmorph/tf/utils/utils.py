@@ -644,11 +644,11 @@ def params_to_affine_matrix(par,
     Author:
         mu40
 
-    If you find this function useful, please cite:
-        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
-        Learning MRI Contrast-Agnostic Registration.
-        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
-        https://doi.org/10.1109/ISBI48211.2021.9434113
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        https://doi.org/10.1109/TMI.2021.3116879
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
@@ -735,11 +735,11 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     Author:
         mu40
 
-    If you find this function useful, please cite:
-        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
-        Learning MRI Contrast-Agnostic Registration.
-        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
-        https://doi.org/10.1109/ISBI48211.2021.9434113
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        https://doi.org/10.1109/TMI.2021.3116879
     """
     if ndims not in (2, 3):
         raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')

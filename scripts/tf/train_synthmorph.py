@@ -25,11 +25,11 @@ import voxelmorph as vxm
 
 # reference
 ref = (
-    'If you find this code useful, please cite:\n\n'
-    '\tLearning MRI Contrast-Agnostic Registration.\n'
-    '\tM Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.\n'
-    '\tISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.\n'
-    '\thttps://doi.org/10.1109/ISBI48211.2021.9434113\n'
+    'If you find this script useful, please consider citing:\n\n'
+    '\tM Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca\n'
+    '\tSynthMorph: learning contrast-invariant registration without acquired images\n'
+    '\tIEEE Transactions on Medical Imaging (TMI), in press, 2021\n'
+    '\thttps://doi.org/10.1109/TMI.2021.3116879\n'
 )
 
 

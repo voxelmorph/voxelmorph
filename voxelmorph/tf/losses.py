@@ -323,10 +323,10 @@ class MutualInformation(ne.metrics.MutualInformation):
     - Courtney K Guo. 
       Multi-modal image registration with unsupervised deep learning. 
       PhD thesis, Massachusetts Institute of Technology, 2019.
-    - M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
-      Learning MRI Contrast-Agnostic Registration.
-      ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
-      https://doi.org/10.1109/ISBI48211.2021.9434113
+    - M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+      SynthMorph: learning contrast-invariant registration without acquired images
+      IEEE Transactions on Medical Imaging (TMI), in press, 2021
+      https://doi.org/10.1109/TMI.2021.3116879
     """
 
     def loss(self, y_true, y_pred):

@@ -449,11 +449,11 @@ class ParamsToAffineMatrix(Layer):
     Constructs an affine transformation matrix from translation, rotation, scaling and shearing
     parameters in 2D or 3D.
 
-    If you find this layer useful, please cite:
-        M Hoffmann, B Billot, JE Iglesias, B Fischl, AV Dalca.
-        Learning MRI Contrast-Agnostic Registration.
-        ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903, 2021.
-        https://doi.org/10.1109/ISBI48211.2021.9434113
+    If you find this layer useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        https://doi.org/10.1109/TMI.2021.3116879
     """
 
     def __init__(self, ndims=3, deg=True, shift_scale=False, last_row=False, **kwargs):
