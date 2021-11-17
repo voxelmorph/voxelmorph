@@ -29,7 +29,7 @@ class SpatialTransformer(nn.Module):
 
     def forward(self, src, flow):
         # new locations
-        new_locs = self.grid + flow
+        new_locs = self.grid.to(src.dtype) + flow
         shape = flow.shape[2:]
 
         # need to normalize grid values to [-1, 1] for resampler
@@ -85,13 +85,15 @@ class ResizeTransform(nn.Module):
     def forward(self, x):
         if self.factor < 1:
             # resize first to save memory
-            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode)
+            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode, 
+                                recompute_scale_factor = False)
             x = self.factor * x
 
         elif self.factor > 1:
             # multiply first to save memory
             x = self.factor * x
-            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode)
+            x = nnf.interpolate(x, align_corners=True, scale_factor=self.factor, mode=self.mode, 
+                                recompute_scale_factor = False)
 
         # don't do anything if resize is 1
         return x

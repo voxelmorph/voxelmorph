@@ -82,7 +82,7 @@ class Unet(nn.Module):
         # cache downsampling / upsampling operations
         MaxPooling = getattr(nn, 'MaxPool%dd' % ndims)
         self.pooling = [MaxPooling(s) for s in max_pool]
-        self.upsampling = [nn.Upsample(scale_factor=s, mode='nearest') for s in max_pool]
+        self.upsampling = [nn.Upsample(scale_factor=s, mode='trilinear', align_corners = True) for s in max_pool]
 
         # configure encoder (down-sampling path)
         prev_nf = infeats
@@ -296,10 +296,13 @@ class ConvBlock(nn.Module):
         super().__init__()
 
         Conv = getattr(nn, 'Conv%dd' % ndims)
+        Norm = getattr(nn, 'InstanceNorm%dd' %ndims)
         self.main = Conv(in_channels, out_channels, 3, stride, 1)
+        self.norm = Norm(out_channels)
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, x):
         out = self.main(x)
+        out = self.norm(out)
         out = self.activation(out)
         return out

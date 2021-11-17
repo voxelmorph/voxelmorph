@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import numpy as np
+import random
 
 from . import py
 
@@ -67,8 +68,11 @@ def volgen(
 
         yield tuple(vols)
 
+coin_func = lambda : random.random() > 0.5
+print_tensor = lambda n, x: print(n, type(x), x.dtype, x.shape, x.min(), x.max())
 
-def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
+def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=False, 
+                mean_std = (0, 1),  **kwargs):
     """
     Generator for scan-to-scan registration.
 
@@ -86,7 +90,10 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
     while True:
         scan1 = next(gen)[0]
         scan2 = next(gen)[0]
-
+        # print_tensor('Scan1 raw', scan1)
+        scan1 = (scan1 - mean_std[0])/ mean_std[1]
+        scan2 = (scan2 - mean_std[0]) / mean_std[1]
+        # print_tensor('Scan1 norm', scan1)
         # some induced chance of making source and target equal
         if prob_same > 0 and np.random.rand() < prob_same:
             if np.random.rand() > 0.5:
@@ -99,6 +106,13 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
             shape = scan1.shape[1:-1]
             zeros = np.zeros((batch_size, *shape, len(shape)))
 
+        if coin_func():
+            scan1 = scan1[::-1, ::-1, :]
+            scan2 = scan2[::-1, ::-1, :]
+        if coin_func():
+            scan1 = scan1[..., ::-1]
+            scan2 = scan2[..., ::-1]
+        scan1, scan2 = np.ascontiguousarray(scan1), np.ascontiguousarray(scan2)
         invols = [scan1, scan2]
         outvols = [scan2, scan1] if bidir else [scan2]
         if not no_warp:
