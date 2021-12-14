@@ -83,15 +83,15 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
   * HyperMorph, avoiding the need to tune registration hyperparameters:   
 
     **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
-    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)
+    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
     IPMI: Information Processing in Medical Imaging. 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
 
   * SynthMorph, avoiding the need to have data at training (!):  
 
-    **Learning MRI Contrast-Agnostic Registration.**
-    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)
-    ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903. 2021. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
+    **SynthMorph: learning contrast-invariant registration without acquired images.**  
+    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    IEEE TMI: Transactions on Medical Imaging. 2021. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
   
