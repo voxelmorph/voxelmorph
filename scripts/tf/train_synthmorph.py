@@ -53,6 +53,9 @@ p.add_argument('--vel-std', type=float, default=0.5, help='std. dev. of SVF (def
 p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale (default: 16)')
 p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field (default: 0.3)')
 p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale (default: 40)')
+p.add_argument('--out-shape', type=int, nargs='+', default=None, help='''
+    output shape to pad to (default: None)
+''')
 p.add_argument('--out-labels', default='fs_labels.npy', help='''
     labels whose overlap to optimize (default: fs_labels.npy from README)
 ''')
@@ -62,7 +65,7 @@ p.add_argument('--gpu', type=str, default='0', help='ID of GPU to use (default: 
 p.add_argument('--epochs', type=int, default=1500, help='training epochs (default: 1500)')
 p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
-p.add_argument('--save-freq', type=int, default=10, help='epochs between model saves (default: 10)')
+p.add_argument('--save-freq', type=int, default=20, help='epochs between model saves (default: 20)')
 p.add_argument('--reg-param', type=float, default=1., help='regularization weight (default: 1)')
 p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
@@ -109,10 +112,10 @@ gen = vxm.generators.synthmorph(
 in_shape = label_maps[0].shape
 
 if arg.out_labels.endswith('.npy'):
-    labels_out = np.load(arg.out_labels)
+    labels_out = sorted(x for x in np.load(arg.out_labels) if x in labels_in)
 elif arg.out_labels.endswith('.pickle'):
     with open(arg.out_labels, 'rb') as f:
-        labels_out = pickle.load(f)
+        labels_out = {k: v for k, v in pickle.load(f).items() if k in labels_in}
 else:
     labels_out = labels_in
 
@@ -126,6 +129,7 @@ if nb_devices > 1:
 # model configuration
 gen_args = dict(
     in_shape=in_shape,
+    out_shape=arg.out_shape,
     in_label_list=labels_in,
     out_label_list=labels_out,
     warp_std=arg.vel_std,
@@ -137,7 +141,6 @@ gen_args = dict(
 )
 
 reg_args = dict(
-    inshape=in_shape,
     int_steps=arg.int_steps,
     int_resolution=2,
     svf_resolution=2,
@@ -156,6 +159,7 @@ with context:
 
     # registration
     inputs = gen_model_1.inputs + gen_model_2.inputs
+    reg_args['inshape'] = ima_1.shape[1:-1]
     reg_args['input_model'] = tf.keras.Model(inputs, outputs=(ima_1, ima_2))
     model = vxm.networks.VxmDense(**reg_args)
     flow = model.references.pos_flow
@@ -170,7 +174,7 @@ with context:
 
 # callbacks
 steps_per_epoch = 100
-save_name = os.path.join(arg.model_dir, '{epoch:04d}.h5')
+save_name = os.path.join(arg.model_dir, '{epoch:05d}.h5')
 save = tf.keras.callbacks.ModelCheckpoint(
     save_name,
     save_freq=steps_per_epoch * arg.save_freq,
