@@ -16,7 +16,6 @@
 import os
 import pickle
 import argparse
-import contextlib
 import numpy as np
 import tensorflow as tf
 import neurite as ne
@@ -113,12 +112,6 @@ else:
     labels_out = labels_in
 
 
-# multi-GPU support
-context = contextlib.nullcontext()
-if nb_devices > 1:
-    context = tf.distribute.MirroredStrategy().scope()
-
-
 # model configuration
 gen_args = dict(
     in_shape=in_shape,
@@ -142,7 +135,8 @@ reg_args = dict(
 
 
 # build model
-with context:
+strategy = 'MirroredStrategy' if nb_devices > 1 else 'get_strategy'
+with getattr(tf.distribute, strategy)().scope():
 
     # generation
     gen_model_1 = ne.models.labels_to_image(**gen_args, id=0)
