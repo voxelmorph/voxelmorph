@@ -16,7 +16,6 @@
 import os
 import pickle
 import argparse
-import contextlib
 import numpy as np
 import tensorflow as tf
 import neurite as ne
@@ -34,51 +33,44 @@ ref = (
 
 
 # parse command line
+bases = (argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter)
 p = argparse.ArgumentParser(
-    formatter_class=argparse.RawDescriptionHelpFormatter,
+    formatter_class=type('formatter', bases, {}),
     description=f'Train a SynthMorph model on images synthesized from label maps. {ref}',
 )
 
 # data organization parameters
 p.add_argument('--label-dir', nargs='+', help='path or glob pattern pointing to input label maps')
-p.add_argument('--model-dir', default='models', help='model output directory (default: models)')
+p.add_argument('--model-dir', default='models', help='model output directory')
 p.add_argument('--log-dir', help='optional TensorBoard log directory')
 p.add_argument('--sub-dir', help='optional subfolder for logs and model saves')
 
 # generation parameters
 p.add_argument('--same-subj', action='store_true', help='generate image pairs from same label map')
-p.add_argument('--blur-std', type=float, default=1, help='maximum blurring std. dev. (default: 1)')
-p.add_argument('--gamma', type=float, default=0.25, help='std. dev. of gamma (default: 0.25)')
-p.add_argument('--vel-std', type=float, default=0.5, help='std. dev. of SVF (default: 0.5)')
-p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale (default: 16)')
-p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field (default: 0.3)')
-p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale (default: 40)')
-p.add_argument('--out-shape', type=int, nargs='+', default=None, help='''
-    output shape to pad to (default: None)
-''')
-p.add_argument('--out-labels', default='fs_labels.npy', help='''
-    labels whose overlap to optimize (default: fs_labels.npy from README)
-''')
+p.add_argument('--blur-std', type=float, default=1, help='maximum blurring std. dev.')
+p.add_argument('--gamma', type=float, default=0.25, help='std. dev. of gamma')
+p.add_argument('--vel-std', type=float, default=0.5, help='std. dev. of SVF')
+p.add_argument('--vel-res', type=float, nargs='+', default=[16], help='SVF scale')
+p.add_argument('--bias-std', type=float, default=0.3, help='std. dev. of bias field')
+p.add_argument('--bias-res', type=float, nargs='+', default=[40], help='bias scale')
+p.add_argument('--out-shape', type=int, nargs='+', help='output shape to pad to''')
+p.add_argument('--out-labels', default='fs_labels.npy', help='labels to optimize, see README')
 
 # training parameters
-p.add_argument('--gpu', type=str, default='0', help='ID of GPU to use (default: 0)')
-p.add_argument('--epochs', type=int, default=1500, help='training epochs (default: 1500)')
-p.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
+p.add_argument('--gpu', type=str, default='0', help='ID of GPU to use')
+p.add_argument('--epochs', type=int, default=1500, help='training epochs')
+p.add_argument('--batch-size', type=int, default=1, help='batch size')
 p.add_argument('--init-weights', help='optional weights file to initialize with')
-p.add_argument('--save-freq', type=int, default=20, help='epochs between model saves (default: 20)')
-p.add_argument('--reg-param', type=float, default=1., help='regularization weight (default: 1)')
-p.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
-p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number (default: 0)')
-p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch (default: 1)')
+p.add_argument('--save-freq', type=int, default=20, help='epochs between model saves')
+p.add_argument('--reg-param', type=float, default=1., help='regularization weight')
+p.add_argument('--lr', type=float, default=1e-4, help='learning rate')
+p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number')
+p.add_argument('--verbose', type=int, default=1, help='0 silent, 1 bar, 2 line/epoch')
 
 # network architecture parameters
-p.add_argument('--int-steps', type=int, default=5, help='number of integration steps (default: 5)')
-p.add_argument('--enc', type=int, nargs='+', default=[64] * 4, help='''
-    U-net encoder filters (default: 64 64 64 64)
-''')
-p.add_argument('--dec', type=int, nargs='+', default=[64] * 6, help='''
-    U-net decorder filters (default: 64 64 64 64 64 64)
-''')
+p.add_argument('--int-steps', type=int, default=5, help='number of integration steps')
+p.add_argument('--enc', type=int, nargs='+', default=[64] * 4, help='U-Net encoder filters')
+p.add_argument('--dec', type=int, nargs='+', default=[64] * 6, help='U-Net decorder filters')
 
 arg = p.parse_args()
 
@@ -120,12 +112,6 @@ else:
     labels_out = labels_in
 
 
-# multi-GPU support
-context = contextlib.nullcontext()
-if nb_devices > 1:
-    context = tf.distribute.MirroredStrategy().scope()
-
-
 # model configuration
 gen_args = dict(
     in_shape=in_shape,
@@ -149,7 +135,8 @@ reg_args = dict(
 
 
 # build model
-with context:
+strategy = 'MirroredStrategy' if nb_devices > 1 else 'get_strategy'
+with getattr(tf.distribute, strategy)().scope():
 
     # generation
     gen_model_1 = ne.models.labels_to_image(**gen_args, id=0)
@@ -166,7 +153,8 @@ with context:
     pred = vxm.layers.SpatialTransformer(interp_method='linear', name='pred')([map_1, flow])
 
     # losses and compilation
-    model.add_loss(vxm.losses.Dice().loss(map_2, pred) + tf.repeat(1., arg.batch_size))
+    const = tf.ones(shape=arg.batch_size // nb_devices)
+    model.add_loss(vxm.losses.Dice().loss(map_2, pred) + const)
     model.add_loss(vxm.losses.Grad('l2', loss_mult=arg.reg_param).loss(None, flow))
     model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=arg.lr))
     model.summary()
