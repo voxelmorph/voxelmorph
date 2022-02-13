@@ -62,7 +62,8 @@ nb_feats = moving.shape[-1]
 
 with tf.device(device):
     # load model and predict
-    warp = vxm.networks.VxmDense.load(args.model, input_model=None).register(moving, fixed)
+    config = dict(inshape=inshape, input_model=None)
+    warp = vxm.networks.VxmDense.load(args.model, **config).register(moving, fixed)
     moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
 
 # save warp
