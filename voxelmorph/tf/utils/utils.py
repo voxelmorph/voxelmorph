@@ -69,7 +69,7 @@ def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute
     vol, loc_pts = x
 
     fn = lambda y: ne.utils.interpn(y[0], y[1])
-    z = tf.map_fn(fn, [vol, loc_pts], dtype=tf.float32)
+    z = tf.map_fn(fn, [vol, loc_pts], fn_output_signature=tf.float32)
 
     if force_post_absolute_val:
         z = K.abs(z)
@@ -440,7 +440,7 @@ def point_spatial_transformer(x, single=False, sdt_vol_resize=1):
     # at each location determined by surface point, figure out the trf...
     # note: if surface_points are on the grid, gather_nd should work as well
     fn = lambda x: ne.utils.interpn(x[0], x[1])
-    diff = tf.map_fn(fn, [trf, surface_points], dtype=tf.float32)
+    diff = tf.map_fn(fn, [trf, surface_points], fn_output_signature=tf.float32)
     ret = surface_points + diff
 
     if surface_pts_D == trf_D + 1:

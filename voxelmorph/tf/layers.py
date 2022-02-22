@@ -378,7 +378,7 @@ class ComposeTransform(Layer):
         """
         compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
                                             shift_center=self.shift_center, indexing=self.indexing)
-        return tf.map_fn(compose, transforms, dtype=transforms[0].dtype)
+        return tf.map_fn(compose, transforms, fn_output_signature=transforms[0].dtype)
 
     def compute_output_shape(self, input_shape):
         return self.outshape
@@ -441,7 +441,7 @@ class InvertAffine(Layer):
         Parameters
             matrix: Affine matrix of shape [B, N, N+1] to invert.
         """
-        return tf.map_fn(utils.invert_affine, matrix, dtype='float32')
+        return tf.map_fn(utils.invert_affine, matrix, fn_output_signature='float32')
 
 
 class ParamsToAffineMatrix(Layer):
