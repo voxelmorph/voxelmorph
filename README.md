@@ -87,11 +87,11 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
     IPMI: Information Processing in Medical Imaging. 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
 
-  * SynthMorph, avoiding the need to have data at training (!):  
+  * [SynthMorph](https://synthmorph.voxelmorph.net), avoiding the need to have data at training (!):  
 
     **SynthMorph: learning contrast-invariant registration without acquired images.**  
     [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
-    IEEE TMI: Transactions on Medical Imaging. 2021. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
+    IEEE TMI: Transactions on Medical Imaging. 2022. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
   
