@@ -27,7 +27,7 @@ ref = (
     'If you find this script useful, please consider citing:\n\n'
     '\tM Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca\n'
     '\tSynthMorph: learning contrast-invariant registration without acquired images\n'
-    '\tIEEE Transactions on Medical Imaging (TMI), in press, 2021\n'
+    '\tIEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022\n'
     '\thttps://doi.org/10.1109/TMI.2021.3116879\n'
 )
 

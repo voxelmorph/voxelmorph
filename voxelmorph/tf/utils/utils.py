@@ -647,7 +647,7 @@ def params_to_affine_matrix(par,
     If you find this function useful, please consider citing:
         M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
         SynthMorph: learning contrast-invariant registration without acquired images
-        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
         https://doi.org/10.1109/TMI.2021.3116879
     """
     if ndims not in (2, 3):
@@ -738,7 +738,7 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     If you find this function useful, please consider citing:
         M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
         SynthMorph: learning contrast-invariant registration without acquired images
-        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
         https://doi.org/10.1109/TMI.2021.3116879
     """
     if ndims not in (2, 3):
