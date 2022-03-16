@@ -1012,6 +1012,7 @@ class Unet(tf.keras.Model):
                  hyp_input=None,
                  hyp_tensor=None,
                  final_activation_function=None,
+                 kernel_initializer='he_normal',
                  name='unet'):
         """
         Parameters:
@@ -1031,6 +1032,8 @@ class Unet(tf.keras.Model):
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
             final_activation_function: Replace default activation function in final layer of unet.
+            kernel_initializer: Initializer for the kernel weights matrix for conv layers. Default
+                is 'he_normal'.
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -1088,7 +1091,8 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_enc_conv_%d_%d' % (name, level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
+                                   kernel_initializer=kernel_initializer)
             enc_layers.append(last)
 
             # temporarily use maxpool since downsampling doesn't exist in keras
@@ -1108,7 +1112,8 @@ class Unet(tf.keras.Model):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
                 last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
-                                   include_activation=activate(level, conv))
+                                   include_activation=activate(level, conv),
+                                   kernel_initializer=kernel_initializer)
 
             # upsample
             if level < (nb_levels - 1 - nb_upsample_skips):
@@ -1126,7 +1131,8 @@ class Unet(tf.keras.Model):
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
             last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor,
-                               include_activation=activate(num))
+                               include_activation=activate(num),
+                               kernel_initializer=kernel_initializer)
 
         # add the final activation function is set
         if final_activation_function is not None:
@@ -1186,7 +1192,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
-                include_activation=True):
+                include_activation=True, kernel_initializer='he_normal):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -1199,7 +1205,7 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
         conv_inputs = [x, hyp_tensor]
     else:
         Conv = getattr(KL, 'Conv%dD' % ndims)
-        extra_conv_params['kernel_initializer'] = 'he_normal'
+        extra_conv_params['kernel_initializer'] = kernel_initializer
         conv_inputs = x
 
     convolved = Conv(nfeat, kernel_size=3, padding='same',
