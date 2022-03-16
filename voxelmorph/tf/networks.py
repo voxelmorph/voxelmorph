@@ -1192,7 +1192,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
-                include_activation=True, kernel_initializer='he_normal):
+                include_activation=True, kernel_initializer='he_normal'):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
