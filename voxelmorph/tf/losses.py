@@ -92,11 +92,20 @@ class NCC:
             # cc = (cross * cross) / (I_var * J_var)
             cc = (cross / I_var) * (cross / J_var)
 
-        # return mean cc for each entry in batch
-        return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
+        return cc
 
-    def loss(self, y_true, y_pred):
-        return - self.ncc(y_true, y_pred)
+    def loss(self, y_true, y_pred, reduce='mean'):
+        # compute cc
+        cc = self.ncc(y_true, y_pred)
+        # reduce
+        if reduce == 'mean':
+            cc = tf.reduce_mean(K.batch_flatten(cc), axis=-1)
+        elif reduce == 'max':
+            cc = tf.reduce_max(K.batch_flatten(cc), axis=-1)
+        elif reduce is not None:
+            raise ValueError(f'Unknown NCC reduction type: {reduce}')
+        # loss
+        return -cc
 
 
 class MSE:
@@ -107,8 +116,21 @@ class MSE:
     def __init__(self, image_sigma=1.0):
         self.image_sigma = image_sigma
 
-    def loss(self, y_true, y_pred):
-        return 1.0 / (self.image_sigma**2) * K.mean(K.square(y_true - y_pred))
+    def mse(self, y_true, y_pred):
+        return K.square(y_true - y_pred)
+
+    def loss(self, y_true, y_pred, reduce='mean'):
+        # compute mse
+        mse = self.mse(y_true, y_pred)
+        # reduce
+        if reduce == 'mean':
+            mse = K.mean(mse)
+        elif reduce == 'max':
+            mse = K.max(mse)
+        elif reduce is not None:
+            raise ValueError(f'Unknown MSE reduction type: {reduce}')
+        # loss
+        return 1.0 / (self.image_sigma ** 2) * mse
 
 
 class TukeyBiweight:
