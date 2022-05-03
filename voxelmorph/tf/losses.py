@@ -33,9 +33,10 @@ class NCC:
     Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, win=None, eps=1e-5):
+    def __init__(self, win=None, eps=1e-5, signed=False):
         self.win = win
         self.eps = eps
+        self.signed = signed
 
     def ncc(self, Ii, Ji):
         # get dimension of volume
@@ -85,8 +86,11 @@ class NCC:
         J_var = J2_sum - 2 * u_J * J_sum + u_J * u_J * win_size
         J_var = tf.maximum(J_var, self.eps)
 
-        # cc = (cross * cross) / (I_var * J_var)
-        cc = (cross / I_var) * (cross / J_var)
+        if self.signed:
+            cc = cross / tf.sqrt(I_var * J_var + self.eps)
+        else:
+            # cc = (cross * cross) / (I_var * J_var)
+            cc = (cross / I_var) * (cross / J_var)
 
         # return mean cc for each entry in batch
         return tf.reduce_mean(K.batch_flatten(cc), axis=-1)
