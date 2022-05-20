@@ -694,7 +694,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         if not supervised_model:
             loss_vol = KL.Lambda(lambda x: logsum(x), name='loss_vol')(logpdf)
         else:
-            loss_vol = logpdf
+            loss_vol = KL.lambda(lambda x: K.exp(x), name='pdf')(logpdf)
 
         # initialize the keras model
         # need to swap the first two inputs, in order to warp the atlas to the image
