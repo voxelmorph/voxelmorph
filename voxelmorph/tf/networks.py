@@ -6,14 +6,14 @@ https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 
 Copyright 2020 Adrian V. Dalca
 
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in 
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
 compliance with the License. You may obtain a copy of the License at
 
 http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or 
-implied. See the License for the specific language governing permissions and limitations under 
+distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+implied. See the License for the specific language governing permissions and limitations under
 the License.
 """
 
@@ -51,6 +51,7 @@ class VxmDense(ne.modelio.LoadableModel):
                  nb_unet_levels=None,
                  unet_feat_mult=1,
                  nb_unet_conv_per_level=1,
+                 spatial_transformer_indexing = 'ij',
                  int_steps=7,
                  svf_resolution=1,
                  int_resolution=2,
@@ -65,19 +66,22 @@ class VxmDense(ne.modelio.LoadableModel):
                  fill_value=None,
                  reg_field='preintegrated',
                  name='vxm_dense'):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config described in 
+                the form [[encoder feats], [decoder feats]], or as a single integer.
+                If None (default), the unet features are defined by the default config described in
                 the unet class documentation.
-            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer. 
+            nb_unet_levels: Number of levels in unet. Only used when nb_unet_features is an integer.
                 Default is None.
-            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an 
+            unet_feat_mult: Per-level feature multiplier. Only used when nb_unet_features is an
                 integer. Default is 1.
             nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
+            spatial_transformer_indexing: Indexing of the Spatial Transformer layer. Must be 'ij' (matrix) or 'xy' (cartesian). 'xy' indexing will
+                have the first two entries of the flow (along last axis) flipped
+                compared to 'ij' indexing.
+            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this
                 value is 0.
             svf_resolution: Resolution (relative voxel size) of the predicted SVF.
                 Default is 1.
@@ -212,14 +216,14 @@ class VxmDense(ne.modelio.LoadableModel):
         # warp image with flow field
         y_source = layers.SpatialTransformer(
             interp_method='linear',
-            indexing='ij',
+            indexing=spatial_transformer_indexing,
             fill_value=fill_value,
             name='%s_transformer' % name)([source, pos_flow])
 
         if bidir:
             st_inputs = [target, neg_flow]
             y_target = layers.SpatialTransformer(interp_method='linear',
-                                                 indexing='ij',
+                                                 indexing=spatial_transformer_indexing,
                                                  fill_value=fill_value,
                                                  name='%s_neg_transformer' % name)(st_inputs)
 
@@ -274,14 +278,14 @@ class VxmDense(ne.modelio.LoadableModel):
         """
         return self.get_registration_model().predict([src, trg])
 
-    def apply_transform(self, src, trg, img, interp_method='linear'):
+    def apply_transform(self, src, trg, img, interp_method='linear', spatial_transformer_indexing='ij'):
         """
         Predicts the transform from src to trg and applies it to the img tensor.
         """
         warp_model = self.get_registration_model()
         img_input = tf.keras.Input(shape=img.shape[1:])
         st_input = [img_input, warp_model.output]
-        y_img = layers.SpatialTransformer(interp_method=interp_method)(st_input)
+        y_img = layers.SpatialTransformer(interp_method=interp_method, indexing=spatial_transformer_indexing)(st_input)
         return tf.keras.Model(warp_model.inputs + [img_input], y_img).predict([src, trg, img])
 
 
@@ -305,7 +309,7 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels used for ground truth segmentations.
-            nb_unet_features: Unet convolutional features. 
+            nb_unet_features: Unet convolutional features.
                 See VxmDense documentation for more information.
             seg_resolution: Resolution (relative voxel size) of the segmentation.
                 Default is 2.
@@ -405,12 +409,12 @@ class VxmDenseSemiSupervisedPointCloud(ne.modelio.LoadableModel):
                  sdt_vol_resize=1,
                  surf_bidir=True,
                  **kwargs):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_surface_points: Number of surface points to warp.
             nb_labels_sample: Number of labels to sample.
-            nb_unet_features: Unet convolutional features. 
+            nb_unet_features: Unet convolutional features.
                 See VxmDense documentation for more information.
             sdt_vol_resize: Resize factor of distance transform. Default is 1.
             surf_bidir: Train with bidirectional surface warping. Default is True.
@@ -505,12 +509,12 @@ class InstanceDense(ne.modelio.LoadableModel):
                  int_steps=7,
                  int_downsize=None,
                  int_resolution=2):
-        """ 
+        """
         Parameters:
             inshape: Input shape of moving image. e.g. (192, 192, 192)
             nb_feats: Number of source image features. Default is 1.
             mult: Bias multiplier for local parameter layer. Default is 1000.
-            int_steps: Number of flow integration steps. 
+            int_steps: Number of flow integration steps.
                 The warp is non-diffeomorphic when this value is 0.
             int_resolution: Resolution (relative voxel size) of the flow field during
                 vector integration. Default is 2.
@@ -596,17 +600,17 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  network_stat_weight=0.001,
                  supervised_model=False,
                  **kwargs):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels in probabilistic atlas.
-            nb_unet_features: Unet convolutional features. 
+            nb_unet_features: Unet convolutional features.
                 See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
             stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
             stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
-            network_stat_weight: Relative weight of the stats learned by the network. 
+            network_stat_weight: Relative weight of the stats learned by the network.
                 Default is 0.001.
             supervised_model: Whether data loss layer should be for a supervised model.
                 Default is False.
@@ -735,10 +739,10 @@ class TemplateCreation(ne.modelio.LoadableModel):
     @ne.modelio.store_config_args
     def __init__(self, inshape, nb_unet_features=None, mean_cap=100, atlas_feats=1, src_feats=1,
                  **kwargs):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. 
+            nb_unet_features: Unet convolutional features.
                 See VxmDense documentation for more information.
             mean_cap: Cap for mean stream. Default is 100.
             atlas_feats: Number of atlas/template features. Default is 1.
@@ -843,19 +847,19 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
                  templcondsi=False,
                  templcondsi_init=None,
                  **kwargs):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             pheno_input_shape: Pheno data input shape. e.g. (2)
-            nb_unet_features: Unet convolutional features. See VxmDense documentation for 
+            nb_unet_features: Unet convolutional features. See VxmDense documentation for
                 more information.
             src_feats: Number of source (atlas) features. Default is 1.
-            conv_image_shape: Intermediate phenotype image shape. Default is inshape 
+            conv_image_shape: Intermediate phenotype image shape. Default is inshape
                 with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
             conv_nb_levels: Number of levels in atlas generator unet. Default is 0.
             conv_nb_features: Number of features in atlas generator convolutions. Default is 32.
-            extra_conv_layers: Number of extra convolutions after unet in atlas generator. 
+            extra_conv_layers: Number of extra convolutions after unet in atlas generator.
                 Default is 3.
             use_mean_stream: Return mean stream layer for training. Default is True.
             mean_cap: Cap for mean stream. Default is 100.
@@ -987,7 +991,7 @@ class Transform(tf.keras.Model):
 
 class Unet(tf.keras.Model):
     """
-    A unet architecture that builds off either an input keras model or input shape. Layer features 
+    A unet architecture that builds off either an input keras model or input shape. Layer features
     can be specified directly as a list of encoder and decoder features or as a single integer along
     with a number of unet levels. The default network features per layer (when no options are
     specified) are:
@@ -1019,12 +1023,12 @@ class Unet(tf.keras.Model):
             inshape: Optional input tensor shape (including features). e.g. (192, 192, 192, 2).
             input_model: Optional input model that feeds directly into the unet before concatenation
             nb_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config described in 
+                the form [[encoder feats], [decoder feats]], or as a single integer.
+                If None (default), the unet features are defined by the default config described in
                 the class documentation.
-            nb_levels: Number of levels in unet. Only used when nb_features is an integer. 
+            nb_levels: Number of levels in unet. Only used when nb_features is an integer.
                 Default is None.
-            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
+            feat_mult: Per-level feature multiplier. Only used when nb_features is an integer.
                 Default is 1.
             nb_conv_per_level: Number of convolutions per unet level. Default is 1.
             nb_upsample_skips: Number of upsamples to skip in the decoder (to downsize the
@@ -1158,7 +1162,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
                  nb_hyp_units=128,
                  name='hyper_vxm_dense',
                  **kwargs):
-        """ 
+        """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_hyp_params: Number of input hyperparameters.
