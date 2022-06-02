@@ -364,6 +364,7 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
 
         # cache pointers to important layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
+        self.references.vxm_model = vxm_model
         self.references.pos_flow = vxm_model.references.pos_flow
         self.references.neg_flow = vxm_model.references.neg_flow
 
