@@ -43,6 +43,6 @@ setuptools.setup(
         'numpy',
         'scipy',
         'nibabel',
-        'neurite',
+        'neurite>=0.2',
     ]
 )
