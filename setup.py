@@ -3,6 +3,8 @@
 import re
 import pathlib
 import setuptools
+
+setuptools.dist.Distribution().fetch_build_eggs(['packaging'])
 import packaging.version
 
 
