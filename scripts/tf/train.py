@@ -100,7 +100,7 @@ train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
 assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
-add_feat_axis = not args.multichannel
+add_feat_axis = not args.multichannel # [hy23] because ours is grayscale, add_feat_axis := true.
 
 if args.atlas:
     # scan-to-atlas generator
@@ -116,9 +116,18 @@ else:
         train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
 # extract shape and number of features from sampled input
+
 sample_shape = next(generator)[0][0].shape
-inshape = sample_shape[1:-1]
-nfeats = sample_shape[-1]
+
+'''
+[hy23]
+next(generator)       := (invols, outvols)
+next(generator)[0]    := invols            := [scan1, scan2]
+next(generator)[0][0] := invols[0]         := [scan1]
+'''
+
+inshape = sample_shape[1:-1] # [hy23] 3 dimensions.
+nfeats = sample_shape[-1]    # [hy23] := 1
 
 # prepare model folder
 model_dir = args.model_dir
