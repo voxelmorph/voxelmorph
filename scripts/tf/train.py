@@ -43,7 +43,7 @@ import voxelmorph as vxm
 
 
 # disable eager execution
-tf.compat.v1.disable_eager_execution()
+# tf.compat.v1.disable_eager_execution()
 
 
 # parse the commandline
