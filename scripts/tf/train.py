@@ -145,17 +145,18 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-# build the model
-model = vxm.networks.VxmDense(
-    inshape=inshape,
-    nb_unet_features=[enc_nf, dec_nf],
-    bidir=args.bidir,
-    use_probs=args.use_probs,
-    int_steps=args.int_steps,
-    int_resolution=args.int_downsize,
-    src_feats=nfeats,
-    trg_feats=nfeats
-)
+with tf.device(device):
+    # build the model
+    model = vxm.networks.VxmDense(
+        inshape=inshape,
+        nb_unet_features=[enc_nf, dec_nf],
+        bidir=args.bidir,
+        use_probs=args.use_probs,
+        int_steps=args.int_steps,
+        int_resolution=args.int_downsize,
+        src_feats=nfeats,
+        trg_feats=nfeats
+    )
 
 # load initial weights (if provided)
 if args.load_weights:
@@ -198,10 +199,11 @@ model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
 
-model.fit_generator(generator,
-                    initial_epoch=args.initial_epoch,
-                    epochs=args.epochs,
-                    steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback],
-                    verbose=1
-                    )
+with tf.device(device):
+    model.fit_generator(generator,
+                        initial_epoch=args.initial_epoch,
+                        epochs=args.epochs,
+                        steps_per_epoch=args.steps_per_epoch,
+                        callbacks=[save_callback],
+                        verbose=1
+                        )
