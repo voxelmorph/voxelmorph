@@ -135,7 +135,10 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
-device = '/cpu:0'
+
+# device = '/cpu:0'
+print("Harsha, device is %s\n", device)
+
 assert np.mod(args.batch_size, nb_devices) == 0, \
     'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
@@ -146,18 +149,17 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
-with tf.device(device):
-    # build the model
-    model = vxm.networks.VxmDense(
-        inshape=inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        bidir=args.bidir,
-        use_probs=args.use_probs,
-        int_steps=args.int_steps,
-        int_resolution=args.int_downsize,
-        src_feats=nfeats,
-        trg_feats=nfeats
-    )
+# build the model
+model = vxm.networks.VxmDense(
+    inshape=inshape,
+    nb_unet_features=[enc_nf, dec_nf],
+    bidir=args.bidir,
+    use_probs=args.use_probs,
+    int_steps=args.int_steps,
+    int_resolution=args.int_downsize,
+    src_feats=nfeats,
+    trg_feats=nfeats
+)
 
 # load initial weights (if provided)
 if args.load_weights:
@@ -200,20 +202,17 @@ model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
 
-with tf.device(device):
-    history = model.fit_generator(generator,
-                        initial_epoch=args.initial_epoch,
-                        epochs=args.epochs,
-                        steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback],
-                        verbose=1
-                        )
+history = model.fit(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    steps_per_epoch=args.steps_per_epoch,
+                    callbacks=[save_callback],
+                    verbose=1
+                    )
 
-# convert the history.history dict to a pandas DataFrame:     
+# convert the history.history dict to a pandas DataFrame:
+# https://stackoverflow.com/a/55901240
 hist_df = pd.DataFrame(history.history)
 hist_csv_file = '/work/scratch/yogeshappa/cluster_logs/history.csv'
 with open(hist_csv_file, mode='w') as f:
     hist_df.to_csv(f)
-
-
-    
