@@ -40,7 +40,7 @@ import argparse
 import numpy as np
 import tensorflow as tf
 import voxelmorph as vxm
-
+import pandas as pd
 
 # disable eager execution
 # tf.compat.v1.disable_eager_execution()
@@ -135,6 +135,7 @@ os.makedirs(model_dir, exist_ok=True)
 
 # tensorflow device handling
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
+device = '/cpu:0'
 assert np.mod(args.batch_size, nb_devices) == 0, \
     'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
 
@@ -200,10 +201,19 @@ model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_
 model.save(save_filename.format(epoch=args.initial_epoch))
 
 with tf.device(device):
-    model.fit_generator(generator,
+    history = model.fit_generator(generator,
                         initial_epoch=args.initial_epoch,
                         epochs=args.epochs,
                         steps_per_epoch=args.steps_per_epoch,
                         callbacks=[save_callback],
                         verbose=1
                         )
+
+# convert the history.history dict to a pandas DataFrame:     
+hist_df = pd.DataFrame(history.history)
+hist_csv_file = '/work/scratch/yogeshappa/cluster_logs/history.csv'
+with open(hist_csv_file, mode='w') as f:
+    hist_df.to_csv(f)
+
+
+    
