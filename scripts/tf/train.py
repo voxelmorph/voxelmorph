@@ -197,6 +197,8 @@ if nb_devices > 1:
 else:
     save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
 
+early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta = 0.00004, patience=3, verbose=1, mode='auto')
+
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
 # save starting weights
@@ -206,7 +208,7 @@ history = model.fit(generator,
                     initial_epoch=args.initial_epoch,
                     epochs=args.epochs,
                     steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback],
+                    callbacks=[save_callback, early_stop_callback],
                     verbose=1
                     )
 
