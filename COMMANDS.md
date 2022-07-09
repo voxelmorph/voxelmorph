@@ -7,9 +7,10 @@
 /home/students/yogeshappa/miniconda3/bin/python3 /home/students/yogeshappa/repo/Masterarbeit/voxelmorph/scripts/tf/train.py
 --img-list /home/students/yogeshappa/repo/Masterarbeit/src/linux/list.txt
 --atlas /home/students/yogeshappa/repo/Masterarbeit/dataset/atlas/np_atlas_scaled.npz
---model-dir /home/students/yogeshappa/repo/Masterarbeit/out/model
+--model-dir /work/scratch/yogeshappa/tensorflow_out/model
 --epochs 900
---steps-per-epoch 118
+--steps-per-epoch 59
 
 # steps_per_epoch = len(training_data) / batch_size.
+# len(training_data) = 59.
 ```
