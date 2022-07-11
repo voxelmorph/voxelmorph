@@ -195,7 +195,7 @@ if nb_devices > 1:
     save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
     model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
 else:
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, save_freq='epoch')
 
 early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta = 0.00004, patience=3, verbose=1, mode='auto')
 
@@ -208,7 +208,7 @@ history = model.fit(generator,
                     initial_epoch=args.initial_epoch,
                     epochs=args.epochs,
                     steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback, early_stop_callback],
+                    callbacks=[save_callback],
                     verbose=1
                     )
 
