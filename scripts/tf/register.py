@@ -54,9 +54,10 @@ device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 # load moving and fixed images
 add_feat_axis = not args.multichannel
 moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
+print('Harsha, moving volfile is loaded.')
 fixed, fixed_affine = vxm.py.utils.load_volfile(
     args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
-
+print('Harsha, fixed volfile is loaded.')
 inshape = moving.shape[1:-1]
 nb_feats = moving.shape[-1]
 
@@ -64,11 +65,15 @@ with tf.device(device):
     # load model and predict
     config = dict(inshape=inshape, input_model=None)
     warp = vxm.networks.VxmDense.load(args.model, **config).register(moving, fixed)
+    print('Harsha, registeration of moving and fixed is done.')
     moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
+    print('Harsha, Transformation is done.')
 
 # save warp
 if args.warp:
     vxm.py.utils.save_volfile(warp.squeeze(), args.warp, fixed_affine)
+    print('Harsha, warp is getting saved.')
 
 # save moved image
 vxm.py.utils.save_volfile(moved.squeeze(), args.moved, fixed_affine)
+print('Harsha, saving moved image.')
