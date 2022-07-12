@@ -34,7 +34,7 @@ import argparse
 import numpy as np
 import voxelmorph as vxm
 import tensorflow as tf
-
+import time
 
 # parse commandline args
 parser = argparse.ArgumentParser()
@@ -61,6 +61,7 @@ print('Harsha, fixed volfile is loaded.')
 inshape = moving.shape[1:-1]
 nb_feats = moving.shape[-1]
 
+t0 = time.time()
 with tf.device(device):
     # load model and predict
     config = dict(inshape=inshape, input_model=None)
@@ -68,6 +69,8 @@ with tf.device(device):
     print('Harsha, registeration of moving and fixed is done.')
     moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
     print('Harsha, Transformation is done.')
+t1 = time.time()
+print('Harsha, time for registration is {}'.format(t1-t0))
 
 # save warp
 if args.warp:
