@@ -63,6 +63,7 @@ nb_feats = moving.shape[-1]
 
 t0 = time.time()
 with tf.device(device):
+    print("Harsha, device name: {}".format(device))
     # load model and predict
     config = dict(inshape=inshape, input_model=None)
     warp = vxm.networks.VxmDense.load(args.model, **config).register(moving, fixed)
