@@ -14,3 +14,13 @@
 # steps_per_epoch = len(training_data) / batch_size.
 # len(training_data) = 59.
 ```
+
+# Command to register an image with atlas.
+```py
+D:\Harsha\repo\Masterarbeit\voxelmorph\scripts\tf\register.py
+--moving I:\masterarbeit_dataset\data\npz\np_brain3_scaled.npz
+--fixed I:\masterarbeit_dataset\atlas\np_atlas_scaled.npz
+--moved I:\tensorflow_out\out\moved.npz
+--model I:\tensorflow_out\model\0223.h5
+--gpu 0
+```
