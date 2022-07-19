@@ -1,2 +1,5 @@
 __pycache__/
+**/.vscode/*
+**/.DS_Store
+**/data/**
 scratch/*
