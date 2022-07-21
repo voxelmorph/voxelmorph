@@ -95,6 +95,7 @@ bidir = args.bidir
 # load and prepare training data
 train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
                                           suffix=args.img_suffix)
+print(f"Mona-1: the number of input files {len(train_files)}")
 assert len(train_files) > 0, 'Could not find any training data.'
 
 # no need to append an extra feature axis if data is multichannel
@@ -113,7 +114,9 @@ else:
         train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
 # extract shape from sampled input
+
 inshape = next(generator)[0][0].shape[1:-1]
+print(f"Mona-2: shape {next(generator)[0][0].shape} and inshape {inshape}")
 
 # prepare model folder
 model_dir = args.model_dir
@@ -181,7 +184,7 @@ weights += [args.weight]
 
 # training loops
 for epoch in range(args.initial_epoch, args.epochs):
-
+    print(f"Mona-3: epoch --- {epoch} ---")
     # save model checkpoint
     if epoch % 20 == 0:
         model.save(os.path.join(model_dir, '%04d.pt' % epoch))
@@ -196,9 +199,13 @@ for epoch in range(args.initial_epoch, args.epochs):
 
         # generate inputs (and true outputs) and convert them to tensors
         inputs, y_true = next(generator)
-        inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
-
+        # TODO: comment this out when using 2d?
+        # inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
+        # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
+        inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
+        y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
+        print(f"Mona-4: the input length {len(inputs)} abd size {inputs[0].shape} and {inputs[1].shape}")
+        print(f"Mona-4: the input length {len(y_true)} abd size {y_true[0].shape} and {y_true[1].shape}")
         # run inputs through the model to produce a warped image and flow field
         y_pred = model(*inputs)
 

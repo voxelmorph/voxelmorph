@@ -122,19 +122,22 @@ class Unet(nn.Module):
     def forward(self, x):
 
         # encoder forward pass
+        
         x_history = [x]
         for level, convs in enumerate(self.encoder):
             for conv in convs:
                 x = conv(x)
             x_history.append(x)
+            print(f"Mona-13: original x shape {x.shape}")
             x = self.pooling[level](x)
-
+        print(f"Mona-12: original x shape {x.shape} and length {len(x_history)}")
         # decoder forward pass with upsampling and concatenation
         for level, convs in enumerate(self.decoder):
             for conv in convs:
                 x = conv(x)
             if not self.half_res or level < (self.nb_levels - 2):
                 x = self.upsampling[level](x)
+                # print(f"Mona-9: {level} - original x shape {x.shape} and x_history shape {(x_history.pop()).shape}")
                 x = torch.cat([x, x_history.pop()], dim=1)
 
         # remaining convs at full resolution
@@ -251,6 +254,7 @@ class VxmDense(LoadableModel):
 
         # concatenate inputs and propagate unet
         x = torch.cat([source, target], dim=1)
+        print(f"Mona-11: the input x shape is {x.shape} and source {source.shape} and targe {target.shape}")
         x = self.unet_model(x)
 
         # transform into flow field

@@ -52,7 +52,10 @@ def volgen(
         load_params = dict(np_var=np_var, add_batch_axis=True, add_feat_axis=add_feat_axis,
                            pad_shape=pad_shape, resize_factor=resize_factor)
         imgs = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
+        # for img in imgs:
+
         vols = [np.concatenate(imgs, axis=0)]
+        print(f"Mona-10: length imgs {len(imgs)} and shape {imgs[0].shape} and length vols {len(vols)} and vols shape {vols[0].shape}")
 
         # optionally load segmentations and concatenate
         if segs is True:
@@ -98,11 +101,17 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
         if not no_warp and zeros is None:
             shape = scan1.shape[1:-1]
             zeros = np.zeros((batch_size, *shape, len(shape)))
+            # print(f"Mona-8: the batch size is {batch_size}, zeros shape {zeros.shape}")
 
         invols = [scan1, scan2]
         outvols = [scan2, scan1] if bidir else [scan2]
+
         if not no_warp:
             outvols.append(zeros)
+
+        # print(f"Mona-6: The length of invols {len(invols)} and length of outvols {len(outvols)}")
+        # print(f"Mona-6: the invols: {invols[0].shape} and {invols[1].shape}")
+        # print(f"Mona-6: the outvols: {outvols[0].shape} and {outvols[1].shape}")
 
         yield (invols, outvols)
 
