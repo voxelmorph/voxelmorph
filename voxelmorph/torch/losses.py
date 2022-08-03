@@ -100,16 +100,29 @@ class Grad:
         self.loss_mult = loss_mult
 
     def loss(self, _, y_pred):
-        dy = torch.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :])
-        dx = torch.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :])
-        dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1])
+        vol_shape = y_pred.shape[1:-1]
+        ndims = len(vol_shape)
+        if ndims == 3:
+            dy = torch.abs(y_pred[:, :, 1:, :, :] - y_pred[:, :, :-1, :, :])
+            dx = torch.abs(y_pred[:, :, :, 1:, :] - y_pred[:, :, :, :-1, :])
+            dz = torch.abs(y_pred[:, :, :, :, 1:] - y_pred[:, :, :, :, :-1])
 
-        if self.penalty == 'l2':
-            dy = dy * dy
-            dx = dx * dx
-            dz = dz * dz
+            if self.penalty == 'l2':
+                dy = dy * dy
+                dx = dx * dx
+                dz = dz * dz
 
-        d = torch.mean(dx) + torch.mean(dy) + torch.mean(dz)
+            d = torch.mean(dx) + torch.mean(dy) + torch.mean(dz)
+        elif ndims == 2:
+            dy = torch.abs(y_pred[:, :, 1:, :] - y_pred[:, :, :-1, :])
+            dx = torch.abs(y_pred[:, :, :, 1:] - y_pred[:, :, :, :-1])
+
+            if self.penalty == 'l2':
+                dy = dy * dy
+                dx = dx * dx
+
+            d = torch.mean(dx) + torch.mean(dy)
+
         grad = d / 3.0
 
         if self.loss_mult is not None:

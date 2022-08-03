@@ -1,4 +1,5 @@
 import os
+from random import seed
 import shutil
 import glob
 import SimpleITK as sitk
@@ -57,9 +58,12 @@ def resize(img, new_size, interpolator):
 
 if __name__ == '__main__':
 
-    basepath = '/home/xinqili/dlmri/dlmri/voxelMorph/mapping2Xinqi_nii'
-    train_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
-    val_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_test'
+    # basepath = '/home/xinqili/dlmri/dlmri/voxelMorph/mapping2Xinqi_nii'
+    # train_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
+    # val_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_test'
+    basepath = '/Users/mona/workSpace/data/voxelmorph/mapping2Xinqi_nii'
+    train_output = 'data/data_train'
+    val_output = 'data/data_test'
     
     # basepath = 'data/mapping2Xinqi_nii'
     # output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
@@ -116,10 +120,13 @@ if __name__ == '__main__':
         
         resize_img_array = sitk.GetArrayFromImage(resize_img)
         print(resize_img_array.shape)
-        for i in range(resize_img_array.shape[0]):
-            img_2d = resize_img_array[i,:,:]
-            output_2d_filenames.append(f"{output_name}_{i}.npy")
-            np.save(f"{output_name}_{i}.npy", img_2d)
+        resize_img_array = (resize_img_array - np.min(resize_img_array)) / (np.max(resize_img_array) - np.min(resize_img_array))
+        output_2d_filenames.append(f"{output_name}.npy")
+        np.save(f"{output_name}.npy", resize_img_array)
+        # for i in range(resize_img_array.shape[0]):
+        #     img_2d = resize_img_array[i,:,:]
+        #     output_2d_filenames.append(f"{output_name}_{i}.npy")
+        #     np.save(f"{output_name}_{i}.npy", img_2d)
     
     print(f"In training set, number of images {len(output_2d_filenames)}")
     txt_string = "\n".join(output_2d_filenames)

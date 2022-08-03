@@ -46,5 +46,9 @@ setuptools.setup(
         'scipy',
         'nibabel',
         'neurite>=0.2',
+        'wandb',
+        'torch',
+        'torchvision',
+        'torchaudio'
     ]
 )

@@ -40,6 +40,8 @@ import argparse
 import time
 import numpy as np
 import torch
+import wandb
+from wandbLogger import WandbLogger
 
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
@@ -88,9 +90,19 @@ parser.add_argument('--image-loss', default='mse',
                     help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='weight', default=0.01,
                     help='weight of deformation loss (default: 0.01)')
+
+parser.add_argument('--wandb', type=bool, default=False,
+                    help='Save the epoch metrics in wandb')
+
+parser.add_argument('--wandb-project', type=str, default='voxel_test',
+                    help='The project name used in wandb')
+        
 args = parser.parse_args()
 
 bidir = args.bidir
+
+if args.wandb:
+    wandb_logger = WandbLogger(project_name=args.wandb_project)
 
 # load and prepare training data
 train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
@@ -110,6 +122,7 @@ if args.atlas:
                                              add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
+    print("Mona: use the scan to scan generator")
     generator = vxm.generators.scan_to_scan(
         train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
 
@@ -128,7 +141,7 @@ nb_gpus = len(gpus)
 device = 'cuda'
 os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 assert np.mod(args.batch_size, nb_gpus) == 0, \
-    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
+    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_gpus)
 
 # enabling cudnn determinism appears to speed up training by a lot
 torch.backends.cudnn.deterministic = not args.cudnn_nondet
@@ -178,13 +191,21 @@ else:
     losses = [image_loss_func]
     weights = [1]
 
+# config = dict(epochs=args.epochs,
+#               loss=args.image_loss,
+#               batch_size=args.batch_size,
+#               learning_rate=args.lr,
+#               )
+wandb_logger.log_config(args)
+
 # prepare deformation loss
 losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights += [args.weight]
 
+global_step = 0
 # training loops
 for epoch in range(args.initial_epoch, args.epochs):
-    print(f"Mona-3: epoch --- {epoch} ---")
+    # print(f"Mona-3: epoch --- {epoch} ---")
     # save model checkpoint
     if epoch % 20 == 0:
         model.save(os.path.join(model_dir, '%04d.pt' % epoch))
@@ -194,7 +215,7 @@ for epoch in range(args.initial_epoch, args.epochs):
     epoch_step_time = []
 
     for step in range(args.steps_per_epoch):
-
+        global_step += 1
         step_start_time = time.time()
 
         # generate inputs (and true outputs) and convert them to tensors
@@ -204,11 +225,13 @@ for epoch in range(args.initial_epoch, args.epochs):
         # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
         inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
         y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
-        print(f"Mona-4: the input length {len(inputs)} abd size {inputs[0].shape} and {inputs[1].shape}")
-        print(f"Mona-4: the input length {len(y_true)} abd size {y_true[0].shape} and {y_true[1].shape}")
+        print(f"Mona-4: the input length {len(inputs)} and size {inputs[0].shape} and {inputs[1].shape}")
+        print(f"Mona-4: the output length {len(y_true)} and size {y_true[0].shape} and {y_true[1].shape}")
         # run inputs through the model to produce a warped image and flow field
         y_pred = model(*inputs)
+        # print(f"Mona-5: output shape {y_pred[0].shape}, length {len(y_pred)}")
 
+        
         # calculate total loss
         loss = 0
         loss_list = []
@@ -224,6 +247,9 @@ for epoch in range(args.initial_epoch, args.epochs):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        # print(f"Mona:debug-5 - input shape {inputs.shape}, y_pred shape {y_pred.shape}, y_trye shape {y_true.shape}")
+        wandb_logger.log_epoch_metric(global_step, loss.cpu(), inputs, y_pred, y_true)
+        # wandb_logger.watch_model(model)
 
         # get compute time
         epoch_step_time.append(time.time() - step_start_time)

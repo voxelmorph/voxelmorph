@@ -86,34 +86,35 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
     """
     zeros = None
     gen = volgen(vol_names, batch_size=batch_size, **kwargs)
+    
     while True:
-        scan1 = next(gen)[0]
-        scan2 = next(gen)[0]
+        vols = next(gen)[0]
+        print(f"Mona-11: vols length {len(vols)} and shape {vols[0].shape}")
+        timestamps = vols.shape[1]
+        for t in range(timestamps):
+            scan1 = vols[:, t%timestamps, :, :, :]
+            scan2 = vols[:, (t+1)%timestamps, :, :, :]
+            print(f"Mona-12: scan1 shape {scan1.shape} and scan2 shape {scan2.shape}")            
 
         # some induced chance of making source and target equal
-        if prob_same > 0 and np.random.rand() < prob_same:
-            if np.random.rand() > 0.5:
-                scan1 = scan2
-            else:
-                scan2 = scan1
+            if prob_same > 0 and np.random.rand() < prob_same:
+                if np.random.rand() > 0.5:
+                    scan1 = scan2
+                else:
+                    scan2 = scan1
 
-        # cache zeros
-        if not no_warp and zeros is None:
-            shape = scan1.shape[1:-1]
-            zeros = np.zeros((batch_size, *shape, len(shape)))
-            # print(f"Mona-8: the batch size is {batch_size}, zeros shape {zeros.shape}")
+            # cache zeros
+            if not no_warp and zeros is None:
+                shape = scan1.shape[1:-1]
+                zeros = np.zeros((batch_size, *shape, len(shape)))
 
-        invols = [scan1, scan2]
-        outvols = [scan2, scan1] if bidir else [scan2]
+            invols = [scan1, scan2]
+            outvols = [scan2, scan1] if bidir else [scan2]
 
-        if not no_warp:
-            outvols.append(zeros)
+            if not no_warp:
+                outvols.append(zeros)
 
-        # print(f"Mona-6: The length of invols {len(invols)} and length of outvols {len(outvols)}")
-        # print(f"Mona-6: the invols: {invols[0].shape} and {invols[1].shape}")
-        # print(f"Mona-6: the outvols: {outvols[0].shape} and {outvols[1].shape}")
-
-        yield (invols, outvols)
+            yield (invols, outvols)
 
 
 def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, segs=None, **kwargs):
