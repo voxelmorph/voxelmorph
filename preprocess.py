@@ -58,12 +58,12 @@ def resize(img, new_size, interpolator):
 
 if __name__ == '__main__':
 
-    # basepath = '/home/xinqili/dlmri/dlmri/voxelMorph/mapping2Xinqi_nii'
-    # train_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
-    # val_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_test'
-    basepath = '/Users/mona/workSpace/data/voxelmorph/mapping2Xinqi_nii'
-    train_output = 'data/data_train'
-    val_output = 'data/data_test'
+    basepath = '/home/xinqili/dlmri/dlmri/voxelMorph/mapping2Xinqi_nii'
+    train_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
+    val_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_test'
+    # basepath = '/Users/mona/workSpace/data/voxelmorph/mapping2Xinqi_nii'
+    # train_output = 'data/data_train'
+    # val_output = 'data/data_test'
     
     # basepath = 'data/mapping2Xinqi_nii'
     # output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'

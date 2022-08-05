@@ -42,9 +42,7 @@ class WandbLogger(object):
             "input images 1": wandb.Image(np.squeeze(x_img[0])),
             "output images 1": wandb.Image(np.squeeze(y_img_pred[0])),
             "ground truth 1": wandb.Image(np.squeeze(y_img_true[0])),
-            "input images 2": wandb.Image(np.squeeze(x_img[1])),
-            "output images 2": wandb.Image(np.squeeze(y_img_pred[1])),
-            "ground truth 2": wandb.Image(np.squeeze(y_img_true[1])),
+            "input images 2": wandb.Image(np.squeeze(x_img[1]))
         })
     
     def watch_model(self, model):

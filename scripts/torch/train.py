@@ -101,8 +101,6 @@ args = parser.parse_args()
 
 bidir = args.bidir
 
-if args.wandb:
-    wandb_logger = WandbLogger(project_name=args.wandb_project)
 
 # load and prepare training data
 train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
@@ -191,12 +189,9 @@ else:
     losses = [image_loss_func]
     weights = [1]
 
-# config = dict(epochs=args.epochs,
-#               loss=args.image_loss,
-#               batch_size=args.batch_size,
-#               learning_rate=args.lr,
-#               )
-wandb_logger.log_config(args)
+# if args.wandb:
+    # wandb_logger = WandbLogger(project_name=args.wandb_project)
+# wandb_logger.log_config(args)
 
 # prepare deformation loss
 losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
@@ -225,8 +220,8 @@ for epoch in range(args.initial_epoch, args.epochs):
         # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
         inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
         y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
-        print(f"Mona-4: the input length {len(inputs)} and size {inputs[0].shape} and {inputs[1].shape}")
-        print(f"Mona-4: the output length {len(y_true)} and size {y_true[0].shape} and {y_true[1].shape}")
+        # print(f"Mona-4: the input length {len(inputs)} and size {inputs[0].shape} and {inputs[1].shape}")
+        # print(f"Mona-4: the output length {len(y_true)} and size {y_true[0].shape} and {y_true[1].shape}")
         # run inputs through the model to produce a warped image and flow field
         y_pred = model(*inputs)
         # print(f"Mona-5: output shape {y_pred[0].shape}, length {len(y_pred)}")
@@ -248,8 +243,6 @@ for epoch in range(args.initial_epoch, args.epochs):
         loss.backward()
         optimizer.step()
         # print(f"Mona:debug-5 - input shape {inputs.shape}, y_pred shape {y_pred.shape}, y_trye shape {y_true.shape}")
-        wandb_logger.log_epoch_metric(global_step, loss.cpu(), inputs, y_pred, y_true)
-        # wandb_logger.watch_model(model)
 
         # get compute time
         epoch_step_time.append(time.time() - step_start_time)
@@ -261,5 +254,6 @@ for epoch in range(args.initial_epoch, args.epochs):
     loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
     print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
+    # wandb_logger.log_epoch_metric(global_step, np.mean(epoch_total_loss), inputs, y_pred, y_true)
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
