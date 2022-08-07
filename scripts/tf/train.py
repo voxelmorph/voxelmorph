@@ -146,6 +146,9 @@ assert np.mod(args.batch_size, nb_devices) == 0, \
 enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
+print("Harsha, enc_nf is {}".format(enc_nf))
+print("Harsha, enc_nf is {}".format(dec_nf))
+
 # prepare model checkpoint save path
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
@@ -201,8 +204,15 @@ early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
+print("Harsha, model.summary {}".format(model.summary()))
+
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
+
+# log start time
+tstart = tf.timestamp()
+
+print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
 history = model.fit(generator,
                     initial_epoch=args.initial_epoch,
@@ -211,6 +221,13 @@ history = model.fit(generator,
                     callbacks=[save_callback],
                     verbose=1
                     )
+
+# log end time
+tend = tf.timestamp()
+
+# time spent in training
+tspent = tend - tstart
+print("Harsha, the training time is {}", tspent)
 
 # convert the history.history dict to a pandas DataFrame:
 # https://stackoverflow.com/a/55901240
