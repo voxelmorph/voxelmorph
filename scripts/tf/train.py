@@ -45,54 +45,133 @@ import pandas as pd
 # disable eager execution
 # tf.compat.v1.disable_eager_execution()
 
-
 # parse the commandline
 parser = argparse.ArgumentParser()
 
-# data organization parameters
-parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
-parser.add_argument('--img-prefix', help='optional input image file prefix')
-parser.add_argument('--img-suffix', help='optional input image file suffix')
-parser.add_argument('--atlas', help='optional atlas filename')
-parser.add_argument('--model-dir', default='models',
-                    help='model output directory (default: models)')
-parser.add_argument('--multichannel', action='store_true',
-                    help='specify that data has multiple channels')
+parser.add_argument('--config-file', required=True, help='json file to read the parameters')
+spec = parser.parse_args()
 
-# training parameters
-parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
-parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
-parser.add_argument('--epochs', type=int, default=1500,
-                    help='number of training epochs (default: 1500)')
-parser.add_argument('--steps-per-epoch', type=int, default=100,
-                    help='frequency of model saves (default: 100)')
-parser.add_argument('--load-weights', help='optional weights file to initialize with')
-parser.add_argument('--initial-epoch', type=int, default=0,
-                    help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
+if 0:
+    # data organization parameters
+    parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
+    parser.add_argument('--img-prefix', help='optional input image file prefix')
+    parser.add_argument('--img-suffix', help='optional input image file suffix')
+    parser.add_argument('--atlas', help='optional atlas filename')
+    parser.add_argument('--model-dir', default='models',
+                        help='model output directory (default: models)')
+    parser.add_argument('--multichannel', action='store_true',
+                        help='specify that data has multiple channels')
 
-# network architecture parameters
-parser.add_argument('--enc', type=int, nargs='+',
-                    help='list of unet encoder filters (default: 16 32 32 32)')
-parser.add_argument('--dec', type=int, nargs='+',
-                    help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
-parser.add_argument('--int-steps', type=int, default=7,
-                    help='number of integration steps (default: 7)')
-parser.add_argument('--int-downsize', type=int, default=2,
-                    help='flow downsample factor for integration (default: 2)')
-parser.add_argument('--use-probs', action='store_true', help='enable probabilities')
-parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
+    # training parameters
+    parser.add_argument('--gpu', default='0', help='GPU ID numbers (default: 0)')
+    parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
+    parser.add_argument('--epochs', type=int, default=1500,
+                        help='number of training epochs (default: 1500)')
+    parser.add_argument('--steps-per-epoch', type=int, default=100,
+                        help='frequency of model saves (default: 100)')
+    parser.add_argument('--load-weights', help='optional weights file to initialize with')
+    parser.add_argument('--initial-epoch', type=int, default=0,
+                        help='initial epoch number (default: 0)')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
 
-# loss hyperparameters
-parser.add_argument('--image-loss', default='mse',
-                    help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01,
-                    help='weight of gradient or KL loss (default: 0.01)')
-parser.add_argument('--kl-lambda', type=float, default=10,
-                    help='prior lambda regularization for KL loss (default: 10)')
-parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
-                    help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')  # nopep8
-args = parser.parse_args()
+    # network architecture parameters
+    parser.add_argument('--enc', type=int, nargs='+',
+                        help='list of unet encoder filters (default: 16 32 32 32)')
+    parser.add_argument('--dec', type=int, nargs='+',
+                        help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
+    parser.add_argument('--int-steps', type=int, default=7,
+                        help='number of integration steps (default: 7)')
+    parser.add_argument('--int-downsize', type=int, default=2,
+                        help='flow downsample factor for integration (default: 2)')
+    parser.add_argument('--use-probs', action='store_true', help='enable probabilities')
+    parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
+
+    # loss hyperparameters
+    parser.add_argument('--image-loss', default='mse',
+                        help='image reconstruction loss - can be mse or ncc (default: mse)')
+    parser.add_argument('--lambda', type=float, dest='lambda_weight', default=0.01,
+                        help='weight of gradient or KL loss (default: 0.01)')
+    parser.add_argument('--kl-lambda', type=float, default=10,
+                        help='prior lambda regularization for KL loss (default: 10)')
+    parser.add_argument('--legacy-image-sigma', dest='image_sigma', type=float, default=1.0,
+                        help='image noise parameter for miccai 2018 network (recommended value is 0.02 when --use-probs is enabled)')  # nopep8
+    args = parser.parse_args()
+else:
+    import json 
+    class ArgParser():
+        def __init__(self, data):
+            self.img_list            = data['img_list']
+            self.atlas               = data['atlas']
+            self.model_dir           = data['model_dir']
+            self.epochs              = data['epochs']
+            self.enc                 = data['enc']
+            self.dec                 = data['dec']
+            self.steps_per_epoch     = data['steps_per_epoch']
+            self.gpu                 = data['gpu']
+            self.batch_size          = data['batch_size']
+            self.initial_epoch       = data['initial_epoch']
+            self.lr                  = data['lr']
+            self.int_steps           = data['int_steps']
+            self.int_downsize        = data['int_downsize']
+            self.kl_lambda           = data['kl_lambda']
+            self.legacy_image_sigma  = data['legacy_image_sigma']
+            self.image_loss          = data['image_loss']
+            self.multichannel        = data['multichannel']
+            self.use_probs           = data['use_probs']
+            self.bidir               = data['bidir']
+            self.lambda_val          = data['lambda']
+            self.img_prefix          = data['img_prefix']
+            self.img_suffix          = data['img_suffix']
+            self.load_weights        = data['load_weights']
+            self.use_steps_per_epoch = data['use_steps_per_epoch']
+
+    # Opening JSON file
+    f = open(spec.config_file)
+    data = json.load(f)
+    args = ArgParser(data)
+    f.close()
+
+class GradientAccumulateModel(vxm.networks.VxmDense):
+    """
+    Model derived from VxmDense to perform gradient accumulation.
+    """
+    def __init__(self, n_gradients, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.n_gradients = tf.constant(n_gradients, dtype=tf.int32)
+        self.n_acum_step = tf.Variable(0, dtype=tf.int32, trainable=False)
+        self.gradient_accumulation = [tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False) for v in self.trainable_variables]
+        tf.print("Harsha, n_acum_step: ", self.n_acum_step)
+        tf.print("Harsha, n_gradients: ", self.n_gradients)
+
+    def train_step(self, data):
+        self.n_acum_step.assign_add(1)
+
+        x, y = data
+        # Gradient Tape
+        with tf.GradientTape() as tape:
+            y_pred = self(x, training=True)
+            loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+        # Calculate batch gradients
+        gradients = tape.gradient(loss, self.trainable_variables)
+        # Accumulate batch gradients
+        for i in range(len(self.gradient_accumulation)):
+            self.gradient_accumulation[i].assign_add(gradients[i])
+ 
+        # If n_acum_step reach the n_gradients then we apply accumulated gradients to update the variables otherwise do nothing
+        tf.cond(tf.equal(self.n_acum_step, self.n_gradients), self.apply_accu_gradients, lambda: None)
+
+        # update metrics
+        self.compiled_metrics.update_state(y, y_pred)
+        return {m.name: m.result() for m in self.metrics}
+
+    def apply_accu_gradients(self):
+        # apply accumulated gradients
+        self.optimizer.apply_gradients(zip(self.gradient_accumulation, self.trainable_variables))
+
+        # reset
+        self.n_acum_step.assign(0)
+        for i in range(len(self.gradient_accumulation)):
+            self.gradient_accumulation[i].assign(tf.zeros_like(self.trainable_variables[i], dtype=tf.float32))
 
 # load and prepare training data
 train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
@@ -153,7 +232,8 @@ print("Harsha, enc_nf is {}".format(dec_nf))
 save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
 # build the model
-model = vxm.networks.VxmDense(
+model = GradientAccumulateModel(
+    n_gradients=33, # gcd(m_train, m_val) = gcd(561, 99) = 33
     inshape=inshape,
     nb_unet_features=[enc_nf, dec_nf],
     bidir=args.bidir,
@@ -200,7 +280,7 @@ if nb_devices > 1:
 else:
     save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, save_freq='epoch')
 
-early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', min_delta = 0.00004, patience=3, verbose=1, mode='auto')
+early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4, verbose=1, mode='min')
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
@@ -214,13 +294,30 @@ tstart = tf.timestamp()
 
 print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
-history = model.fit(generator,
+if (args.use_steps_per_epoch):
+    history = model.fit(generator,
                     initial_epoch=args.initial_epoch,
                     epochs=args.epochs,
                     steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback],
+                    callbacks=[save_callback, early_stop_callback],
                     verbose=1
                     )
+else:
+    history = model.fit(generator,
+                    initial_epoch=args.initial_epoch,
+                    epochs=args.epochs,
+                    batch_size=args.batch_size,
+                    callbacks=[save_callback, early_stop_callback],
+                    validation_split=0.85, # m=660, m_train=561, m_val=99.
+                    verbose=1
+                    )
+
+# log end time
+tend = tf.timestamp()
+
+# time spent in training
+tspent = tend - tstart
+print("Harsha, the training time is {}", tspent)
 
 # log end time
 tend = tf.timestamp()
