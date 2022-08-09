@@ -125,8 +125,8 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
             internal volgen generator. Default is None.
         kwargs: Forwarded to the internal volgen generator.
     """
-    shape = atlas.shape[1:-1]
-    zeros = np.zeros((batch_size, *shape, len(shape)))
+    shape = atlas.shape[1:-1] # atlas.shape = (1, 512, 256, 64, 1). Therefore, shape = (512, 256, 64).
+    zeros = np.zeros((batch_size, *shape, len(shape))) # zeros.shape = (1, 512, 256, 64, 3)
     atlas = np.repeat(atlas, batch_size, axis=0)
     gen = volgen(vol_names, batch_size=batch_size, segs=segs, **kwargs)
     while True:
@@ -138,7 +138,7 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
         else:
             seg = res[1]
             outvols = [seg, scan] if bidir else [seg]
-        if not no_warp:
+        if not no_warp: # if warp
             outvols.append(zeros)
         yield (invols, outvols)
 
@@ -156,6 +156,8 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
         downsize: Downsize factor for segmentations. Default is 2.
     """
     # configure base generator
+
+    # gen is a tuple; len(gen) = 2; gen[0] := scan; gen[1] := seg;
     gen = volgen(vol_names, segs=seg_names, np_var='vol')
     zeros = None
 
@@ -163,8 +165,8 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     def split_seg(seg):
         prob_seg = np.zeros((*seg.shape[:4], len(labels)))
         for i, label in enumerate(labels):
-            prob_seg[0, ..., i] = seg[0, ..., 0] == label
-        return prob_seg[:, ::downsize, ::downsize, ::downsize, :]
+            prob_seg[0, ..., i] = seg[0, ..., 0] == label # seg[0, ..., 0] because batch size is 1 and feature size is also 1.
+        return prob_seg[:, ::downsize, ::downsize, ::downsize, :] # take every second element.
 
     # cache target vols and segs if atlas is supplied
     if atlas_file:
@@ -176,7 +178,7 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
 
     while True:
         # load source vol and seg
-        src_vol, src_seg = next(gen)
+        src_vol, src_seg = next(gen) # shape of src_vol and src_seg will be (1,512,256,1)
         src_seg = split_seg(src_seg)
 
         # load target vol and seg (if not provided by atlas)

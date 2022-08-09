@@ -101,6 +101,7 @@ else:
     class ArgParser():
         def __init__(self, data):
             self.img_list            = data['img_list']
+            self.val_list            = data['val_list']
             self.atlas               = data['atlas']
             self.model_dir           = data['model_dir']
             self.epochs              = data['epochs']
@@ -178,6 +179,11 @@ train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
                                           suffix=args.img_suffix)
 assert len(train_files) > 0, 'Could not find any training data.'
 
+# load and prepare validation data
+val_files = vxm.py.utils.read_file_list(args.val_list, prefix=args.img_prefix,
+                                          suffix=args.img_suffix)
+assert len(val_files) > 0, 'Could not find any validation data.'
+
 # no need to append an extra feature axis if data is multichannel
 add_feat_axis = not args.multichannel # [hy23] because ours is grayscale, add_feat_axis := true.
 
@@ -189,6 +195,10 @@ if args.atlas:
                                              batch_size=args.batch_size,
                                              bidir=args.bidir,
                                              add_feat_axis=add_feat_axis)
+    val_generator = vxm.generators.scan_to_atlas(val_files, atlas,
+                                                 batch_size=args.batch_size,
+                                                 bidir=args.bidir,
+                                                 add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
     generator = vxm.generators.scan_to_scan(
@@ -308,7 +318,8 @@ else:
                     epochs=args.epochs,
                     batch_size=args.batch_size,
                     callbacks=[save_callback, early_stop_callback],
-                    validation_split=0.85, # m=660, m_train=561, m_val=99.
+                    validation_data=val_generator,
+                    # validation_split=0.85, # m=660, m_train=561, m_val=99.
                     verbose=1
                     )
 

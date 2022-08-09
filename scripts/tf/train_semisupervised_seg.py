@@ -93,8 +93,15 @@ assert len(train_imgs) > 0, 'Could not find any training data.'
 train_labels = np.load(args.labels)
 
 # generator (scan-to-scan unless the atlas cmd argument was provided)
+
 generator = vxm.generators.semisupervised(
     train_imgs, train_segs, labels=train_labels, atlas_file=args.atlas)
+
+
+#       invols  = [src_vol, trg_vol, src_seg]
+#       outvols = [trg_vol, zeros  , trg_seg]
+#       yield (invols, outvols)
+#       next(generator)[0][0] := src_vol
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
