@@ -304,7 +304,7 @@ tstart = tf.timestamp()
 
 print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
-if (args.use_steps_per_epoch):
+if (args.use_steps_per_epoch == 1):
     history = model.fit(generator,
                     initial_epoch=args.initial_epoch,
                     epochs=args.epochs,
@@ -318,8 +318,6 @@ else:
                     epochs=args.epochs,
                     batch_size=args.batch_size,
                     callbacks=[save_callback, early_stop_callback],
-                    validation_data=val_generator,
-                    # validation_split=0.85, # m=660, m_train=561, m_val=99.
                     verbose=1
                     )
 
