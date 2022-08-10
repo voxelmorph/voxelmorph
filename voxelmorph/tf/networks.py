@@ -1060,7 +1060,8 @@ class Unet(tf.keras.Model):
             nb_features = default_unet_features()
 
         # build feature list automatically
-        if isinstance(nb_features, int):
+        # nb_features = [[16, 16, 16, 16, 32, 32], [32, 32, 16, 16, 16, 16, 16, 8]]
+        if isinstance(nb_features, int): # in our case, this evaluates to False.
             if nb_levels is None:
                 raise ValueError('must provide unet nb_levels if nb_features is an integer')
             feats = np.round(nb_features * feat_mult ** np.arange(nb_levels)).astype(int)

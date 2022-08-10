@@ -131,6 +131,33 @@ else:
     data = json.load(f)
     args = ArgParser(data)
     f.close()
+print("##############################################################")
+print("type: {} and value: {}".format(type(args.img_list), args.img_list))
+print("type: {} and value: {}".format(type(args.val_list), args.val_list))
+print("type: {} and value: {}".format(type(args.atlas), args.atlas))
+print("type: {} and value: {}".format(type(args.model_dir), args.model_dir))
+print("type: {} and value: {}".format(type(args.epochs), args.epochs))
+print("type: {} and value: {}".format(type(args.enc), args.enc))
+print("type: {} and value: {}".format(type(args.dec), args.dec))
+print("type: {} and value: {}".format(type(args.steps_per_epoch), args.steps_per_epoch))
+print("type: {} and value: {}".format(type(args.gpu), args.gpu))
+print("type: {} and value: {}".format(type(args.batch_size), args.batch_size))
+print("type: {} and value: {}".format(type(args.initial_epoch), args.initial_epoch))
+print("type: {} and value: {}".format(type(args.lr), args.lr))
+print("type: {} and value: {}".format(type(args.int_steps), args.int_steps))
+print("type: {} and value: {}".format(type(args.int_downsize), args.int_downsize))
+print("type: {} and value: {}".format(type(args.kl_lambda), args.kl_lambda))
+print("type: {} and value: {}".format(type(args.image_sigma), args.image_sigma))
+print("type: {} and value: {}".format(type(args.image_loss), args.image_loss))
+print("type: {} and value: {}".format(type(args.multichannel), args.multichannel))
+print("type: {} and value: {}".format(type(args.use_probs), args.use_probs))
+print("type: {} and value: {}".format(type(args.bidir), args.bidir))
+print("type: {} and value: {}".format(type(args.lambda_weight), args.lambda_weight))
+print("type: {} and value: {}".format(type(args.img_prefix), args.img_prefix))
+print("type: {} and value: {}".format(type(args.img_suffix), args.img_suffix))
+print("type: {} and value: {}".format(type(args.load_weights), args.load_weights))
+print("type: {} and value: {}".format(type(args.use_steps_per_epoch), args.use_steps_per_epoch))
+print("##############################################################")
 
 class GradientAccumulateModel(vxm.networks.VxmDense):
     """
@@ -290,11 +317,11 @@ if nb_devices > 1:
 else:
     save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, save_freq='epoch')
 
-early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=4, verbose=1, mode='min')
+early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=4, verbose=1, mode='min')
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-print("Harsha, model.summary {}".format(model.summary()))
+model.summary()
 
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
