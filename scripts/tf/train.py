@@ -124,40 +124,41 @@ else:
             self.img_prefix          = data['img_prefix']
             self.img_suffix          = data['img_suffix']
             self.load_weights        = data['load_weights']
-            self.use_steps_per_epoch = data['use_steps_per_epoch']
 
     # Opening JSON file
     f = open(spec.config_file)
     data = json.load(f)
     args = ArgParser(data)
     f.close()
+
+print()
 print("##############################################################")
-print("type: {} and value: {}".format(type(args.img_list), args.img_list))
-print("type: {} and value: {}".format(type(args.val_list), args.val_list))
-print("type: {} and value: {}".format(type(args.atlas), args.atlas))
-print("type: {} and value: {}".format(type(args.model_dir), args.model_dir))
-print("type: {} and value: {}".format(type(args.epochs), args.epochs))
-print("type: {} and value: {}".format(type(args.enc), args.enc))
-print("type: {} and value: {}".format(type(args.dec), args.dec))
-print("type: {} and value: {}".format(type(args.steps_per_epoch), args.steps_per_epoch))
-print("type: {} and value: {}".format(type(args.gpu), args.gpu))
-print("type: {} and value: {}".format(type(args.batch_size), args.batch_size))
-print("type: {} and value: {}".format(type(args.initial_epoch), args.initial_epoch))
-print("type: {} and value: {}".format(type(args.lr), args.lr))
-print("type: {} and value: {}".format(type(args.int_steps), args.int_steps))
-print("type: {} and value: {}".format(type(args.int_downsize), args.int_downsize))
-print("type: {} and value: {}".format(type(args.kl_lambda), args.kl_lambda))
-print("type: {} and value: {}".format(type(args.image_sigma), args.image_sigma))
-print("type: {} and value: {}".format(type(args.image_loss), args.image_loss))
-print("type: {} and value: {}".format(type(args.multichannel), args.multichannel))
-print("type: {} and value: {}".format(type(args.use_probs), args.use_probs))
-print("type: {} and value: {}".format(type(args.bidir), args.bidir))
-print("type: {} and value: {}".format(type(args.lambda_weight), args.lambda_weight))
-print("type: {} and value: {}".format(type(args.img_prefix), args.img_prefix))
-print("type: {} and value: {}".format(type(args.img_suffix), args.img_suffix))
-print("type: {} and value: {}".format(type(args.load_weights), args.load_weights))
-print("type: {} and value: {}".format(type(args.use_steps_per_epoch), args.use_steps_per_epoch))
+print("img_list        type: {} and value: {}".format(type(args.img_list), args.img_list))
+print("val_list        type: {} and value: {}".format(type(args.val_list), args.val_list))
+print("atlas           type: {} and value: {}".format(type(args.atlas), args.atlas))
+print("model_dir       type: {} and value: {}".format(type(args.model_dir), args.model_dir))
+print("epochs          type: {} and value: {}".format(type(args.epochs), args.epochs))
+print("enc             type: {} and value: {}".format(type(args.enc), args.enc))
+print("dec             type: {} and value: {}".format(type(args.dec), args.dec))
+print("steps_per_epoch type: {} and value: {}".format(type(args.steps_per_epoch), args.steps_per_epoch))
+print("gpu             type: {} and value: {}".format(type(args.gpu), args.gpu))
+print("batch_size      type: {} and value: {}".format(type(args.batch_size), args.batch_size))
+print("initial_epoch   type: {} and value: {}".format(type(args.initial_epoch), args.initial_epoch))
+print("lr              type: {} and value: {}".format(type(args.lr), args.lr))
+print("int_steps       type: {} and value: {}".format(type(args.int_steps), args.int_steps))
+print("int_downsize    type: {} and value: {}".format(type(args.int_downsize), args.int_downsize))
+print("kl_lambda       type: {} and value: {}".format(type(args.kl_lambda), args.kl_lambda))
+print("image_sigma     type: {} and value: {}".format(type(args.image_sigma), args.image_sigma))
+print("image_loss      type: {} and value: {}".format(type(args.image_loss), args.image_loss))
+print("multichannel    type: {} and value: {}".format(type(args.multichannel), args.multichannel))
+print("use_probs       type: {} and value: {}".format(type(args.use_probs), args.use_probs))
+print("bidir           type: {} and value: {}".format(type(args.bidir), args.bidir))
+print("lambda_weight   type: {} and value: {}".format(type(args.lambda_weight), args.lambda_weight))
+print("img_prefix      type: {} and value: {}".format(type(args.img_prefix), args.img_prefix))
+print("img_suffix      type: {} and value: {}".format(type(args.img_suffix), args.img_suffix))
+print("load_weights    type: {} and value: {}".format(type(args.load_weights), args.load_weights))
 print("##############################################################")
+print()
 
 class GradientAccumulateModel(vxm.networks.VxmDense):
     """
@@ -193,7 +194,13 @@ class GradientAccumulateModel(vxm.networks.VxmDense):
         return {m.name: m.result() for m in self.metrics}
 
     def apply_accu_gradients(self):
-        # apply accumulated gradients
+        # normalize accumulated gradients
+        for i in range(len(self.gradient_accumulation)):
+            div = self.n_gradients
+            norm_value = tf.divide(self.gradient_accumulation[i], tf.cast(div, tf.float32))
+            self.gradient_accumulation[i].assign(norm_value)
+
+        # apply normalized gradients
         self.optimizer.apply_gradients(zip(self.gradient_accumulation, self.trainable_variables))
 
         # reset
@@ -317,7 +324,7 @@ if nb_devices > 1:
 else:
     save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, save_freq='epoch')
 
-early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=4, verbose=1, mode='min')
+early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, verbose=1)
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
@@ -331,22 +338,13 @@ tstart = tf.timestamp()
 
 print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
-if (args.use_steps_per_epoch == 1):
-    history = model.fit(generator,
-                    initial_epoch=args.initial_epoch,
-                    epochs=args.epochs,
-                    steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback, early_stop_callback],
-                    verbose=1
-                    )
-else:
-    history = model.fit(generator,
-                    initial_epoch=args.initial_epoch,
-                    epochs=args.epochs,
-                    batch_size=args.batch_size,
-                    callbacks=[save_callback, early_stop_callback],
-                    verbose=1
-                    )
+history = model.fit(generator,
+                initial_epoch=args.initial_epoch,
+                epochs=args.epochs,
+                steps_per_epoch=args.steps_per_epoch,
+                callbacks=[save_callback, early_stop_callback],
+                verbose=1
+                )
 
 # log end time
 tend = tf.timestamp()

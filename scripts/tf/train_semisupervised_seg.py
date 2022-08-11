@@ -104,7 +104,7 @@ generator = vxm.generators.semisupervised(
 #       next(generator)[0][0] := src_vol
 
 # extract shape from sampled input
-inshape = next(generator)[0][0].shape[1:-1]
+inshape = next(generator)[0][0].shape[1:-1] # (256, 512, 64)
 
 # prepare model folder
 model_dir = args.model_dir

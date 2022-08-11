@@ -125,8 +125,8 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
             internal volgen generator. Default is None.
         kwargs: Forwarded to the internal volgen generator.
     """
-    shape = atlas.shape[1:-1] # atlas.shape = (1, 512, 256, 64, 1). Therefore, shape = (512, 256, 64).
-    zeros = np.zeros((batch_size, *shape, len(shape))) # zeros.shape = (1, 512, 256, 64, 3)
+    shape = atlas.shape[1:-1] # atlas.shape = (1, 256, 512, 64, 1). Therefore, shape = (256, 512, 64).
+    zeros = np.zeros((batch_size, *shape, len(shape))) # zeros.shape = (1, 256, 512, 64, 3)
     atlas = np.repeat(atlas, batch_size, axis=0)
     gen = volgen(vol_names, batch_size=batch_size, segs=segs, **kwargs)
     while True:
@@ -178,7 +178,7 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
 
     while True:
         # load source vol and seg
-        src_vol, src_seg = next(gen) # shape of src_vol and src_seg will be (1,512,256,1)
+        src_vol, src_seg = next(gen) # shape of src_vol and src_seg will be (1,512,256,64,1)
         src_seg = split_seg(src_seg)
 
         # load target vol and seg (if not provided by atlas)
