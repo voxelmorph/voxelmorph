@@ -195,11 +195,13 @@ class GradientAccumulateModel(vxm.networks.VxmDense):
 
     def apply_accu_gradients(self):
         # normalize accumulated gradients
+        """"
         for i in range(len(self.gradient_accumulation)):
             div = self.n_gradients
             norm_value = tf.divide(self.gradient_accumulation[i], tf.cast(div, tf.float32))
             self.gradient_accumulation[i].assign(norm_value)
-
+        """
+        
         # apply normalized gradients
         self.optimizer.apply_gradients(zip(self.gradient_accumulation, self.trainable_variables))
 
