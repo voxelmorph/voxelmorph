@@ -279,7 +279,7 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
 # build the model
 model = GradientAccumulateModel(
-    n_gradients=20, # gcd(m_train, m_val) = gcd(560, 100) = 20
+    n_gradients=22,
     inshape=inshape,
     nb_unet_features=[enc_nf, dec_nf],
     bidir=args.bidir,
