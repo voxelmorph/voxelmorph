@@ -358,7 +358,7 @@ else:
                         epochs=args.epochs,
                         steps_per_epoch=args.steps_per_epoch,
                         validation_steps=100,
-                        callbacks=[save_callback, early_stop_callback],
+                        callbacks=[save_callback],
                         verbose=1
                         )
 
