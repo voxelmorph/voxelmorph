@@ -124,6 +124,7 @@ else:
             self.img_prefix          = data['img_prefix']
             self.img_suffix          = data['img_suffix']
             self.load_weights        = data['load_weights']
+            self.use_validation      = data['use_validation']
 
     # Opening JSON file
     f = open(spec.config_file)
@@ -157,6 +158,7 @@ print("lambda_weight   type: {} and value: {}".format(type(args.lambda_weight), 
 print("img_prefix      type: {} and value: {}".format(type(args.img_prefix), args.img_prefix))
 print("img_suffix      type: {} and value: {}".format(type(args.img_suffix), args.img_suffix))
 print("load_weights    type: {} and value: {}".format(type(args.load_weights), args.load_weights))
+print("use_validation  type: {} and value: {}".format(type(args.use_validation), args.use_validation))
 print("##############################################################")
 print()
 
@@ -262,7 +264,7 @@ os.makedirs(model_dir, exist_ok=True)
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 # device = '/cpu:0'
-print("Harsha, device is %s\n", device)
+print("Harsha, device is %s\n".format(device))
 
 assert np.mod(args.batch_size, nb_devices) == 0, \
     'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
@@ -326,8 +328,6 @@ if nb_devices > 1:
 else:
     save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, save_freq='epoch')
 
-early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, verbose=1)
-
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
 model.summary()
@@ -340,13 +340,28 @@ tstart = tf.timestamp()
 
 print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
-history = model.fit(generator,
-                initial_epoch=args.initial_epoch,
-                epochs=args.epochs,
-                steps_per_epoch=args.steps_per_epoch,
-                callbacks=[save_callback, early_stop_callback],
-                verbose=1
-                )
+if(args.use_validation == False):
+    early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, verbose=1)
+    history = model.fit(generator,
+                        initial_epoch=args.initial_epoch,
+                        epochs=args.epochs,
+                        steps_per_epoch=args.steps_per_epoch,
+                        callbacks=[save_callback, early_stop_callback],
+                        verbose=1
+                        )
+else:
+    print("Harsha, running with validation data.")
+    early_stop_callback = tf.keras.callbacks.EarlyStopping(patience=3, verbose=1) # default: monitor='val_loss'
+    history = model.fit(generator,
+                        validation_data=val_generator,
+                        initial_epoch=args.initial_epoch,
+                        epochs=args.epochs,
+                        steps_per_epoch=args.steps_per_epoch,
+                        validation_steps=100,
+                        callbacks=[save_callback, early_stop_callback],
+                        verbose=1
+                        )
+
 
 # log end time
 tend = tf.timestamp()
