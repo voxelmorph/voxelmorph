@@ -58,6 +58,7 @@ class SpatialTransformer(Layer):
                  single_transform=False,
                  fill_value=None,
                  shift_center=True,
+                 shape=None,
                  **kwargs):
         """
         Parameters: 
@@ -70,6 +71,9 @@ class SpatialTransformer(Layer):
                 If None, the nearest neighbors will be used.
             shift_center: Shift grid to image center when converting affine
                 transforms to dense transforms.
+            shape: ND output shape used when converting affine transforms to dense
+                transforms. Includes only the N spatial dimensions. If None, the
+                shape of the input image will be used.
         """
         self.interp_method = interp_method
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
@@ -77,6 +81,7 @@ class SpatialTransformer(Layer):
         self.single_transform = single_transform
         self.fill_value = fill_value
         self.shift_center = shift_center
+        self.shape = shape
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -87,6 +92,7 @@ class SpatialTransformer(Layer):
             'single_transform': self.single_transform,
             'fill_value': self.fill_value,
             'shift_center': self.shift_center,
+            'shape': self.shape,
         })
         return config
 
@@ -133,7 +139,8 @@ class SpatialTransformer(Layer):
 
         # convert affine matrix to warp field
         if self.is_affine:
-            fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
+            shape = vol.shape[1:-1] if self.shape is None else self.shape
+            fun = lambda x: utils.affine_to_dense_shift(x, shape,
                                                         shift_center=self.shift_center,
                                                         indexing=self.indexing)
             trf = tf.map_fn(fun, trf)
