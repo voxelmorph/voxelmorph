@@ -3,3 +3,6 @@ __pycache__/
 **/.DS_Store
 **/data/**
 scratch/*
+
+voxelmorph.egg-info/*
+wandb/*

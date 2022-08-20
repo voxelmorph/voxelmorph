@@ -40,7 +40,7 @@ import argparse
 import time
 import numpy as np
 import torch
-import wandb
+from omegaconf import OmegaConf
 from wandbLogger import WandbLogger
 
 # import voxelmorph with pytorch backend
@@ -94,7 +94,7 @@ parser.add_argument('--lambda', type=float, dest='weight', default=0.01,
 parser.add_argument('--wandb', type=bool, default=False,
                     help='Save the epoch metrics in wandb')
 
-parser.add_argument('--wandb-project', type=str, default='voxel_test',
+parser.add_argument('-wandb-project', type=str, default='voxel_test',
                     help='The project name used in wandb')
         
 args = parser.parse_args()
@@ -178,6 +178,8 @@ if args.image_loss == 'ncc':
     image_loss_func = vxm.losses.NCC().loss
 elif args.image_loss == 'mse':
     image_loss_func = vxm.losses.MSE().loss
+elif args.image_loss == 'mu':
+    image_loss_func = vxm.losses.MutualInformation().loss
 else:
     raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
@@ -189,9 +191,9 @@ else:
     losses = [image_loss_func]
     weights = [1]
 
-# if args.wandb:
-    # wandb_logger = WandbLogger(project_name=args.wandb_project)
-# wandb_logger.log_config(args)
+if args.wandb:
+    wandb_logger = WandbLogger(project_name=args.wandb_project)
+wandb_logger.log_config(args)
 
 # prepare deformation loss
 losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
@@ -254,6 +256,6 @@ for epoch in range(args.initial_epoch, args.epochs):
     loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
     print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
-    # wandb_logger.log_epoch_metric(global_step, np.mean(epoch_total_loss), inputs, y_pred, y_true)
+    wandb_logger.log_epoch_metric(global_step, np.mean(epoch_total_loss), inputs, y_pred, y_true)
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))

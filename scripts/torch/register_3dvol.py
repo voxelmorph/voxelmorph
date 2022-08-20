@@ -49,23 +49,16 @@ import voxelmorph as vxm   # nopep8
 
 # parse commandline args
 parser = argparse.ArgumentParser()
-# parser.add_argument('--moving', required=True, help='moving image (source) filename')
-# parser.add_argument('--fixed', required=True, help='fixed image (target) filename')
-# parser.add_argument('--moved', required=True, help='warped image output filename')
-# parser.add_argument('--model', required=True, help='pytorch model for nonlinear registration')
-# parser.add_argument('--warp', help='output warp deformation filename')
-# parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
-# parser.add_argument('--multichannel', action='store_true',
-#                     help='specify that data has multiple channels')
+parser.add_argument('--moving', required=True, help='moving image (source) filename')
+parser.add_argument('--fixed', required=True, help='fixed image (target) filename')
+parser.add_argument('--moved', required=True, help='warped image output filename')
+parser.add_argument('--model', required=True, help='pytorch model for nonlinear registration')
+parser.add_argument('--warp', help='output warp deformation filename')
+parser.add_argument('-g', '--gpu', help='GPU number(s) - if not supplied, CPU is used')
+parser.add_argument('--multichannel', action='store_true',
+                    help='specify that data has multiple channels')
 args = parser.parse_args()
 
-args.gpu = None
-args.moving = 'data/data_test/0003_rawimages_slice_0.npy'
-args.fixed = 'data/data_output/0003_rawimages_slice_0.nii'
-args.moved = 'data/data_output/0003_rawimages_slice_0_warp.nii'
-args.model = 'model/1500.pt'
-args.moved = 'data/data_output/0003_rawimages_slice_0_deformation.nii'
-args.multichannel = False
 # device handling
 if args.gpu and (args.gpu != '-1'):
     device = 'cuda'
@@ -74,33 +67,40 @@ else:
     device = 'cpu'
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-# load moving and fixed images
-add_feat_axis = not args.multichannel
-moving = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis)
-fixed, fixed_affine = vxm.py.utils.load_volfile(
-    args.fixed, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
-
 # load and set up model
 model = vxm.networks.VxmDense.load(args.model, device)
 model.to(device)
 model.eval()
+# load moving and fixed images
+add_feat_axis = not args.multichannel
+vols, fixed_affine = vxm.py.utils.load_volfile(args.moving, add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
-# set up tensors and permute
-# TODO: check the dimension
-# input_moving = torch.from_numpy(moving).to(device).float().permute(0, 4, 1, 2, 3)
-# input_fixed = torch.from_numpy(fixed).to(device).float().permute(0, 4, 1, 2, 3)
-input_moving = torch.from_numpy(moving).to(device).float().permute(0, 3, 1, 2)
-input_fixed = torch.from_numpy(fixed).to(device).float().permute(0, 3, 1, 2)
+output_moved = []
+output_warp = []
+[_, slices, x, y, _] = vols.shape
+input_fixed = torch.from_numpy(vols[:, 0, :, :, :]).to(device).float().permute(0, 3, 1, 2)
+# print(input_fixed.shape)
+output_moved = [input_fixed.squeeze()]
+output_warp = []
+for slice in range(slices-1):
+    # set up tensors and permute
+    # TODO: check the dimension 
+    input_moving = torch.from_numpy(vols[:, slice+1, :, :, :]).to(device).float().permute(0, 3, 1, 2)
+    moved, warp = model(input_moving, input_fixed, registration=True)
+    # print(f"move {moved.shape}")
+    output_moved.append(moved.detach().cpu().numpy().squeeze())
+    output_warp.append(warp.detach().cpu().numpy().squeeze())
 
-# predict
-moved, warp = model(input_moving, input_fixed, registration=True)
+moved = np.stack(output_moved)
+warp = np.stack(output_warp)
 
-# save moved image
 if args.moved:
-    moved = moved.detach().cpu().numpy().squeeze()
     vxm.py.utils.save_volfile(moved, args.moved, fixed_affine)
 
 # save warp
 if args.warp:
-    warp = warp.detach().cpu().numpy().squeeze()
-    vxm.py.utils.save_volfile(warp, args.warp, fixed_affine)
+    print(warp.shape)
+    vxm.py.utils.save_volfile(warp[:, 0, :, :], args.warp, fixed_affine)
+
+# vxm.py.utils.save_volfile(np.squeeze(vols), 'data/data_output/0003_rawimages_slice_0_original.nii')
+

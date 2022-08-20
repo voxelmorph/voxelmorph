@@ -71,12 +71,13 @@ def volgen(
         yield tuple(vols)
 
 
-def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
+def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
     """
     Generator for scan-to-scan registration.
 
     Parameters:
         vol_names: List of volume files to load, or list of preloaded volumes.
+        in_order: Yield input pairs in sequence order. Default is True.
         bidir: Yield input image as output for bidirectional models. Default is False.
         batch_size: Batch size. Default is 1.
         prob_same: Induced probability that source and target inputs are the same. Default is 0.
@@ -91,32 +92,52 @@ def scan_to_scan(vol_names, bidir=False, batch_size=1, prob_same=0, no_warp=Fals
         vols = next(gen)[0]
         # print(f"Mona-11: vols length {len(vols)} and shape {vols[0].shape}")
         timestamps = vols.shape[1]
-        for t in range(timestamps):
-            scan1 = vols[:, t%timestamps, :, :, :]
-            scan2 = vols[:, (t+1)%timestamps, :, :, :]
-            # print(f"Mona-12: scan1 shape {scan1.shape} and scan2 shape {scan2.shape}")            
+        if in_order is True:
+            for t in range(timestamps):
+                scan1 = vols[:, t%timestamps, :, :, :]
+                scan2 = vols[:, (t+1)%timestamps, :, :, :]
+                yield_pairs(scan1, scan2, batch_size, prob_same, no_warp, bidir) 
+        else:
+            # yield the sequences in full order
+            for t in range(timestamps):
+                for j in range(timestamps):
+                    scan1 = vols[:, t, :, :, :]
+                    scan2 = vols[:, j, :, :, :]
+                    yield_pairs(scan1, scan2, batch_size, prob_same, no_warp, bidir)      
 
-        # some induced chance of making source and target equal
-            if prob_same > 0 and np.random.rand() < prob_same:
-                if np.random.rand() > 0.5:
-                    scan1 = scan2
-                else:
-                    scan2 = scan1
 
-            # cache zeros
-            if not no_warp and zeros is None:
-                shape = scan1.shape[1:-1]
-                zeros = np.zeros((batch_size, *shape, len(shape)))
-                # print(f"Mona-13: zeros shape {zeros.shape}")
+def yield_pairs(scan1, scan2, batch_size, prob_same, no_warp, bidir):
+    """Generate the pairs of scans to be used in the registration model.
 
-            invols = [scan1, scan2]
-            outvols = [scan2, scan1] if bidir else [scan2]
+    Args:
+        scan1 (_type_): _description_
+        scan2 (_type_): _description_
+        batch_size (_type_): _description_
+        prob_same (_type_): _description_
+        no_warp (_type_): _description_
+        bidir (_type_): _description_
 
-            if not no_warp:
-                outvols.append(zeros)
-            # print(f"Mona-14: invols shape {len(invols)}, {invols[0].shape}, {invols[1].shape}")
-            # print(f"Mona-14: outvols shape {len(outvols)}, {outvols[0].shape}, {outvols[1].shape}")
-            yield (invols, outvols)
+    Yields:
+        _type_: _description_
+    """
+    # some induced chance of making source and target equal
+    if prob_same > 0 and np.random.rand() < prob_same:
+        if np.random.rand() > 0.5:
+            scan1 = scan2
+        else:
+            scan2 = scan1
+
+    # cache zeros
+    if not no_warp and zeros is None:
+        shape = scan1.shape[1:-1]
+        zeros = np.zeros((batch_size, *shape, len(shape)))
+
+    invols = [scan1, scan2]
+    outvols = [scan2, scan1] if bidir else [scan2]
+
+    if not no_warp:
+        outvols.append(zeros)
+    yield (invols, outvols)
 
 
 def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, segs=None, **kwargs):

@@ -128,3 +128,58 @@ class Grad:
         if self.loss_mult is not None:
             grad *= self.loss_mult
         return grad
+
+
+class MutualInfo:
+    """Compute the mutual information
+    https://github.com/connorlee77/pytorch-mutual-information/blob/master/MutualInformation.py
+    """
+    def __init__(self, sigma=0.4, num_bins=256, normalize=True) -> None:
+        self.sigma = 2 * sigma ** 2
+        self.num_bins = num_bins
+        self.normalize = normalize
+        self.epsilon = 1e-10
+
+        self.bins = torch.linspace(0, 1, num_bins).float()
+
+    def marignalPdf(self, input):
+        residuals = input - self.bins.unsqueeze(0).unsqueeze(0)
+        kernel_values = torch.exp(-0.5*(residuals / self.sigma).pow(2))
+
+        pdf = torch.mean(kernel_values, dim=1)
+        normalization = torch.sum(pdf, dim=1).unsqueeze(1) + self.epsilon
+        pdf = pdf / normalization
+
+        return pdf, kernel_values
+
+    def jointPdf(self, kernel1, kernel2):
+
+        joint_kernel = torch.matmul(kernel1.transpose(1, 2), kernel2)
+        normalization = torch.sum(joint_kernel, dim=(1,2)).view(-1, 1, 1) + self.epsilon
+        pdf = joint_kernel / normalization
+
+        return pdf  
+
+    def loss(self, y_true, y_pred):
+        B, C, H, W = y_pred.shape
+        assert((y_pred.shape == y_true.shape))
+
+        x1 = y_true.view(B, H*W, C)
+        x2 = y_pred.view(B, H*W, C)
+
+        pdf_x1, kernel1 = self.marignalPdf(x1)
+        pdf_x2, kernel2 = self.marignalPdf(x2)
+
+        pdf_x1x2 = self.jointPdf(kernel1, kernel2)
+
+        H_x1 = -torch.sum(pdf_x1*torch.log2(pdf_x1 + self.epsilon), dim=1)
+        H_x2 = -torch.sum(pdf_x2*torch.log2(pdf_x2 + self.epsilon), dim=1)
+        H_x1x2 = -torch.sum(pdf_x1x2*torch.log2(pdf_x1x2 + self.epsilon), dim=(1,2))
+
+        mutual_information = H_x1 + H_x2 - H_x1x2
+		
+        if self.normalize:
+            mutual_information = 2*mutual_information/(H_x1+H_x2)
+
+        return mutual_information
+

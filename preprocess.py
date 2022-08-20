@@ -131,6 +131,6 @@ if __name__ == '__main__':
     print(f"In training set, number of images {len(output_2d_filenames)}")
     txt_string = "\n".join(output_2d_filenames)
     with open('data/mapping_input.txt', "w") as f:
-        f.write(txt_string)
+        f.write(txt_string)   
 
     
