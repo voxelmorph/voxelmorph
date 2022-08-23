@@ -125,6 +125,7 @@ else:
             self.img_suffix          = data['img_suffix']
             self.load_weights        = data['load_weights']
             self.use_validation      = data['use_validation']
+            self.n_gradients         = data['n_gradients']
 
     # Opening JSON file
     f = open(spec.config_file)
@@ -159,6 +160,7 @@ print("img_prefix      type: {} and value: {}".format(type(args.img_prefix), arg
 print("img_suffix      type: {} and value: {}".format(type(args.img_suffix), args.img_suffix))
 print("load_weights    type: {} and value: {}".format(type(args.load_weights), args.load_weights))
 print("use_validation  type: {} and value: {}".format(type(args.use_validation), args.use_validation))
+print("n_gradients     type: {} and value: {}".format(type(args.n_gradients), args.n_gradients))
 print("##############################################################")
 print()
 
@@ -281,7 +283,7 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
 # build the model
 model = GradientAccumulateModel(
-    n_gradients=20, # GCD(560, 100)
+    n_gradients=args.n_gradients, # GCD(560, 100)
     inshape=inshape,
     nb_unet_features=[enc_nf, dec_nf],
     bidir=args.bidir,
@@ -330,7 +332,7 @@ else:
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-model.summary()
+model.summary(line_length = 200)
 
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
@@ -346,7 +348,7 @@ if(args.use_validation == False):
                         initial_epoch=args.initial_epoch,
                         epochs=args.epochs,
                         steps_per_epoch=args.steps_per_epoch,
-                        callbacks=[save_callback, early_stop_callback],
+                        callbacks=[save_callback],
                         verbose=1
                         )
 else:
