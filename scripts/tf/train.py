@@ -35,12 +35,20 @@ License.
 """
 
 import os
+import sys
+
+if os.name == 'nt': # windows system
+    sys.path.append('Y:\\repo\Masterarbeit\\voxelmorph')
+elif os.name == 'posix': # nic system
+    sys.path.append('/home/students/yogeshappa/repo/Masterarbeit/voxelmorph')
+
 import random
 import argparse
 import numpy as np
 import tensorflow as tf
-import voxelmorph as vxm
+import voxelmorph_custom as vxm
 import pandas as pd
+
 
 # disable eager execution
 # tf.compat.v1.disable_eager_execution()
@@ -126,6 +134,7 @@ else:
             self.load_weights        = data['load_weights']
             self.use_validation      = data['use_validation']
             self.n_gradients         = data['n_gradients']
+            self.max_pool            = data['max_pool']
 
     # Opening JSON file
     f = open(spec.config_file)
@@ -161,6 +170,7 @@ print("img_suffix      type: {} and value: {}".format(type(args.img_suffix), arg
 print("load_weights    type: {} and value: {}".format(type(args.load_weights), args.load_weights))
 print("use_validation  type: {} and value: {}".format(type(args.use_validation), args.use_validation))
 print("n_gradients     type: {} and value: {}".format(type(args.n_gradients), args.n_gradients))
+print("max_pool        type: {} and value: {}".format(type(args.max_pool), args.max_pool))
 print("##############################################################")
 print()
 
@@ -266,7 +276,7 @@ os.makedirs(model_dir, exist_ok=True)
 device, nb_devices = vxm.tf.utils.setup_device(args.gpu)
 
 # device = '/cpu:0'
-print("Harsha, device is %s\n".format(device))
+print("Harsha, device is {}\n".format(device))
 
 assert np.mod(args.batch_size, nb_devices) == 0, \
     'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_devices)
@@ -283,8 +293,9 @@ save_filename = os.path.join(model_dir, '{epoch:04d}.h5')
 
 # build the model
 model = GradientAccumulateModel(
-    n_gradients=args.n_gradients, # GCD(560, 100)
+    n_gradients=args.n_gradients,
     inshape=inshape,
+    max_pool=args.max_pool,
     nb_unet_features=[enc_nf, dec_nf],
     bidir=args.bidir,
     use_probs=args.use_probs,
@@ -332,7 +343,7 @@ else:
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
-model.summary(line_length = 200)
+model.summary(line_length = 175)
 
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
@@ -382,6 +393,9 @@ print("Harsha, the training time is {}", tspent)
 # convert the history.history dict to a pandas DataFrame:
 # https://stackoverflow.com/a/55901240
 hist_df = pd.DataFrame(history.history)
-hist_csv_file = '/work/scratch/yogeshappa/cluster_logs/history.csv'
+if os.name == 'nt':
+    hist_csv_file = 'I:\cluster_logs\history_vscode.csv'
+elif os.name == 'posix':
+    hist_csv_file = '/work/scratch/yogeshappa/cluster_logs/history.csv'
 with open(hist_csv_file, mode='w') as f:
     hist_df.to_csv(f)

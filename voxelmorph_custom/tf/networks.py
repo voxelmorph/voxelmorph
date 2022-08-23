@@ -47,6 +47,7 @@ class VxmDense(ne.modelio.LoadableModel):
     @ne.modelio.store_config_args
     def __init__(self,
                  inshape,
+                 max_pool=2,
                  nb_unet_features=None,
                  nb_unet_levels=None,
                  unet_feat_mult=1,
@@ -134,6 +135,7 @@ class VxmDense(ne.modelio.LoadableModel):
         # build core unet model and grab inputs
         unet_model = Unet(
             input_model=input_model,
+            max_pool=max_pool,
             nb_features=nb_unet_features,
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult,
@@ -1237,7 +1239,10 @@ def _upsample_block(x, connection, factor=2, name=None):
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
 
-    size = (factor,) * ndims if ndims > 1 else factor
+    if isinstance(factor, int):
+        size = (factor,) * ndims if ndims > 1 else factor
+    else:
+        size=factor
     upsampled = UpSampling(size=size, name=name)(x)
     name = name + '_concat' if name else None
     return KL.concatenate([upsampled, connection], name=name)
