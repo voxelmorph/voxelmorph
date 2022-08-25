@@ -157,13 +157,20 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     """
     # configure base generator
 
-    # gen is a tuple; len(gen) = 2; gen[0] := scan; gen[1] := seg;
     gen = volgen(vol_names, segs=seg_names, np_var='vol')
+    # gen is a tuple;
+    # len(gen) = 2;
+    # gen[0] := scan;
+    # gen[1] := seg;
     zeros = None
 
     # internal utility to generate downsampled prob seg from discrete seg
+
+    # i.e., each label is split into its own feature layer.
     def split_seg(seg):
         prob_seg = np.zeros((*seg.shape[:4], len(labels)))
+
+        # for each label, create a feature layer in prob_seg.
         for i, label in enumerate(labels):
             prob_seg[0, ..., i] = seg[0, ..., 0] == label # seg[0, ..., 0] because batch size is 1 and feature size is also 1.
         return prob_seg[:, ::downsize, ::downsize, ::downsize, :] # take every second element.

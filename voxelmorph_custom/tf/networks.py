@@ -107,6 +107,8 @@ class VxmDense(ne.modelio.LoadableModel):
             # configure default input layers if an input model is not provided
             source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
             target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
+
+            # source and target are now of type tf.keras.Input
             input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
         else:
             source, target = input_model.outputs[:2]
@@ -133,6 +135,9 @@ class VxmDense(ne.modelio.LoadableModel):
         nb_upsample_skips = int(np.floor(np.log(svf_resolution) / np.log(2)))
 
         # build core unet model and grab inputs
+
+        # This calls 'call(...)' of UNet. If not implemented, then calls of its super's.
+        # https://www.geeksforgeeks.org/__call__-in-python/
         unet_model = Unet(
             input_model=input_model,
             max_pool=max_pool,
@@ -334,18 +339,26 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
 
         # configure downsampled seg input layer
         inshape_ds = (np.array(inshape) / seg_resolution).astype(int)
+
+        # seg_src is now a object of type tf.keras.Input
         seg_src = tf.keras.Input(shape=(*inshape_ds, nb_labels), name=f'{name}_source_seg')
 
         # configure warped seg output layer
+
+        # seg_flow is resized version of pos_flow because src_seg and tar_seg are downscaled.
         seg_flow = layers.RescaleTransform(
             1 / seg_resolution, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
         y_seg_src = layers.SpatialTransformer(interp_method='linear',
                                               indexing='ij',
                                               name=f'{name}_seg_transformer')([seg_src, seg_flow])
 
-        inputs = vxm_model.inputs + [seg_src]
-        outputs = vxm_model.outputs + [y_seg_src]
-
+        # this is as good as .append() operation. But, append will do self modification, which 
+        # is why we use + operator here.
+        inputs = vxm_model.inputs + [seg_src]       # vxm_model.inputs  = [src  , tar     ]
+        # inputs = [src, tar, src_seg]
+        outputs = vxm_model.outputs + [y_seg_src]   # vxm_model.outputs = [y_src, pos_flow]
+        # outputs = [y_src, pos_flow, y_seg_src]
+        
         if bidir_labels:
 
             # target seg input
@@ -1050,6 +1063,7 @@ class Unet(tf.keras.Model):
             if len(input_model.outputs) == 1:
                 unet_input = input_model.outputs[0]
             else:
+                # our code hits here.. src and target are concatenated.
                 unet_input = KL.concatenate(input_model.outputs, name='%s_input_concat' % name)
             model_inputs = input_model.inputs
 
@@ -1143,6 +1157,9 @@ class Unet(tf.keras.Model):
             last = KL.Activation(final_activation_function, name='%s_final_activation' % name)(last)
 
         super().__init__(inputs=model_inputs, outputs=last, name=name)
+
+        # https://github.com/keras-team/keras/blob/master/keras/engine/training.py
+        # to understand what is happening in super() class.
 
 
 ###############################################################################

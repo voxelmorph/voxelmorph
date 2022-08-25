@@ -27,7 +27,7 @@ import random
 import argparse
 import numpy as np
 import tensorflow as tf
-import voxelmorph as vxm
+import voxelmorph_custom as vxm
 
 
 # disable eager execution
