@@ -45,6 +45,7 @@ elif os.name == 'posix': # nic system
 import random
 import argparse
 import numpy as np
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 import voxelmorph_custom as vxm
 import pandas as pd
@@ -183,17 +184,19 @@ class GradientAccumulateModel(vxm.networks.VxmDense):
         self.n_gradients = tf.constant(n_gradients, dtype=tf.int32)
         self.n_acum_step = tf.Variable(0, dtype=tf.int32, trainable=False)
         self.gradient_accumulation = [tf.Variable(tf.zeros_like(v, dtype=tf.float32), trainable=False) for v in self.trainable_variables]
-        tf.print("Harsha, n_acum_step: ", self.n_acum_step)
-        tf.print("Harsha, n_gradients: ", self.n_gradients)
 
     def train_step(self, data):
+        print("############### inside train_step ###################")
         self.n_acum_step.assign_add(1)
 
         x, y = data
+
         # Gradient Tape
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
             loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+            print("type of loss : {}".format(type(loss)))
+            print(loss)
         # Calculate batch gradients
         gradients = tape.gradient(loss, self.trainable_variables)
         # Accumulate batch gradients
@@ -260,9 +263,10 @@ sample_shape = next(generator)[0][0].shape
 
 '''
 [hy23]
+outvols               := [atlas, zeros]
 next(generator)       := (invols, outvols)
-next(generator)[0]    := invols            := [scan1, scan2]
-next(generator)[0][0] := invols[0]         := [scan1]
+next(generator)[0]    := invols            := [scan, atlas]
+next(generator)[0][0] := invols[0]         := [scan]
 '''
 
 inshape = sample_shape[1:-1] # [hy23] 3 dimensions.
@@ -330,10 +334,11 @@ if args.use_probs:
     flow_shape = model.outputs[-1].shape[1:-1]
     losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
 else:
-    losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
+    losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss, image_loss_func]
 
-weights += [args.lambda_weight]
+weights += [args.lambda_weight, 0.5]
 
+print("loss weights : {}".format(weights))
 # multi-gpu support
 if nb_devices > 1:
     save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
@@ -351,7 +356,7 @@ model.save(save_filename.format(epoch=args.initial_epoch))
 # log start time
 tstart = tf.timestamp()
 
-print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
+#print("Harsha, the float precision is {}".format(tf.keras.backend.floatx()))
 
 if(args.use_validation == False):
     early_stop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=3, verbose=1)
@@ -374,7 +379,6 @@ else:
                         callbacks=[save_callback],
                         verbose=1
                         )
-
 
 # log end time
 tend = tf.timestamp()

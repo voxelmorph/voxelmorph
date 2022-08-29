@@ -67,7 +67,7 @@ with tf.device(device):
     # load model and predict
     config = dict(inshape=inshape, input_model=None)
     warp = vxm.networks.VxmDense.load(args.model, **config).register(moving, fixed)
-    print('Harsha, registeration of moving and fixed is done.')
+    print('Harsha, registration of moving and fixed is done.')
     moved = vxm.networks.Transform(inshape, nb_feats=nb_feats).predict([moving, warp])
     print('Harsha, Transformation is done.')
 t1 = time.time()

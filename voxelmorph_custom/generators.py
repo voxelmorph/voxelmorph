@@ -125,14 +125,15 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
             internal volgen generator. Default is None.
         kwargs: Forwarded to the internal volgen generator.
     """
-    shape = atlas.shape[1:-1] # atlas.shape = (1, 256, 512, 64, 1). Therefore, shape = (256, 512, 64).
-    zeros = np.zeros((batch_size, *shape, len(shape))) # zeros.shape = (1, 256, 512, 64, 3)
+    shape = atlas.shape[1:-1] # atlas.shape = (1, 512, 256, 64, 1). Therefore, shape = (512, 256, 64).
+    zeros = np.zeros((batch_size, *shape, len(shape))) # zeros.shape = (1, 512, 256, 64, 3)
     atlas = np.repeat(atlas, batch_size, axis=0)
     gen = volgen(vol_names, batch_size=batch_size, segs=segs, **kwargs)
     while True:
         res = next(gen)
         scan = res[0]
-        invols = [scan, atlas]
+        scan_ventricular = scan[:, int(shape[0]/2):, :, :]
+        invols = [scan, atlas, scan_ventricular]
         if not segs:
             outvols = [atlas, scan] if bidir else [atlas]
         else:
@@ -140,6 +141,8 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
             outvols = [seg, scan] if bidir else [seg]
         if not no_warp: # if warp
             outvols.append(zeros)
+        atlas_ventricular = atlas[:, int(shape[0]/2):, :, :]
+        outvols.append(atlas_ventricular)
         yield (invols, outvols)
 
 
