@@ -195,8 +195,7 @@ class GradientAccumulateModel(vxm.networks.VxmDense):
         with tf.GradientTape() as tape:
             y_pred = self(x, training=True)
             loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-            print("type of loss : {}".format(type(loss)))
-            print(loss)
+
         # Calculate batch gradients
         gradients = tape.gradient(loss, self.trainable_variables)
         # Accumulate batch gradients
@@ -247,11 +246,13 @@ if args.atlas:
     generator = vxm.generators.scan_to_atlas(train_files, atlas,
                                              batch_size=args.batch_size,
                                              bidir=args.bidir,
-                                             add_feat_axis=add_feat_axis)
+                                             add_feat_axis=add_feat_axis,
+                                             steps_per_epoch=args.steps_per_epoch)
     val_generator = vxm.generators.scan_to_atlas(val_files, atlas,
                                                  batch_size=args.batch_size,
                                                  bidir=args.bidir,
-                                                 add_feat_axis=add_feat_axis)
+                                                 add_feat_axis=add_feat_axis,
+                                                 steps_per_epoch=args.steps_per_epoch)
 else:
     # scan-to-scan generator
     generator = vxm.generators.scan_to_scan(
@@ -349,6 +350,10 @@ else:
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
 model.summary(line_length = 175)
+
+# plot graph
+from tensorflow.keras.utils import plot_model
+plot_model(model, to_file='multiple_outputs.png', show_shapes=True)
 
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))

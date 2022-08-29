@@ -13,7 +13,8 @@ def volgen(
     np_var='vol',
     pad_shape=None,
     resize_factor=1,
-    add_feat_axis=True
+    add_feat_axis=True,
+    steps_per_epoch=None
 ):
     """
     Base generator for random volume loading. Volumes can be passed as a path to
@@ -35,6 +36,11 @@ def volgen(
         add_feat_axis: Load volume arrays with added feature axis. Default is True.
     """
 
+    print("steps_per_epoch: {}".format(steps_per_epoch))
+    b_new_epoch = True
+    train_size = len(vol_names)
+    step_num    = 0
+
     # convert glob path to filenames
     if isinstance(vol_names, str):
         if os.path.isdir(vol_names):
@@ -45,8 +51,32 @@ def volgen(
         raise ValueError('Number of image files must match number of seg files.')
 
     while True:
-        # generate [batchsize] random image indices
-        indices = np.random.randint(len(vol_names), size=batch_size)
+        if(b_new_epoch):
+            print("generating new random choice")
+            train_indices = np.random.choice(train_size, size=train_size, replace=False)
+            b_new_epoch = False
+
+        if(batch_size == 1):
+            i = step_num
+        else:
+            i = (step_num % batch_size) * batch_size
+
+        indices = []
+        for j in range(batch_size):
+            indices.append(train_indices[i+j])
+
+        print("\nstep_num : {}".format(step_num))
+        print("i        : {}".format(i))
+        print("indices  : {}".format(indices))
+        
+        step_num += 1
+        if(step_num == steps_per_epoch):
+            b_new_epoch = True
+            step_num = 0
+            print("b_new_epoch = True")
+
+        ## generate [batchsize] random image indices
+        #indices = np.random.randint(len(vol_names), size=batch_size)
 
         # load volumes and concatenate
         load_params = dict(np_var=np_var, add_batch_axis=True, add_feat_axis=add_feat_axis,
