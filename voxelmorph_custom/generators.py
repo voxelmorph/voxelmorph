@@ -162,8 +162,7 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
     while True:
         res = next(gen)
         scan = res[0]
-        scan_ventricular = scan[:, int(shape[0]/2):, :, :]
-        invols = [scan, atlas, scan_ventricular]
+        invols = [scan, atlas]
         if not segs:
             outvols = [atlas, scan] if bidir else [atlas]
         else:
@@ -171,8 +170,6 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
             outvols = [seg, scan] if bidir else [seg]
         if not no_warp: # if warp
             outvols.append(zeros)
-        atlas_ventricular = atlas[:, int(shape[0]/2):, :, :]
-        outvols.append(atlas_ventricular)
         yield (invols, outvols)
 
 

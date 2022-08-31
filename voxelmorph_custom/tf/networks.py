@@ -99,10 +99,6 @@ class VxmDense(ne.modelio.LoadableModel):
             name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
         """
 
-        inshape_ventricular = list(inshape)
-        inshape_ventricular[0] = int(inshape[0]/2)
-        inshape_ventricular = tuple(inshape_ventricular)
-
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
@@ -110,11 +106,10 @@ class VxmDense(ne.modelio.LoadableModel):
         if input_model is None:
             # configure default input layers if an input model is not provided
             source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
-            source_ventricular = tf.keras.Input(shape=(*inshape_ventricular, src_feats), name='%s_source_ventricular_input' % name)
             target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
 
             # source and target are now of type tf.keras.Input
-            input_model = tf.keras.Model(inputs=[source, target, source_ventricular], outputs=[source, target])
+            input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
         else:
             source, target = input_model.outputs[:2]
 
@@ -237,12 +232,6 @@ class VxmDense(ne.modelio.LoadableModel):
                                                  name='%s_neg_transformer' % name)(st_inputs)
 
         # initialize the keras model
-        y_shape = y_source.shape
-        y_source_ventricular = tf.slice(y_source,
-                                        begin=[0, int(y_shape[1]/2), 0, 0, 0],
-                                        size=[-1, -1, -1, -1, -1],
-                                        name='%s_slice_ventricular' % name)
-        #y_source_ventricular = y_source[:, int(y_shape[1]/2):, :, :]
         outputs = [y_source, y_target] if bidir else [y_source]
 
         # determine regularization output
@@ -264,8 +253,6 @@ class VxmDense(ne.modelio.LoadableModel):
             outputs.append(pos_flow)
         else:
             raise ValueError(f'Unknown option "{reg_field}" for reg_field.')
-
-        outputs.append(y_source_ventricular)
 
         super().__init__(name=name, inputs=inputs, outputs=outputs)
 
@@ -289,11 +276,13 @@ class VxmDense(ne.modelio.LoadableModel):
         """
         return tf.keras.Model(self.inputs, self.references.pos_flow)
 
-    def register(self, src, trg, ven_src):
+    #def register(self, src, trg, ven_src):
+    def register(self, src, trg):
         """
         Predicts the transform from src to trg tensors.
         """
-        return self.get_registration_model().predict([src, trg, ven_src])
+        #return self.get_registration_model().predict([src, trg, ven_src])
+        return self.get_registration_model().predict([src, trg])
 
     def apply_transform(self, src, trg, img, interp_method='linear'):
         """

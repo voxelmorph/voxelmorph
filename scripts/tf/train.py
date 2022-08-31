@@ -335,9 +335,9 @@ if args.use_probs:
     flow_shape = model.outputs[-1].shape[1:-1]
     losses += [vxm.losses.KL(args.kl_lambda, flow_shape).loss]
 else:
-    losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss, image_loss_func]
+    losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 
-weights += [args.lambda_weight, 0.5]
+weights += [args.lambda_weight]
 
 print("loss weights : {}".format(weights))
 # multi-gpu support
