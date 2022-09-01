@@ -92,43 +92,58 @@ def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute
 ###############################################################################
 
 
-def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None):
-    """
-    transform (interpolation N-D volumes (features) given shifts at each location in tensorflow
+def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None,
+              shift_center=True, shape=None):
+    """Apply affine or dense transforms to images in N dimensions.
 
-    Essentially interpolates volume vol at locations determined by loc_shift. 
-    This is a spatial transform in the sense that at location [x] we now have the data from, 
-    [x + shift] so we've moved data.
+    Essentially interpolates the input ND tensor at locations determined by
+    loc_shift. The latter can be an affine transform or dense field of location
+    shifts in the sense that at location x we now have the data from x + dx, so
+    we moved the data.
 
     Args:
-        vol: volume with size vol_shape or [*vol_shape, C]
-            where C is the number of channels
-        loc_shift: shift volume [*new_vol_shape, D] or [*new_vol_shape, C, D]
-            where C is the number of channels, and D is the dimentionality len(vol_shape)
-            If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
-        interp_method (default:'linear'): 'linear', 'nearest'
-        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
-            In general, prefer to leave this 'ij'
-        fill_value (default: None): value to use for points outside the domain.
-            If None, the nearest neighbors will be used.
+        vol: tensor or array-like structure  of size vol_shape or
+            (*vol_shape, C), where C is the number of channels.
+        loc_shift: Affine transformation matrix of shape (N, N+1) or a shift
+            volume of shape (*new_vol_shape, D) or (*new_vol_shape, C, D),
+            where C is the number of channels, and D is the dimentionality
+            D = len(vol_shape). If the shape is (*new_vol_shape, D), the same
+            transform applies to all channels of of the input tensor.
+        interp_method: 'linear' or 'nearest'.
+        indexing: 'ij' (matrix) or 'xy' (cartesian). In general, prefer 'ij'.
+        fill_value: Value to use for points sampled outside the domain. If
+            None, the nearest neighbors will be used.
+        shift_center: Shift grid to image center when converting affine
+            transforms to dense transforms.
+        shape: ND output shape used when converting affine transforms to dense
+            transforms. Includes only the N spatial dimensions. If None, the
+            shape of the input image will be used.
 
     Return:
-        new interpolated volumes in the same size as loc_shift[0]
+        Tensor whose voxel values are the values of the input tensor
+        interpolated at the locations defined by the transform.
 
     Keywords:
         interpolation, sampler, resampler, linear, bilinear
     """
-    # parse spatial location shape, including channels if available
-    loc_volshape = loc_shift.shape[:-1]
-    if isinstance(loc_volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
-        loc_volshape = loc_volshape.as_list()
-
     # convert data type if needed
     ftype = tf.float32
     if not tf.is_tensor(vol) or not vol.dtype.is_floating:
         vol = tf.cast(vol, ftype)
     if not tf.is_tensor(loc_shift) or not loc_shift.dtype.is_floating:
         loc_shift = tf.cast(loc_shift, ftype)
+
+    # convert affine to location shift (will validate affine shape)
+    if is_affine_shape(loc_shift.shape):
+        loc_shift = affine_to_dense_shift(loc_shift,
+                                          shape=vol.shape[1:-1] if shape is None else shape,
+                                          shift_center=shift_center,
+                                          indexing=indexing)
+
+    # parse spatial location shape, including channels if available
+    loc_volshape = loc_shift.shape[:-1]
+    if isinstance(loc_volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
+        loc_volshape = loc_volshape.as_list()
 
     # volume dimensions
     nb_dims = len(vol.shape) - 1
