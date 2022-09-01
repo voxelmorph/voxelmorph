@@ -101,7 +101,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     [x + shift] so we've moved data.
 
     Args:
-        vol (Tensor): volume with size vol_shape or [*vol_shape, C]
+        vol: volume with size vol_shape or [*vol_shape, C]
             where C is the number of channels
         loc_shift: shift volume [*new_vol_shape, D] or [*new_vol_shape, C, D]
             where C is the number of channels, and D is the dimentionality len(vol_shape)
@@ -115,15 +115,20 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     Return:
         new interpolated volumes in the same size as loc_shift[0]
 
-    Keyworks:
+    Keywords:
         interpolation, sampler, resampler, linear, bilinear
     """
-
-    # parse shapes.
-    # location volshape, including channels if available
+    # parse spatial location shape, including channels if available
     loc_volshape = loc_shift.shape[:-1]
     if isinstance(loc_volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
         loc_volshape = loc_volshape.as_list()
+
+    # convert data type if needed
+    ftype = tf.float32
+    if not tf.is_tensor(vol) or not vol.dtype.is_floating:
+        vol = tf.cast(vol, ftype)
+    if not tf.is_tensor(loc_shift) or not loc_shift.dtype.is_floating:
+        loc_shift = tf.cast(loc_shift, ftype)
 
     # volume dimensions
     nb_dims = len(vol.shape) - 1
