@@ -622,24 +622,33 @@ def params_to_affine_matrix(par,
                             last_row=False,
                             ndims=3):
     """
-    Constructs an affine transformation matrix from translation, rotation, scaling and shearing
-    parameters in 2D or 3D. Supports batched inputs.
+    Construct N-dimensional transformation matrices from affine parameters,
+    where N is 2 or 3. The transforms operate in a right-handed frame of
+    reference, with right-handed intrinsic rotations (see
+    angles_to_rotation_matrix for details), and are constructed by matrix
+    product ``T @ R @ S @ E``, where T, R, S, and E are matrices representing
+    translation, rotation, scale, and shear, respectively. The function
+    supports inputs with or without batch dimensions.
 
     Arguments:
-        par: Parameters as a scalar, numpy array, TensorFlow tensor, or list or tuple of these.
-            Elements of lists and tuples will be stacked along the last dimension, which
-            corresponds to translations, rotations, scaling and shear. The size of the last
-            axis must not exceed (N, N+1), for N dimensions. If the size is less than that,
-            the missing parameters will be set to identity.
-        deg: Whether the input rotations are specified in degrees. Defaults to True.
-        shift_scale: Add 1 to any specified scaling parameters. This may be desirable
-            when the parameters are estimated by a network. Defaults to False.
-        last_row: Append the last row and return the full matrix. Defaults to False.
-        ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
+        par: Array-like input parameters of shape (..., M), defining an affine
+            transformation in N-D space. The size M of the right-most dimension
+            must not exceed ``N * (N + 1)``. This axis defines, in order:
+            translations, rotations, scaling, and shearing parameters. In 3D,
+            for example, the first three indices specify translations along the
+            x, y, and z-axis, and similarly for the remaining parameters. Any
+            missing parameters will bet set to identity. Lists and tuples will
+            be stacked along the last dimension.
+        deg: Interpret input angles as specified in degrees instead of radians.
+        shift_scale: Add 1 to any specified scaling parameters. May be
+            desirable when the input parameters are estimated by a network.
+        last_row: Append the last row and return a full matrix.
+        ndims: Number of dimensions. Must be 2 or 3.
 
     Returns:
-        Affine transformation matrices as a (..., M, N+1) tensor, where M is N or N+1,
-        depending on `last_row`.
+        mat: Affine transformation matrices of shape (..., N, N + 1) or
+            (..., N + 1, N + 1), depending on `last_row`. The left-most
+            dimensions depend on the input shape.
 
     Author:
         mu40
@@ -717,20 +726,27 @@ def params_to_affine_matrix(par,
 
 def angles_to_rotation_matrix(ang, deg=True, ndims=3):
     """
-    Construct N-dimensional rotation matrices from angles, where N is 2 or 3. The direction of
-    rotation for all axes follows the right-hand rule. The rotations are intrinsic, i.e. carried
-    out in the body-centered frame of reference. Supports batched inputs.
+    Construct N-dimensional rotation matrices from angles, where N is 2 or
+    3. The direction of rotation for all axes follows the right-hand rule: the
+    thumb being the rotation axis, a positive angle defines a rotation in the
+    direction pointed to by the other fingers. Rotations are intrinsic, that
+    is, applied in the body-centered frame of reference. The function supports
+    inputs with or without batch dimensions.
+
+    In 3D, rotations are applied in the order ``R = X @ Y @ Z``, where X, Y,
+    and Z are matrices defining rotations about the x, y, and z-axis,
+    respectively.
 
     Arguments:
-        ang: Input angles as a scalar, NumPy array, TensorFlow tensor, or list or tuple of these.
-            Elements of lists and tuples will be stacked along the last dimension, which
-            corresponds to the rotation axes (x, y, z in 3D), and its size must not exceed N.
-            If the size is less than N, the missing angles will be set to zero.
-        deg: Whether the input angles are specified in degrees. Defaults to True.
-        ndims: Dimensionality of rotation matrices. Must be 2 or 3. Defaults to 3.
+        ang: Array-like input angles of shape (..., M), specifying rotations
+            about the first M axes of space. M must not exceed N. Any missing
+            angles will be set to zero. Lists and tuples will be stacked along
+            the last dimension.
+        deg: Interpret `ang` as angles in degrees instead of radians.
+        ndims: Number of spatial dimensions. Must be 2 or 3.
 
     Returns:
-        ND rotation matrices as a (..., N, N) tensor.
+        mat: Rotation matrices of shape (..., N, N) constructed from `ang`.
 
     Author:
         mu40
