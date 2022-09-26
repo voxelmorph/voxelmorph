@@ -4,8 +4,7 @@ import shutil
 import glob
 import SimpleITK as sitk
 import numpy as np
-# add resample
-# add 
+import argparse
 
 def resize(img, new_size, interpolator):
     # img = sitk.ReadImage(img)
@@ -56,27 +55,30 @@ def resize(img, new_size, interpolator):
 
     return sitk.Resample(img, reference_image, centered_transform, interpolator, 0.0)
 
-if __name__ == '__main__':
 
-    basepath = '/home/xinqili/dlmri/dlmri/voxelMorph/mapping2Xinqi_nii'
-    train_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
-    val_output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_test'
-    # basepath = '/Users/mona/workSpace/data/voxelmorph/mapping2Xinqi_nii'
-    # train_output = 'data/data_train'
-    # val_output = 'data/data_test'
-    
-    # basepath = 'data/mapping2Xinqi_nii'
-    # output = '/home/xinqili/dlmri/dlmri/voxelMorph/data_train'
+def normalize(img):
+    img = (img - np.min(img)) / (np.max(img) - np.min(img))
+    return img
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', required=True, help='dataset name')
+    args = parser.parse_args()
+
+    basepath = f"data/{args.dataset}_nii"
+    train_output = f"data/{args.dataset}_dataset/train"
+    val_output = f"data/{args.dataset}_dataset/test"
+
     dirs = os.listdir(basepath)
     input_file_paths = []
     output_file_paths = []
     image_shapes = []
     if os.path.exists(train_output):
         shutil.rmtree(train_output)
-    os.mkdir(train_output)
+    os.makedirs(train_output)
     if os.path.exists(val_output):
         shutil.rmtree(val_output)
-    os.mkdir(val_output)
+    os.makedirs(val_output)
     for dir in dirs:
         files = glob.glob(f"{os.path.join(basepath, dir)}/*.nii.gz")
         for file in files:
@@ -87,7 +89,7 @@ if __name__ == '__main__':
 
             image = sitk.ReadImage(file)
             image_shapes.append(image.GetSize())
-    print(type(image_shapes[0]))
+    print(image_shapes[0])
     median_shape = (np.median(np.vstack(image_shapes), 0)).astype(np.int)
     max_shape = np.max(np.vstack(image_shapes), 0)
     min_shape = np.min(np.vstack(image_shapes), 0)
@@ -96,7 +98,7 @@ if __name__ == '__main__':
     print(f"The max shape is {max_shape}, median shape is {median_shape}, min_shape is {min_shape}")
 
     test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*0.1))
-    remove_list = []
+
     min_idx = np.argmin(np.vstack(image_shapes), 0)
     print(min_idx)
     min_dim_0 = image_shapes[min_idx[0]][0]
@@ -110,27 +112,26 @@ if __name__ == '__main__':
         new_shape = (min_dim_0, min_dim_1, original_shape[-1])
         print(f"Before shape {original_shape}, after shape {new_shape}")
         resize_img = resize(image, new_shape, sitk.sitkLinear)
-
-        if idx in test_idx:
-            remove_list.append(output_file_paths[idx])
-            tmp = (output_file_paths[idx]).split("/")[-1]
-            output_name = f"{val_output}/{tmp}"
-        else:
-            output_name = output_file_paths[idx]
         
         resize_img_array = sitk.GetArrayFromImage(resize_img)
-        print(resize_img_array.shape)
-        resize_img_array = (resize_img_array - np.min(resize_img_array)) / (np.max(resize_img_array) - np.min(resize_img_array))
-        output_2d_filenames.append(f"{output_name}.npy")
-        np.save(f"{output_name}.npy", resize_img_array)
-        # for i in range(resize_img_array.shape[0]):
-        #     img_2d = resize_img_array[i,:,:]
-        #     output_2d_filenames.append(f"{output_name}_{i}.npy")
-        #     np.save(f"{output_name}_{i}.npy", img_2d)
+        tmp = (output_file_paths[idx]).split("/")[-1]
+        
+        resize_img_array = normalize(resize_img_array)
+        
+        if idx in test_idx:
+            output_name = f"{val_output}/{tmp}.npy"
+            print(output_name)
+            np.save(output_name, resize_img_array)
+        else:
+            output_name = f"{train_output}/{tmp}.npy"
+            print(output_name)
+            np.save(output_name, resize_img_array)
+            output_2d_filenames.append(output_name)
     
     print(f"In training set, number of images {len(output_2d_filenames)}")
     txt_string = "\n".join(output_2d_filenames)
-    with open('data/mapping_input.txt', "w") as f:
+    # print(txt_string)
+    with open(f'data/{args.dataset}_input.txt', "w") as f:
         f.write(txt_string)   
 
     

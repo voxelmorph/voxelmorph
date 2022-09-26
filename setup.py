@@ -49,6 +49,12 @@ setuptools.setup(
         'wandb',
         'torch',
         'torchvision',
-        'torchaudio'
+        'torchaudio',
+        'omegaconf',
+        'SimpleITK',
+        'sewar',
+        'array2gif',
+        'tqdm'
+        
     ]
 )

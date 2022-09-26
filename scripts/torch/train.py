@@ -35,227 +35,200 @@ License.
 """
 
 import os
-import random
-import argparse
 import time
 import numpy as np
 import torch
+import argparse
 from omegaconf import OmegaConf
 from wandbLogger import WandbLogger
+
+os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph as vxm  # nopep8
 
 # parse the commandline
-parser = argparse.ArgumentParser()
-
-# data organization parameters
-parser.add_argument('--img-list', required=True, help='line-seperated list of training files')
-parser.add_argument('--img-prefix', help='optional input image file prefix')
-parser.add_argument('--img-suffix', help='optional input image file suffix')
-parser.add_argument('--atlas', help='atlas filename (default: data/atlas_norm.npz)')
-parser.add_argument('--model-dir', default='models',
-                    help='model output directory (default: models)')
-parser.add_argument('--multichannel', action='store_true',
-                    help='specify that data has multiple channels')
-
-# training parameters
-parser.add_argument('--gpu', default='0', help='GPU ID number(s), comma-separated (default: 0)')
-parser.add_argument('--batch-size', type=int, default=1, help='batch size (default: 1)')
-parser.add_argument('--epochs', type=int, default=1500,
-                    help='number of training epochs (default: 1500)')
-parser.add_argument('--steps-per-epoch', type=int, default=100,
-                    help='frequency of model saves (default: 100)')
-parser.add_argument('--load-model', help='optional model file to initialize with')
-parser.add_argument('--initial-epoch', type=int, default=0,
-                    help='initial epoch number (default: 0)')
-parser.add_argument('--lr', type=float, default=1e-4, help='learning rate (default: 1e-4)')
-parser.add_argument('--cudnn-nondet', action='store_true',
-                    help='disable cudnn determinism - might slow down training')
-
-# network architecture parameters
-parser.add_argument('--enc', type=int, nargs='+',
-                    help='list of unet encoder filters (default: 16 32 32 32)')
-parser.add_argument('--dec', type=int, nargs='+',
-                    help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
-parser.add_argument('--int-steps', type=int, default=7,
-                    help='number of integration steps (default: 7)')
-parser.add_argument('--int-downsize', type=int, default=2,
-                    help='flow downsample factor for integration (default: 2)')
-parser.add_argument('--bidir', action='store_true', help='enable bidirectional cost function')
-
-# loss hyperparameters
-parser.add_argument('--image-loss', default='mse',
-                    help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--lambda', type=float, dest='weight', default=0.01,
-                    help='weight of deformation loss (default: 0.01)')
-
-parser.add_argument('--wandb', type=bool, default=False,
-                    help='Save the epoch metrics in wandb')
-
-parser.add_argument('-wandb-project', type=str, default='voxel_test',
-                    help='The project name used in wandb')
-        
-args = parser.parse_args()
-
-bidir = args.bidir
 
 
-# load and prepare training data
-train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
-                                          suffix=args.img_suffix)
-print(f"Mona-1: the number of input files {len(train_files)}")
-assert len(train_files) > 0, 'Could not find any training data.'
+def train(conf, wandb_logger=None):
 
-# no need to append an extra feature axis if data is multichannel
-add_feat_axis = not args.multichannel
+    bidir = conf.bidir
 
-if args.atlas:
-    # scan-to-atlas generator
-    atlas = vxm.py.utils.load_volfile(args.atlas, np_var='vol',
-                                      add_batch_axis=True, add_feat_axis=add_feat_axis)
-    generator = vxm.generators.scan_to_atlas(train_files, atlas,
-                                             batch_size=args.batch_size, bidir=args.bidir,
-                                             add_feat_axis=add_feat_axis)
-else:
-    # scan-to-scan generator
-    print("Mona: use the scan to scan generator")
-    generator = vxm.generators.scan_to_scan(
-        train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+    # load and prepare training data
+    train_files = vxm.py.utils.read_file_list(conf.img_list, prefix=conf.img_prefix,
+                                              suffix=conf.img_suffix)
+    print(f"Mona-1: the number of input files {len(train_files)}")
+    assert len(train_files) > 0, 'Could not find any training data.'
 
-# extract shape from sampled input
+    # no need to append an extra feature axis if data is multichannel
+    add_feat_axis = not conf.multichannel
 
-inshape = next(generator)[0][0].shape[1:-1]
-print(f"Mona-2: shape {next(generator)[0][0].shape} and inshape {inshape}")
+    if conf.atlas:
+        # scan-to-atlas generator
+        atlas = vxm.py.utils.load_volfile(conf.atlas, np_var='vol',
+                                          add_batch_axis=True, add_feat_axis=add_feat_axis)
+        generator = vxm.generators.scan_to_atlas(train_files, atlas,
+                                                 batch_size=conf.batch_size, bidir=conf.bidir,
+                                                 add_feat_axis=add_feat_axis)
+    else:
+        # scan-to-scan generator
+        print("Mona: use the scan to scan generator")
+        generator = vxm.generators.scan_to_scan(
+            train_files, in_order=conf.in_order, batch_size=conf.batch_size, bidir=conf.bidir, add_feat_axis=add_feat_axis)
 
-# prepare model folder
-model_dir = args.model_dir
-os.makedirs(model_dir, exist_ok=True)
+    # extract shape from sampled input
+    inshape = next(generator)[0][0].shape[1:-1]
+    print(f"Mona-2: inshape {inshape}")
 
-# device handling
-gpus = args.gpu.split(',')
-nb_gpus = len(gpus)
-device = 'cuda'
-os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
-assert np.mod(args.batch_size, nb_gpus) == 0, \
-    'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (args.batch_size, nb_gpus)
+    # prepare model folder
+    model_dir = conf.model_dir
+    os.makedirs(model_dir, exist_ok=True)
 
-# enabling cudnn determinism appears to speed up training by a lot
-torch.backends.cudnn.deterministic = not args.cudnn_nondet
+    # device handling
+    nb_gpus = conf.gpu
+    device = 'cuda' if nb_gpus > 0 else 'cpu'
+    assert np.mod(conf.batch_size, nb_gpus) == 0, \
+        'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (
+            conf.batch_size, nb_gpus)
 
-# unet architecture
-enc_nf = args.enc if args.enc else [16, 32, 32, 32]
-dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
+    # enabling cudnn determinism appears to speed up training by a lot
+    torch.backends.cudnn.deterministic = not conf.cudnn_nondet
 
-if args.load_model:
-    # load initial model (if specified)
-    model = vxm.networks.VxmDense.load(args.load_model, device)
-else:
-    # otherwise configure new model
-    model = vxm.networks.VxmDense(
-        inshape=inshape,
-        nb_unet_features=[enc_nf, dec_nf],
-        bidir=bidir,
-        int_steps=args.int_steps,
-        int_downsize=args.int_downsize
-    )
+    # unet architecture
+    enc_nf = conf.enc if conf.enc else [16, 32, 32, 32]
+    dec_nf = conf.dec if conf.dec else [32, 32, 32, 32, 32, 16, 16]
 
-if nb_gpus > 1:
-    # use multiple GPUs via DataParallel
-    model = torch.nn.DataParallel(model)
-    model.save = model.module.save
+    if conf.load_model:
+        # load initial model (if specified)
+        model = vxm.networks.VxmDense.load(conf.model_path, device)
+    else:
+        # otherwise configure new model
+        model = vxm.networks.VxmDense(
+            inshape=inshape,
+            nb_unet_features=[enc_nf, dec_nf],
+            bidir=bidir,
+            int_steps=conf.int_steps,
+            int_downsize=conf.int_downsize
+        )
 
-# prepare the model for training and send to device
-model.to(device)
-model.train()
+    if nb_gpus > 1:
+        # use multiple GPUs via DataParallel
+        model = torch.nn.DataParallel(model)
+        model.save = model.module.save
 
-# set optimizer
-optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # prepare the model for training and send to device
+    model.to(device)
+    model.train()
 
-# prepare image loss
-if args.image_loss == 'ncc':
-    image_loss_func = vxm.losses.NCC().loss
-elif args.image_loss == 'mse':
-    image_loss_func = vxm.losses.MSE().loss
-elif args.image_loss == 'mu':
-    image_loss_func = vxm.losses.MutualInformation().loss
-else:
-    raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
+    # set optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=conf.lr)
 
-# need two image loss functions if bidirectional
-if bidir:
-    losses = [image_loss_func, image_loss_func]
-    weights = [0.5, 0.5]
-else:
-    losses = [image_loss_func]
-    weights = [1]
+    # prepare image loss
+    if conf.image_loss == 'ncc':
+        image_loss_func = vxm.losses.NCC().loss
+    elif conf.image_loss == 'mse':
+        image_loss_func = vxm.losses.MSE().loss
+    elif conf.image_loss == 'mu3':
+        image_loss_func = vxm.losses.MutualInformation_v3().loss
+    elif conf.image_loss == 'mu4':
+        image_loss_func = vxm.losses.MutualInformation_v4().loss
+    elif conf.image_loss == 'mi':
+        image_loss_func = vxm.losses.NMI().metric
+    else:
+        raise ValueError(
+            'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
 
-if args.wandb:
-    wandb_logger = WandbLogger(project_name=args.wandb_project)
-wandb_logger.log_config(args)
+    mutual_info = vxm.losses.MutualInformation_v4().loss
 
-# prepare deformation loss
-losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
-weights += [args.weight]
+    # need two image loss functions if bidirectional
+    if bidir:
+        losses = [image_loss_func, image_loss_func]
+        weights = [0.5, 0.5]
+    else:
+        losses = [image_loss_func]
+        weights = [conf.image_loss_weight]
 
-global_step = 0
-# training loops
-for epoch in range(args.initial_epoch, args.epochs):
-    # print(f"Mona-3: epoch --- {epoch} ---")
-    # save model checkpoint
-    if epoch % 20 == 0:
-        model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+    # prepare deformation loss
+    losses += [vxm.losses.Grad(conf.norm, loss_mult=conf.int_downsize).loss]
+    weights += [conf.weight]
 
-    epoch_loss = []
-    epoch_total_loss = []
-    epoch_step_time = []
+    # wandb_logger.watchModel(model)
 
-    for step in range(args.steps_per_epoch):
-        global_step += 1
-        step_start_time = time.time()
+    global_step = 0
+    # training loops
+    for epoch in range(conf.initial_epoch, conf.epochs):
 
-        # generate inputs (and true outputs) and convert them to tensors
-        inputs, y_true = next(generator)
-        # TODO: comment this out when using 2d?
-        # inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
-        inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
-        y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
-        # print(f"Mona-4: the input length {len(inputs)} and size {inputs[0].shape} and {inputs[1].shape}")
-        # print(f"Mona-4: the output length {len(y_true)} and size {y_true[0].shape} and {y_true[1].shape}")
-        # run inputs through the model to produce a warped image and flow field
-        y_pred = model(*inputs)
-        # print(f"Mona-5: output shape {y_pred[0].shape}, length {len(y_pred)}")
+        if epoch % 100 == 0:
+            model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
-        
-        # calculate total loss
-        loss = 0
-        loss_list = []
-        for n, loss_function in enumerate(losses):
-            curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            loss_list.append(curr_loss.item())
-            loss += curr_loss
+        epoch_loss = []
+        epoch_total_loss = []
+        epoch_step_time = []
 
-        epoch_loss.append(loss_list)
-        epoch_total_loss.append(loss.item())
+        for step in range(conf.steps_per_epoch):
+            global_step += 1
+            step_start_time = time.time()
 
-        # backpropagate and optimize
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        # print(f"Mona:debug-5 - input shape {inputs.shape}, y_pred shape {y_pred.shape}, y_trye shape {y_true.shape}")
+            # generate inputs (and true outputs) and convert them to tensors
+            inputs, y_true = next(generator)
+            inputs = [torch.from_numpy(d).to(
+                device).float().permute(0, 3, 1, 2) for d in inputs]
+            y_true = [torch.from_numpy(d).to(
+                device).float().permute(0, 3, 1, 2) for d in y_true]
+            # run inputs through the model to produce a warped image and flow field
+            y_pred = model(*inputs)
 
-        # get compute time
-        epoch_step_time.append(time.time() - step_start_time)
+            # calculate total loss
+            loss = 0
+            loss_list = []
+            for n, loss_function in enumerate(losses):
+                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+                loss_list.append(curr_loss.item())
+                loss += curr_loss
+            epoch_loss.append(loss_list)
+            epoch_total_loss.append(loss.item())
 
-    # print epoch info
-    epoch_info = 'Epoch %d/%d' % (epoch + 1, args.epochs)
-    time_info = '%.4f sec/step' % np.mean(epoch_step_time)
-    losses_info = ', '.join(['%.4e' % f for f in np.mean(epoch_loss, axis=0)])
-    loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
-    print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
+            MI = mutual_info(y_true[0], y_pred[0]).item()
 
-    wandb_logger.log_epoch_metric(global_step, np.mean(epoch_total_loss), inputs, y_pred, y_true)
-# final model save
-model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
+            # backpropagate and optimize
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            # get compute time
+            epoch_step_time.append(time.time() - step_start_time)
+            if global_step % 200 == 0:
+                wandb_logger.log_step_metric(
+                    global_step, loss, loss_list[0], loss_list[1], MI, inputs, y_pred, y_true)
+
+        # print epoch info
+        epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)
+        time_info = '%.4f sec/step' % np.mean(epoch_step_time)
+        losses_info = ', '.join(
+            ['%.4e' % f for f in np.mean(epoch_loss, axis=0)])
+        loss_info = 'loss: %.4e  (%s)' % (
+            np.mean(epoch_total_loss), losses_info)
+        print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
+
+        wandb_logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
+            epoch_loss, axis=0)[0], np.mean(epoch_loss, axis=0)[1])
+    # final model save
+    model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str,
+                        default='configs/ncc_b1.yaml', help='config file')
+    args = parser.parse_args()
+
+    # load the config file
+    cfg = OmegaConf.load(args.config)
+    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
+    print(f"Mona debug - conf: {conf} and type: {type(conf)}")
+
+    if conf.wandb:
+        wandb_logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+
+    # run the training
+    train(conf, wandb_logger)

@@ -1,8 +1,8 @@
 % save the mat file to nifti format
 % Mona. Jul 19 2022
 addpath(genpath('tools'))
-input_folder = '../data/mapping2Xinqi';
-output_folder = '../data/mapping2Xinqi_nii';
+input_folder = '/Users/mona/workSpace/data/voxelmorph/MOLLI_registered';
+output_folder = '/Users/mona/workSpace/data/voxelmorph/MOLLI_registered_nii';
 dirs = dir(input_folder);
 for i = 4:length(dirs)
     subdirs = dir(fullfile(input_folder, dirs(i).name));

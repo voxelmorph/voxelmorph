@@ -23,10 +23,8 @@ if __name__ == '__main__':
     moved_folder = args.moved_folder
     warp_folder = args.warp_folder
 
-    if not os.path.exists(moved_folder):
-        os.makedirs(moved_folder)
-    if not os.path.exists(warp_folder):
-        os.makedirs(warp_folder)
+    os.makedirs(moved_folder, exist_ok=True)
+    os.makedirs(warp_folder, exist_ok=True)
     
     source_files = os.listdir(moving_folder)
     for subject in source_files:
@@ -34,7 +32,3 @@ if __name__ == '__main__':
         cmd = f"python scripts/torch/register_3dvol.py --moving {moving_folder}/{subject} --fixed {moving_folder}/{subject} --model {args.model} --moved {moved_folder}/{name} --warp {warp_folder}/{name}"
         print(cmd)
         os.system(cmd)
-            
-
-
-
