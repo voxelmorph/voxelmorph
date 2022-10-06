@@ -598,6 +598,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  stat_nb_feats=16,
                  network_stat_weight=0.001,
                  supervised_model=False,
+                 gaussian_likelihood=True,
                  **kwargs):
         """ 
         Parameters:
@@ -615,6 +616,9 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                 Default is 0.001.
             supervised_model: Whether data loss layer should be for a supervised model.
                 Default is False.
+            gaussian_likelihood: Whether to use a Gaussian likelihood model. If not, then uses
+                a learned layer derived from the Unet component as the likelihood. Default is
+                True.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -624,6 +628,11 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
+
+        # cannot use gaussian initializations with the Unet likelihood at this time
+        if not gaussian_likelihood:
+            assert(not init_mu)
+            assert(not init_sigma)
 
         # build warp network
         vxm_model = VxmDense(inshape,
@@ -652,39 +661,43 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         conv = _conv_block(combined, stat_nb_feats)
         conv = _conv_block(conv, nb_labels)
 
-        Conv = getattr(KL, 'Conv%dD' % ndims)
-        MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
-        weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
+        if gaussian_likelihood:
+            Conv = getattr(KL, 'Conv%dD' % ndims)
+            MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
+            weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
 
-        # convolve into mu and sigma volumes
-        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol',
-                           kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
+            # convolve into mu and sigma volumes
+            stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol',
                                kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+            stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
+                                   kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
 
-        # global pool to get 'final' stat (without reducing dimensions)
-        max_pool = [i - 2 for i in inshape]
-        stat_mu = MaxPooling(pool_size=max_pool, name='mu_pooling')(stat_mu_vol)
-        stat_logssq = MaxPooling(pool_size=max_pool, name='logssq_pooling')(stat_logssq_vol)
+            # global pool to get 'final' stat (without reducing dimensions)
+            max_pool = [i - 2 for i in inshape]
+            stat_mu = MaxPooling(pool_size=max_pool, name='mu_pooling')(stat_mu_vol)
+            stat_logssq = MaxPooling(pool_size=max_pool, name='logssq_pooling')(stat_logssq_vol)
 
-        # combine mu with initialization
-        if init_mu is not None:
-            init_mu = np.array(init_mu)
-            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu,
-                                name='comb_mu')(stat_mu)
+            # combine mu with initialization
+            if init_mu is not None:
+                init_mu = np.array(init_mu)
+                stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu,
+                                    name='comb_mu')(stat_mu)
 
-        # combine sigma with initialization
-        if init_sigma is not None:
-            init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
-            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq,
-                                    name='comb_sigma')(stat_logssq)
+            # combine sigma with initialization
+            if init_sigma is not None:
+                init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
+                stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq,
+                                        name='comb_sigma')(stat_logssq)
 
-        # unnorm loglike
-        def unnorm_loglike(img, mu, logsigmasq, use_log=True):
-            P = tfp.distributions.Normal(mu, K.exp(logsigmasq / 2))
-            return P.log_prob(img) if use_log else P.prob(img)
-        uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
-                              name='unsup_likelihood')([image, stat_mu, stat_logssq])
+            # unnorm loglike
+            def unnorm_loglike(img, mu, logsigmasq, use_log=True):
+                P = tfp.distributions.Normal(mu, K.exp(logsigmasq / 2))
+                return P.log_prob(img) if use_log else P.prob(img)
+            uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
+                                  name='unsup_likelihood')([image, stat_mu, stat_logssq])
+
+        else:
+            uloglhood = _conv_block(conv, nb_labels)
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
         def log_pdf(prob_ll, atl):
@@ -712,8 +725,10 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.vxm_model = vxm_model
         self.references.uloglhood = uloglhood
-        self.references.stat_mu = stat_mu
-        self.references.stat_logssq = stat_logssq
+        self.references.gaussian_likelihood = gaussian_likelihood
+        if gaussian_likelihood:
+            self.references.stat_mu = stat_mu
+            self.references.stat_logssq = stat_logssq
 
     def get_gaussian_warp_model(self):
         """
@@ -728,6 +743,19 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         ]
         return tf.keras.Model(self.inputs, outputs)
 
+    def get_likelihood_warp_model(self):
+        """
+        Extracts a predictor model from the ProbAtlasSegmentation model that directly
+        outputs the log likelihood model, the gaussian stats (if appropriate) and warp field.
+        """
+        if self.references.gaussian_likelihood:
+            return self.get_gaussian_warp_model()
+        else:
+            outputs = [
+                self.references.uloglhood,
+                self.outputs[-1]
+            ]
+            return tf.keras.Model(self.inputs, outputs)
 
 
 ###############################################################################
