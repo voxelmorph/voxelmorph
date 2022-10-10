@@ -590,6 +590,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  inshape,
                  nb_labels,
                  nb_unet_features=None,
+                 nb_unet_conv_per_level=1,
                  init_mu=None,
                  init_sigma=None,
                  warp_atlas=True,
@@ -603,6 +604,8 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels in probabilistic atlas.
             nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
+            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
                 See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
@@ -625,6 +628,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         # build warp network
         vxm_model = VxmDense(inshape,
                              nb_unet_features=nb_unet_features,
+                             nb_unet_conv_per_level=nb_unet_conv_per_level,
                              src_feats=nb_labels,
                              **kwargs)
 
@@ -723,6 +727,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             self.outputs[-1]
         ]
         return tf.keras.Model(self.inputs, outputs)
+
 
 
 ###############################################################################
