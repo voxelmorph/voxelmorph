@@ -986,7 +986,7 @@ def affine_matrix_to_params(mat, deg=True):
     zero_shape = tf.concat((tf.shape(scale0), [(num_dim - 1) * 3]), axis=0)
     zero = tf.zeros(zero_shape)
     par = tf.concat((zero, scale, shear), axis=-1)
-    strip = vxm.utils.params_to_affine_matrix(par, ndims=num_dim)[..., :-1]
+    strip = params_to_affine_matrix(par, ndims=num_dim)[..., :-1]
     mat = mat @ tf.linalg.inv(strip)
     rot = rotation_matrix_to_angles(mat, deg=deg)
 
