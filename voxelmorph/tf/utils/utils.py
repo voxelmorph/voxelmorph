@@ -119,7 +119,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
             transforms. Includes only the N spatial dimensions. If None, the
             shape of the input image will be used.
 
-    Return:
+    Returns:
         Tensor whose voxel values are the values of the input tensor
         interpolated at the locations defined by the transform.
 
@@ -829,3 +829,46 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
 
     return tf.squeeze(out) if len(shape) < 2 else out
 
+
+def fit_affine(x_source, x_target, weights=None):
+    """Fit an affine transform between two sets of corresponding points.
+
+    Fit an N-dimensional affine transform between two sets of M corresponding
+    points in an ordinary or weighted least-squares sense. Note that when
+    working with images, source coordinates correspond to the target image and
+    vice versa.
+
+    Arguments:
+        x_source: Array-like source coordinates of shape (..., M, N).
+        x_target: Array-like target coordinates of shape (..., M, N).
+        weights: Optional array-like weights of shape (..., M) or (..., M, 1).
+
+    Returns:
+        mat: Affine transformation matrix of shape (..., N, N + 1), fitted such
+            that ``x_t = mat[..., :-1] @ x_s + mat[..., -1:]``, where x_s is
+            ``x_s = tf.linalg.matrix_transpose(x_t)``, and similarly for x_t
+            and `x_target`. The last row of `mat` is omitted as it is always
+            ``(*[0] * N, 1)``.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    shape = tf.concat((tf.shape(x_target)[:-1], [1]), axis=0)
+    ones = tf.ones(shape, dtype=x_target.dtype)
+    x = tf.concat((x_target, ones), axis=-1)
+    x_transp = tf.linalg.matrix_transpose(x)
+    y = x_source
+
+    if weights is not None:
+        if len(weights.shape) == len(x.shape):
+            weights = weights[..., 0]
+        x_transp *= tf.expand_dims(weights, axis=-2)
+
+    beta = tf.linalg.inv(x_transp @ x) @ x_transp @ y
+    return tf.linalg.matrix_transpose(beta)
