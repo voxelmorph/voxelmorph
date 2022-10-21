@@ -846,6 +846,153 @@ def params_to_affine_matrix(par,
     return tf.squeeze(out) if len(shape) < 2 else out
 
 
+def rotation_matrix_to_angles(mat, deg=True):
+    """Compute Euler angles from an N-dimensional rotation matrix.
+
+    We apply right-handed intrinsic rotations as R = X @ Y @ Z, where X, Y,
+    and Z are matrices describing rotations about the x, y, and z-axis,
+    respectively (see angles_to_rotation_matrix). Labeling these axes with
+    indices 1-3 in the 3D case, we decompose the matrix
+
+            [            c2*c3,             −c2*s3,      s2]
+        R = [ s1*s2*c3 + c1*s3,  −s1*s2*s3 + c1*c3,  −s1*c2],
+            [−c1*s2*c3 + s1*s3,   c1*s2*s3 + s1*c3,   c1*c2]
+
+    where si and ci are the sine and cosine of the angle of rotation about
+    axis i. When the angle of rotation about the y-axis is 90 or -90 degrees,
+    the system loses one degree of freedom, and the solution is not unique.
+    In this gimbal lock case, we set the angle `ang[0]` to zero and solve for
+    `ang[2]`.
+
+    Arguments:
+        mat: Array-like input matrix to derive rotation angles from, of shape
+            (..., N, N + 1) or (..., N + 1, N + 1), where N is 2 or 3.
+        deg: Return rotation angles in degrees instead of radians.
+
+    Returns:
+        ang: Tensor of shape (..., M) holding the derived rotation angles. The
+        size M of the right-most dimension is 3 in 3D and 1 in 2D.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    if not tf.is_tensor(mat) or mat.dtype != tf.float32:
+        mat = tf.cast(mat, tf.float32)
+
+    # Input shape.
+    num_dim = mat.shape[-1]
+    assert num_dim in (2, 3), f'only 2D and 3D supported'
+    assert mat.shape[-2] == num_dim, 'invalid matrix shape'
+
+    # Clip input to inverse trigonometric functions as rounding errors can
+    # move them out of the interval [-1, 1].
+    clip = lambda x: tf.clip_by_value(x, clip_value_min=-1, clip_value_max=1)
+
+    if num_dim == 2:
+        y = clip(mat[..., 1, -2])
+        x = clip(mat[..., 0, -2])
+        ang = tf.atan2(y, x)[..., tf.newaxis]
+
+    else:
+        ang2 = tf.asin(clip(mat[..., 0, 2]))
+
+        # Case abs(ang2) == 90 deg. Make ang1 zero as solution is not unique.
+        ang1_a = tf.zeros_like(ang2)
+        ang3_a = tf.atan2(y=clip(mat[..., 1, 0]), x=clip(mat[..., 1, 1]))
+
+        # Case abs(ang2) != 90 deg. Use safe divide, as we will always compute
+        # both cases, even if c2 is zero.
+        c2 = tf.cos(ang2)
+        y = tf.math.divide_no_nan(-mat[..., 1, 2], c2)
+        x = tf.math.divide_no_nan(mat[..., 2, 2], c2)
+        ang1_b = tf.atan2(clip(y), clip(x))
+        y = tf.math.divide_no_nan(-mat[..., 0, 1], c2)
+        x = tf.math.divide_no_nan(mat[..., 0, 0], c2)
+        ang3_b = tf.atan2(clip(y), clip(x))
+
+        # Choose between cases.
+        is_case = tf.abs((tf.abs(ang2) - 0.5 * np.pi)) < 1e-6
+        ang1 = tf.where(is_case, ang1_a, ang1_b)
+        ang3 = tf.where(is_case, ang3_a, ang3_b)
+        ang = tf.stack((ang1, ang2, ang3), axis=-1)
+
+    if deg:
+        ang *= 180 / np.pi
+    return ang
+
+
+def affine_matrix_to_params(mat, deg=True):
+    """Derive affine parameters from an N-dimensional transformation matrix.
+
+    The affine transform operates in a right-handed frame of reference, with
+    right-handed intrinsic rotations (see params_to_affine_matrix).
+
+    Arguments:
+        mat: Array-like input matrix to derive affine parameters from, of
+            shape (..., N, N + 1) or (..., N + 1, N + 1), as the last row
+            always is ``(*[0] * N, 1)``. N can be 2 or 3.
+        deg: Return rotation angles in degrees instead of radians.
+
+    Returns:
+        par: Tensor of shape (..., K) holding the affine parameters derived
+            from `mat`, where K is ``N * (N + 1)``. The parameters along the
+            last axis represent, in order: translation, rotation, scaling, and
+            shear. In 3D, for example, the first three indices specify
+            translations along the x, y, and z-axis, and similarly for the
+            remaining indices.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    if not tf.is_tensor(mat) or mat.dtype != tf.float32:
+        mat = tf.cast(mat, tf.float32)
+
+    # Input shape.
+    num_dim = mat.shape[-1] - 1
+    assert num_dim in (2, 3), f'invalid dimensionality {num_dim}'
+    assert mat.shape[-2] - num_dim in (0, 1), f'invalid shape {mat.shape}'
+
+    # Translation and scaling. Fix negative determinants.
+    shift = mat[..., :num_dim, -1]
+    mat = mat[..., :num_dim, :num_dim]
+    lower = tf.linalg.cholesky(tf.linalg.matrix_transpose(mat) @ mat)
+    scale = tf.linalg.diag_part(lower)
+    scale0 = scale[..., 0] * tf.sign(tf.linalg.det(mat))
+    scale = tf.concat((scale0[..., tf.newaxis], scale[..., 1:]), axis=-1)
+
+    # Strip scaling. Shear as upper triangular part.
+    strip = tf.linalg.diag(scale)
+    upper = tf.linalg.matrix_transpose(lower)
+    upper = tf.linalg.inv(strip) @ upper
+    flat_shape = tf.concat((tf.shape(scale0), [num_dim ** 2]), axis=0)
+    upper = tf.reshape(upper, flat_shape)
+    ind = (1,) if num_dim == 2 else (1, 2, 5)
+    shear = tf.gather(upper, ind, axis=-1)
+
+    # Rotations after stripping scale and shear. Treat shape as a tensor to
+    # support dynamically sized input matrices.
+    zero_shape = tf.concat((tf.shape(scale0), [(num_dim - 1) * 3]), axis=0)
+    zero = tf.zeros(zero_shape)
+    par = tf.concat((zero, scale, shear), axis=-1)
+    strip = vxm.utils.params_to_affine_matrix(par, ndims=num_dim)[..., :-1]
+    mat = mat @ tf.linalg.inv(strip)
+    rot = rotation_matrix_to_angles(mat, deg=deg)
+
+    return tf.concat((shift, rot, scale, shear), axis=-1)
+
+
 def fit_affine(x_source, x_target, weights=None):
     """Fit an affine transform between two sets of corresponding points.
 
