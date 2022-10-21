@@ -646,6 +646,98 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     return loc - tf.stack(mesh, axis=ndims)
 
 
+def angles_to_rotation_matrix(ang, deg=True, ndims=3):
+    """
+    Construct N-dimensional rotation matrices from angles, where N is 2 or
+    3. The direction of rotation for all axes follows the right-hand rule: the
+    thumb being the rotation axis, a positive angle defines a rotation in the
+    direction pointed to by the other fingers. Rotations are intrinsic, that
+    is, applied in the body-centered frame of reference. The function supports
+    inputs with or without batch dimensions.
+
+    In 3D, rotations are applied in the order ``R = X @ Y @ Z``, where X, Y,
+    and Z are matrices defining rotations about the x, y, and z-axis,
+    respectively.
+
+    Arguments:
+        ang: Array-like input angles of shape (..., M), specifying rotations
+            about the first M axes of space. M must not exceed N. Any missing
+            angles will be set to zero. Lists and tuples will be stacked along
+            the last dimension.
+        deg: Interpret `ang` as angles in degrees instead of radians.
+        ndims: Number of spatial dimensions. Must be 2 or 3.
+
+    Returns:
+        mat: Rotation matrices of shape (..., N, N) constructed from `ang`.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    if ndims not in (2, 3):
+        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
+
+    if isinstance(ang, (list, tuple)):
+        ang = tf.stack(ang, axis=-1)
+
+    if not tf.is_tensor(ang) or not ang.dtype.is_floating:
+        ang = tf.cast(ang, dtype='float32')
+
+    # Add dimension to scalars
+    if not ang.shape.as_list():
+        ang = tf.reshape(ang, shape=(1,))
+
+    # Validate shape
+    num_ang = 1 if ndims == 2 else 3
+    shape = ang.shape.as_list()
+    if shape[-1] > num_ang:
+        raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
+
+    # Set missing angles to zero
+    width = np.zeros((len(shape), 2), dtype=np.int32)
+    width[-1, -1] = max(num_ang - shape[-1], 0)
+    ang = tf.pad(ang, paddings=width)
+
+    # Compute sine and cosine
+    if deg:
+        ang *= np.pi / 180
+    c = tf.split(tf.cos(ang), num_or_size_splits=num_ang, axis=-1)
+    s = tf.split(tf.sin(ang), num_or_size_splits=num_ang, axis=-1)
+
+    # Construct matrices
+    if ndims == 2:
+        out = tf.stack((
+            tf.concat([c[0], -s[0]], axis=-1),
+            tf.concat([s[0], c[0]], axis=-1),
+        ), axis=-2)
+
+    else:
+        one, zero = tf.ones_like(c[0]), tf.zeros_like(c[0])
+        rot_x = tf.stack((
+            tf.concat([one, zero, zero], axis=-1),
+            tf.concat([zero, c[0], -s[0]], axis=-1),
+            tf.concat([zero, s[0], c[0]], axis=-1),
+        ), axis=-2)
+        rot_y = tf.stack((
+            tf.concat([c[1], zero, s[1]], axis=-1),
+            tf.concat([zero, one, zero], axis=-1),
+            tf.concat([-s[1], zero, c[1]], axis=-1),
+        ), axis=-2)
+        rot_z = tf.stack((
+            tf.concat([c[2], -s[2], zero], axis=-1),
+            tf.concat([s[2], c[2], zero], axis=-1),
+            tf.concat([zero, zero, one], axis=-1),
+        ), axis=-2)
+        out = tf.matmul(rot_x, tf.matmul(rot_y, rot_z))
+
+    return tf.squeeze(out) if len(shape) < 2 else out
+
+
 def params_to_affine_matrix(par,
                             deg=True,
                             shift_scale=False,
@@ -750,98 +842,6 @@ def params_to_affine_matrix(par,
         one = tf.ones(shape_one, dtype=shift.dtype)
         row = tf.concat((zeros, one), axis=-1)
         out = tf.concat([out, row], axis=-2)
-
-    return tf.squeeze(out) if len(shape) < 2 else out
-
-
-def angles_to_rotation_matrix(ang, deg=True, ndims=3):
-    """
-    Construct N-dimensional rotation matrices from angles, where N is 2 or
-    3. The direction of rotation for all axes follows the right-hand rule: the
-    thumb being the rotation axis, a positive angle defines a rotation in the
-    direction pointed to by the other fingers. Rotations are intrinsic, that
-    is, applied in the body-centered frame of reference. The function supports
-    inputs with or without batch dimensions.
-
-    In 3D, rotations are applied in the order ``R = X @ Y @ Z``, where X, Y,
-    and Z are matrices defining rotations about the x, y, and z-axis,
-    respectively.
-
-    Arguments:
-        ang: Array-like input angles of shape (..., M), specifying rotations
-            about the first M axes of space. M must not exceed N. Any missing
-            angles will be set to zero. Lists and tuples will be stacked along
-            the last dimension.
-        deg: Interpret `ang` as angles in degrees instead of radians.
-        ndims: Number of spatial dimensions. Must be 2 or 3.
-
-    Returns:
-        mat: Rotation matrices of shape (..., N, N) constructed from `ang`.
-
-    Author:
-        mu40
-
-    If you find this function useful, please consider citing:
-        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
-        SynthMorph: learning contrast-invariant registration without acquired images
-        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
-        https://doi.org/10.1109/TMI.2021.3116879
-    """
-    if ndims not in (2, 3):
-        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
-
-    if isinstance(ang, (list, tuple)):
-        ang = tf.stack(ang, axis=-1)
-
-    if not tf.is_tensor(ang) or not ang.dtype.is_floating:
-        ang = tf.cast(ang, dtype='float32')
-
-    # Add dimension to scalars
-    if not ang.shape.as_list():
-        ang = tf.reshape(ang, shape=(1,))
-
-    # Validate shape
-    num_ang = 1 if ndims == 2 else 3
-    shape = ang.shape.as_list()
-    if shape[-1] > num_ang:
-        raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
-
-    # Set missing angles to zero
-    width = np.zeros((len(shape), 2), dtype=np.int32)
-    width[-1, -1] = max(num_ang - shape[-1], 0)
-    ang = tf.pad(ang, paddings=width)
-
-    # Compute sine and cosine
-    if deg:
-        ang *= np.pi / 180
-    c = tf.split(tf.cos(ang), num_or_size_splits=num_ang, axis=-1)
-    s = tf.split(tf.sin(ang), num_or_size_splits=num_ang, axis=-1)
-
-    # Construct matrices
-    if ndims == 2:
-        out = tf.stack((
-            tf.concat([c[0], -s[0]], axis=-1),
-            tf.concat([s[0], c[0]], axis=-1),
-        ), axis=-2)
-
-    else:
-        one, zero = tf.ones_like(c[0]), tf.zeros_like(c[0])
-        rot_x = tf.stack((
-            tf.concat([one, zero, zero], axis=-1),
-            tf.concat([zero, c[0], -s[0]], axis=-1),
-            tf.concat([zero, s[0], c[0]], axis=-1),
-        ), axis=-2)
-        rot_y = tf.stack((
-            tf.concat([c[1], zero, s[1]], axis=-1),
-            tf.concat([zero, one, zero], axis=-1),
-            tf.concat([-s[1], zero, c[1]], axis=-1),
-        ), axis=-2)
-        rot_z = tf.stack((
-            tf.concat([c[2], -s[2], zero], axis=-1),
-            tf.concat([s[2], c[2], zero], axis=-1),
-            tf.concat([zero, zero, one], axis=-1),
-        ), axis=-2)
-        out = tf.matmul(rot_x, tf.matmul(rot_y, rot_z))
 
     return tf.squeeze(out) if len(shape) < 2 else out
 
