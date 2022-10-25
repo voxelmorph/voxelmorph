@@ -58,6 +58,7 @@ class SpatialTransformer(Layer):
                  single_transform=False,
                  fill_value=None,
                  shift_center=True,
+                 shape=None,
                  **kwargs):
         """
         Parameters: 
@@ -70,6 +71,9 @@ class SpatialTransformer(Layer):
                 If None, the nearest neighbors will be used.
             shift_center: Shift grid to image center when converting affine
                 transforms to dense transforms.
+            shape: ND output shape used when converting affine transforms to dense
+                transforms. Includes only the N spatial dimensions. If None, the
+                shape of the input image will be used.
         """
         self.interp_method = interp_method
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
@@ -77,6 +81,7 @@ class SpatialTransformer(Layer):
         self.single_transform = single_transform
         self.fill_value = fill_value
         self.shift_center = shift_center
+        self.shape = shape
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -87,6 +92,7 @@ class SpatialTransformer(Layer):
             'single_transform': self.single_transform,
             'fill_value': self.fill_value,
             'shift_center': self.shift_center,
+            'shape': self.shape,
         })
         return config
 
@@ -133,7 +139,8 @@ class SpatialTransformer(Layer):
 
         # convert affine matrix to warp field
         if self.is_affine:
-            fun = lambda x: utils.affine_to_dense_shift(x, vol.shape[1:-1],
+            shape = vol.shape[1:-1] if self.shape is None else self.shape
+            fun = lambda x: utils.affine_to_dense_shift(x, shape,
                                                         shift_center=self.shift_center,
                                                         indexing=self.indexing)
             trf = tf.map_fn(fun, trf)
@@ -378,7 +385,7 @@ class ComposeTransform(Layer):
         """
         compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
                                             shift_center=self.shift_center, indexing=self.indexing)
-        return tf.map_fn(compose, transforms, dtype=transforms[0].dtype)
+        return tf.map_fn(compose, transforms, fn_output_signature=transforms[0].dtype)
 
     def compute_output_shape(self, input_shape):
         return self.outshape
@@ -441,7 +448,7 @@ class InvertAffine(Layer):
         Parameters
             matrix: Affine matrix of shape [B, N, N+1] to invert.
         """
-        return tf.map_fn(utils.invert_affine, matrix, dtype='float32')
+        return tf.map_fn(utils.invert_affine, matrix, fn_output_signature='float32')
 
 
 class ParamsToAffineMatrix(Layer):
@@ -452,7 +459,7 @@ class ParamsToAffineMatrix(Layer):
     If you find this layer useful, please consider citing:
         M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
         SynthMorph: learning contrast-invariant registration without acquired images
-        IEEE Transactions on Medical Imaging (TMI), in press, 2021
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
         https://doi.org/10.1109/TMI.2021.3116879
     """
 

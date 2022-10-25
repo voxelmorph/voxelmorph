@@ -21,15 +21,15 @@ See list of pre-trained models available [here](data/readme.md#models).
 
 ## Training
 
-If you would like to train your own model, you will likely need to customize some of the data loading code in `voxelmorph/generators.py` for your own datasets and data formats. However, it is possible to run many of the example scripts out-of-the-box, assuming that you have a directory containing training data files in npz (numpy) format. It's assumed that each npz file in your data folder has a `vol` parameter, which points to the numpy image data to be registered, and an optional `seg` variable, which points to a corresponding discrete segmentation (for semi-supervised learning). It's also assumed that the shape of all image data in a directory is consistent.
+If you would like to train your own model, you will likely need to customize some of the data-loading code in `voxelmorph/generators.py` for your own datasets and data formats. However, it is possible to run many of the example scripts out-of-the-box, assuming that you provide a list of filenames in the training dataset. Training data can be in the NIfTI, MGZ, or npz (numpy) format, and it's assumed that each npz file in your data list has a `vol` parameter, which points to the image data to be registered, and an optional `seg` variable, which points to a corresponding discrete segmentation (for semi-supervised learning). It's also assumed that the shape of all training image data is consistent, but this, of course, can be handled in a customized generator if desired.
 
-For a given `/path/to/training/data`, the following script will train the dense network (described in MICCAI 2018 by default) using scan-to-scan registration. Model weights will be saved to a path specified by the `--model-dir` flag.
+For a given image list file `/images/list.txt` and output directory `/models/output`, the following script will train an image-to-image registration network (described in MICCAI 2018 by default) with an unsupervised loss. Model weights will be saved to a path specified by the `--model-dir` flag.
 
 ```
-./scripts/tf/train.py /path/to/training/data --model-dir /path/to/models/output --gpu 0
+./scripts/tf/train.py --img-list /images/list.txt --model-dir /models/output --gpu 0
 ```
 
-Scan-to-atlas registration can be enabled by providing an atlas file with the `--atlas atlas.npz` command line flag. If you'd like to train using the original dense CVPR network (no diffeomorphism), use the `--int-steps 0` flag to specify no flow integration steps. Use the `--help` flag to inspect all of the command line options that can be used to fine-tune network architecture and training.
+The `--img-prefix` and `--img-suffix` flags can be used to provide a consistent prefix or suffix to each path specified in the image list. Image-to-atlas registration can be enabled by providing an atlas file, e.g. `--atlas atlas.npz`. If you'd like to train using the original dense CVPR network (no diffeomorphism), use the `--int-steps 0` flag to specify no flow integration steps. Use the `--help` flag to inspect all of the command line options that can be used to fine-tune network architecture and training.
 
 
 ## Registration
@@ -83,15 +83,15 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
   * HyperMorph, avoiding the need to tune registration hyperparameters:   
 
     **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
-    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)
+    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
     IPMI: Information Processing in Medical Imaging. 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
 
-  * SynthMorph, avoiding the need to have data at training (!):  
+  * [SynthMorph](https://synthmorph.voxelmorph.net), avoiding the need to have data at training (!):  
 
-    **Learning MRI Contrast-Agnostic Registration.**
-    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)
-    ISBI: IEEE International Symposium on Biomedical Imaging, pp 899-903. 2021. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
+    **SynthMorph: learning contrast-invariant registration without acquired images.**  
+    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    IEEE TMI: Transactions on Medical Imaging. 2022. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
   

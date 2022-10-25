@@ -115,7 +115,8 @@ class VxmDense(ne.modelio.LoadableModel):
         if hyp_model is not None:
             hyp_input = hyp_model.input
             hyp_tensor = hyp_model.output
-            inputs = (*inputs, hyp_input)
+            if not any([hyp_input is inp for inp in inputs]):
+                inputs = (*inputs, hyp_input)
         else:
             hyp_input = None
             hyp_tensor = None
@@ -364,6 +365,7 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
 
         # cache pointers to important layers and tensors for future reference
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
+        self.references.vxm_model = vxm_model
         self.references.pos_flow = vxm_model.references.pos_flow
         self.references.neg_flow = vxm_model.references.neg_flow
 
@@ -591,7 +593,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  init_mu=None,
                  init_sigma=None,
                  warp_atlas=True,
-                 stat_post_warp=True,
+                 stat_post_warp=False,
                  stat_nb_feats=16,
                  network_stat_weight=0.001,
                  supervised_model=False,
@@ -604,7 +606,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                 See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
-            stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
+            stat_post_warp: Computes gaussian stats using the warped atlas. Default is False.
             stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
             network_stat_weight: Relative weight of the stats learned by the network. 
                 Default is 0.001.
@@ -694,7 +696,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         if not supervised_model:
             loss_vol = KL.Lambda(lambda x: logsum(x), name='loss_vol')(logpdf)
         else:
-            loss_vol = logpdf
+            loss_vol = KL.Softmax(name='pdf')(logpdf)
 
         # initialize the keras model
         # need to swap the first two inputs, in order to warp the atlas to the image
@@ -1129,6 +1131,7 @@ class Unet(tf.keras.Model):
                  hyp_input=None,
                  hyp_tensor=None,
                  final_activation_function=None,
+                 kernel_initializer='he_normal',
                  name='unet'):
         """
         Parameters:
@@ -1148,6 +1151,8 @@ class Unet(tf.keras.Model):
             hyp_input: Hypernetwork input tensor. Enables HyperConvs if provided. Default is None.
             hyp_tensor: Hypernetwork final tensor. Enables HyperConvs if provided. Default is None.
             final_activation_function: Replace default activation function in final layer of unet.
+            kernel_initializer: Initializer for the kernel weights matrix for conv layers. Default
+                is 'he_normal'.
             name: Model name - also used as layer name prefix. Default is 'unet'.
         """
 
@@ -1165,7 +1170,7 @@ class Unet(tf.keras.Model):
             model_inputs = input_model.inputs
 
         # add hyp_input tensor if provided
-        if hyp_input is not None:
+        if hyp_input is not None and not any([hyp_input is inp for inp in model_inputs]):
             model_inputs = model_inputs + [hyp_input]
 
         # default encoder and decoder layer features if nothing provided
@@ -1205,7 +1210,8 @@ class Unet(tf.keras.Model):
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_enc_conv_%d_%d' % (name, level, conv)
-                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor)
+                last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
+                                   kernel_initializer=kernel_initializer)
             enc_layers.append(last)
 
             # temporarily use maxpool since downsampling doesn't exist in keras
@@ -1225,7 +1231,8 @@ class Unet(tf.keras.Model):
                 nf = dec_nf[level * nb_conv_per_level + conv]
                 layer_name = '%s_dec_conv_%d_%d' % (name, real_level, conv)
                 last = _conv_block(last, nf, name=layer_name, do_res=do_res, hyp_tensor=hyp_tensor,
-                                   include_activation=activate(level, conv))
+                                   include_activation=activate(level, conv),
+                                   kernel_initializer=kernel_initializer)
 
             # upsample
             if level < (nb_levels - 1 - nb_upsample_skips):
@@ -1243,7 +1250,8 @@ class Unet(tf.keras.Model):
         for num, nf in enumerate(final_convs):
             layer_name = '%s_dec_final_conv_%d' % (name, num)
             last = _conv_block(last, nf, name=layer_name, hyp_tensor=hyp_tensor,
-                               include_activation=activate(num))
+                               include_activation=activate(num),
+                               kernel_initializer=kernel_initializer)
 
         # add the final activation function is set
         if final_activation_function is not None:
@@ -1303,7 +1311,7 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
-                include_activation=True):
+                include_activation=True, kernel_initializer='he_normal'):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
@@ -1316,7 +1324,7 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
         conv_inputs = [x, hyp_tensor]
     else:
         Conv = getattr(KL, 'Conv%dD' % ndims)
-        extra_conv_params['kernel_initializer'] = 'he_normal'
+        extra_conv_params['kernel_initializer'] = kernel_initializer
         conv_inputs = x
 
     convolved = Conv(nfeat, kernel_size=3, padding='same',
