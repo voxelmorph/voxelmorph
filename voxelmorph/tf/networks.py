@@ -593,7 +593,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  init_mu=None,
                  init_sigma=None,
                  warp_atlas=True,
-                 stat_post_warp=True,
+                 stat_post_warp=False,
                  stat_nb_feats=16,
                  network_stat_weight=0.001,
                  supervised_model=False,
@@ -606,7 +606,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                 See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
-            stat_post_warp: Computes gaussian stats using the warped atlas. Default is True.
+            stat_post_warp: Computes gaussian stats using the warped atlas. Default is False.
             stat_nb_feats: Number of features in the stats convolutional layer. Default is 16.
             network_stat_weight: Relative weight of the stats learned by the network. 
                 Default is 0.001.

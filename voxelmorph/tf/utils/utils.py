@@ -5,7 +5,17 @@ If you use this code, please cite one of the voxelmorph papers:
 https://github.com/voxelmorph/voxelmorph/blob/master/citations.bib
 
 Contact: adalca [at] csail [dot] mit [dot] edu
-License: GPLv3
+
+Copyright 2020 Adrian V. Dalca
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
 """
 
 # internal python imports
@@ -82,35 +92,55 @@ def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute
 ###############################################################################
 
 
-def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None):
-    """
-    transform (interpolation N-D volumes (features) given shifts at each location in tensorflow
+def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None,
+              shift_center=True, shape=None):
+    """Apply affine or dense transforms to images in N dimensions.
 
-    Essentially interpolates volume vol at locations determined by loc_shift. 
-    This is a spatial transform in the sense that at location [x] we now have the data from, 
-    [x + shift] so we've moved data.
+    Essentially interpolates the input ND tensor at locations determined by
+    loc_shift. The latter can be an affine transform or dense field of location
+    shifts in the sense that at location x we now have the data from x + dx, so
+    we moved the data.
 
     Args:
-        vol (Tensor): volume with size vol_shape or [*vol_shape, C]
-            where C is the number of channels
-        loc_shift: shift volume [*new_vol_shape, D] or [*new_vol_shape, C, D]
-            where C is the number of channels, and D is the dimentionality len(vol_shape)
-            If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
-        interp_method (default:'linear'): 'linear', 'nearest'
-        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
-            In general, prefer to leave this 'ij'
-        fill_value (default: None): value to use for points outside the domain.
-            If None, the nearest neighbors will be used.
+        vol: tensor or array-like structure  of size vol_shape or
+            (*vol_shape, C), where C is the number of channels.
+        loc_shift: Affine transformation matrix of shape (N, N+1) or a shift
+            volume of shape (*new_vol_shape, D) or (*new_vol_shape, C, D),
+            where C is the number of channels, and D is the dimentionality
+            D = len(vol_shape). If the shape is (*new_vol_shape, D), the same
+            transform applies to all channels of of the input tensor.
+        interp_method: 'linear' or 'nearest'.
+        indexing: 'ij' (matrix) or 'xy' (cartesian). In general, prefer 'ij'.
+        fill_value: Value to use for points sampled outside the domain. If
+            None, the nearest neighbors will be used.
+        shift_center: Shift grid to image center when converting affine
+            transforms to dense transforms.
+        shape: ND output shape used when converting affine transforms to dense
+            transforms. Includes only the N spatial dimensions. If None, the
+            shape of the input image will be used.
 
-    Return:
-        new interpolated volumes in the same size as loc_shift[0]
+    Returns:
+        Tensor whose voxel values are the values of the input tensor
+        interpolated at the locations defined by the transform.
 
-    Keyworks:
+    Keywords:
         interpolation, sampler, resampler, linear, bilinear
     """
+    # convert data type if needed
+    ftype = tf.float32
+    if not tf.is_tensor(vol) or not vol.dtype.is_floating:
+        vol = tf.cast(vol, ftype)
+    if not tf.is_tensor(loc_shift) or not loc_shift.dtype.is_floating:
+        loc_shift = tf.cast(loc_shift, ftype)
 
-    # parse shapes.
-    # location volshape, including channels if available
+    # convert affine to location shift (will validate affine shape)
+    if is_affine_shape(loc_shift.shape):
+        loc_shift = affine_to_dense_shift(loc_shift,
+                                          shape=vol.shape[1:-1] if shape is None else shape,
+                                          shift_center=shift_center,
+                                          indexing=indexing)
+
+    # parse spatial location shape, including channels if available
     loc_volshape = loc_shift.shape[:-1]
     if isinstance(loc_volshape, (tf.compat.v1.Dimension, tf.TensorShape)):
         loc_volshape = loc_volshape.as_list()
@@ -616,30 +646,131 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
     return loc - tf.stack(mesh, axis=ndims)
 
 
+def angles_to_rotation_matrix(ang, deg=True, ndims=3):
+    """
+    Construct N-dimensional rotation matrices from angles, where N is 2 or
+    3. The direction of rotation for all axes follows the right-hand rule: the
+    thumb being the rotation axis, a positive angle defines a rotation in the
+    direction pointed to by the other fingers. Rotations are intrinsic, that
+    is, applied in the body-centered frame of reference. The function supports
+    inputs with or without batch dimensions.
+
+    In 3D, rotations are applied in the order ``R = X @ Y @ Z``, where X, Y,
+    and Z are matrices defining rotations about the x, y, and z-axis,
+    respectively.
+
+    Arguments:
+        ang: Array-like input angles of shape (..., M), specifying rotations
+            about the first M axes of space. M must not exceed N. Any missing
+            angles will be set to zero. Lists and tuples will be stacked along
+            the last dimension.
+        deg: Interpret `ang` as angles in degrees instead of radians.
+        ndims: Number of spatial dimensions. Must be 2 or 3.
+
+    Returns:
+        mat: Rotation matrices of shape (..., N, N) constructed from `ang`.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    if ndims not in (2, 3):
+        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
+
+    if isinstance(ang, (list, tuple)):
+        ang = tf.stack(ang, axis=-1)
+
+    if not tf.is_tensor(ang) or not ang.dtype.is_floating:
+        ang = tf.cast(ang, dtype='float32')
+
+    # Add dimension to scalars
+    if not ang.shape.as_list():
+        ang = tf.reshape(ang, shape=(1,))
+
+    # Validate shape
+    num_ang = 1 if ndims == 2 else 3
+    shape = ang.shape.as_list()
+    if shape[-1] > num_ang:
+        raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
+
+    # Set missing angles to zero
+    width = np.zeros((len(shape), 2), dtype=np.int32)
+    width[-1, -1] = max(num_ang - shape[-1], 0)
+    ang = tf.pad(ang, paddings=width)
+
+    # Compute sine and cosine
+    if deg:
+        ang *= np.pi / 180
+    c = tf.split(tf.cos(ang), num_or_size_splits=num_ang, axis=-1)
+    s = tf.split(tf.sin(ang), num_or_size_splits=num_ang, axis=-1)
+
+    # Construct matrices
+    if ndims == 2:
+        out = tf.stack((
+            tf.concat([c[0], -s[0]], axis=-1),
+            tf.concat([s[0], c[0]], axis=-1),
+        ), axis=-2)
+
+    else:
+        one, zero = tf.ones_like(c[0]), tf.zeros_like(c[0])
+        rot_x = tf.stack((
+            tf.concat([one, zero, zero], axis=-1),
+            tf.concat([zero, c[0], -s[0]], axis=-1),
+            tf.concat([zero, s[0], c[0]], axis=-1),
+        ), axis=-2)
+        rot_y = tf.stack((
+            tf.concat([c[1], zero, s[1]], axis=-1),
+            tf.concat([zero, one, zero], axis=-1),
+            tf.concat([-s[1], zero, c[1]], axis=-1),
+        ), axis=-2)
+        rot_z = tf.stack((
+            tf.concat([c[2], -s[2], zero], axis=-1),
+            tf.concat([s[2], c[2], zero], axis=-1),
+            tf.concat([zero, zero, one], axis=-1),
+        ), axis=-2)
+        out = tf.matmul(rot_x, tf.matmul(rot_y, rot_z))
+
+    return tf.squeeze(out) if len(shape) < 2 else out
+
+
 def params_to_affine_matrix(par,
                             deg=True,
                             shift_scale=False,
                             last_row=False,
                             ndims=3):
     """
-    Constructs an affine transformation matrix from translation, rotation, scaling and shearing
-    parameters in 2D or 3D. Supports batched inputs.
+    Construct N-dimensional transformation matrices from affine parameters,
+    where N is 2 or 3. The transforms operate in a right-handed frame of
+    reference, with right-handed intrinsic rotations (see
+    angles_to_rotation_matrix for details), and are constructed by matrix
+    product ``T @ R @ S @ E``, where T, R, S, and E are matrices representing
+    translation, rotation, scale, and shear, respectively. The function
+    supports inputs with or without batch dimensions.
 
     Arguments:
-        par: Parameters as a scalar, numpy array, TensorFlow tensor, or list or tuple of these.
-            Elements of lists and tuples will be stacked along the last dimension, which
-            corresponds to translations, rotations, scaling and shear. The size of the last
-            axis must not exceed (N, N+1), for N dimensions. If the size is less than that,
-            the missing parameters will be set to identity.
-        deg: Whether the input rotations are specified in degrees. Defaults to True.
-        shift_scale: Add 1 to any specified scaling parameters. This may be desirable
-            when the parameters are estimated by a network. Defaults to False.
-        last_row: Append the last row and return the full matrix. Defaults to False.
-        ndims: Dimensionality of transform matrices. Must be 2 or 3. Defaults to 3.
+        par: Array-like input parameters of shape (..., M), defining an affine
+            transformation in N-D space. The size M of the right-most dimension
+            must not exceed ``N * (N + 1)``. This axis defines, in order:
+            translations, rotations, scaling, and shearing parameters. In 3D,
+            for example, the first three indices specify translations along the
+            x, y, and z-axis, and similarly for the remaining parameters. Any
+            missing parameters will bet set to identity. Lists and tuples will
+            be stacked along the last dimension.
+        deg: Interpret input angles as specified in degrees instead of radians.
+        shift_scale: Add 1 to any specified scaling parameters. May be
+            desirable when the input parameters are estimated by a network.
+        last_row: Append the last row and return a full matrix.
+        ndims: Number of dimensions. Must be 2 or 3.
 
     Returns:
-        Affine transformation matrices as a (..., M, N+1) tensor, where M is N or N+1,
-        depending on `last_row`.
+        mat: Affine transformation matrices of shape (..., N, N + 1) or
+            (..., N + 1, N + 1), depending on `last_row`. The left-most
+            dimensions depend on the input shape.
 
     Author:
         mu40
@@ -715,22 +846,32 @@ def params_to_affine_matrix(par,
     return tf.squeeze(out) if len(shape) < 2 else out
 
 
-def angles_to_rotation_matrix(ang, deg=True, ndims=3):
-    """
-    Construct N-dimensional rotation matrices from angles, where N is 2 or 3. The direction of
-    rotation for all axes follows the right-hand rule. The rotations are intrinsic, i.e. carried
-    out in the body-centered frame of reference. Supports batched inputs.
+def rotation_matrix_to_angles(mat, deg=True):
+    """Compute Euler angles from an N-dimensional rotation matrix.
+
+    We apply right-handed intrinsic rotations as R = X @ Y @ Z, where X, Y,
+    and Z are matrices describing rotations about the x, y, and z-axis,
+    respectively (see angles_to_rotation_matrix). Labeling these axes with
+    indices 1-3 in the 3D case, we decompose the matrix
+
+            [            c2*c3,             −c2*s3,      s2]
+        R = [ s1*s2*c3 + c1*s3,  −s1*s2*s3 + c1*c3,  −s1*c2],
+            [−c1*s2*c3 + s1*s3,   c1*s2*s3 + s1*c3,   c1*c2]
+
+    where si and ci are the sine and cosine of the angle of rotation about
+    axis i. When the angle of rotation about the y-axis is 90 or -90 degrees,
+    the system loses one degree of freedom, and the solution is not unique.
+    In this gimbal lock case, we set the angle `ang[0]` to zero and solve for
+    `ang[2]`.
 
     Arguments:
-        ang: Input angles as a scalar, NumPy array, TensorFlow tensor, or list or tuple of these.
-            Elements of lists and tuples will be stacked along the last dimension, which
-            corresponds to the rotation axes (x, y, z in 3D), and its size must not exceed N.
-            If the size is less than N, the missing angles will be set to zero.
-        deg: Whether the input angles are specified in degrees. Defaults to True.
-        ndims: Dimensionality of rotation matrices. Must be 2 or 3. Defaults to 3.
+        mat: Array-like input matrix to derive rotation angles from, of shape
+            (..., N, N + 1) or (..., N + 1, N + 1), where N is 2 or 3.
+        deg: Return rotation angles in degrees instead of radians.
 
     Returns:
-        ND rotation matrices as a (..., N, N) tensor.
+        ang: Tensor of shape (..., M) holding the derived rotation angles. The
+        size M of the right-most dimension is 3 in 3D and 1 in 2D.
 
     Author:
         mu40
@@ -741,60 +882,156 @@ def angles_to_rotation_matrix(ang, deg=True, ndims=3):
         IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
         https://doi.org/10.1109/TMI.2021.3116879
     """
-    if ndims not in (2, 3):
-        raise ValueError(f'Affine matrix must be 2D or 3D, but got ndims of {ndims}.')
+    if not tf.is_tensor(mat) or mat.dtype != tf.float32:
+        mat = tf.cast(mat, tf.float32)
 
-    if isinstance(ang, (list, tuple)):
-        ang = tf.stack(ang, axis=-1)
+    # Input shape.
+    num_dim = mat.shape[-1]
+    assert num_dim in (2, 3), f'only 2D and 3D supported'
+    assert mat.shape[-2] == num_dim, 'invalid matrix shape'
 
-    if not tf.is_tensor(ang) or not ang.dtype.is_floating:
-        ang = tf.cast(ang, dtype='float32')
+    # Clip input to inverse trigonometric functions as rounding errors can
+    # move them out of the interval [-1, 1].
+    clip = lambda x: tf.clip_by_value(x, clip_value_min=-1, clip_value_max=1)
 
-    # Add dimension to scalars
-    if not ang.shape.as_list():
-        ang = tf.reshape(ang, shape=(1,))
-
-    # Validate shape
-    num_ang = 1 if ndims == 2 else 3
-    shape = ang.shape.as_list()
-    if shape[-1] > num_ang:
-        raise ValueError(f'Number of angles exceeds value {num_ang} expected for dimensionality.')
-
-    # Set missing angles to zero
-    width = np.zeros((len(shape), 2), dtype=np.int32)
-    width[-1, -1] = max(num_ang - shape[-1], 0)
-    ang = tf.pad(ang, paddings=width)
-
-    # Compute sine and cosine
-    if deg:
-        ang *= np.pi / 180
-    c = tf.split(tf.cos(ang), num_or_size_splits=num_ang, axis=-1)
-    s = tf.split(tf.sin(ang), num_or_size_splits=num_ang, axis=-1)
-
-    # Construct matrices
-    if ndims == 2:
-        out = tf.stack((
-            tf.concat([c[0], -s[0]], axis=-1),
-            tf.concat([s[0], c[0]], axis=-1),
-        ), axis=-2)
+    if num_dim == 2:
+        y = clip(mat[..., 1, -2])
+        x = clip(mat[..., 0, -2])
+        ang = tf.atan2(y, x)[..., tf.newaxis]
 
     else:
-        one, zero = tf.ones_like(c[0]), tf.zeros_like(c[0])
-        rot_x = tf.stack((
-            tf.concat([one, zero, zero], axis=-1),
-            tf.concat([zero, c[0], -s[0]], axis=-1),
-            tf.concat([zero, s[0], c[0]], axis=-1),
-        ), axis=-2)
-        rot_y = tf.stack((
-            tf.concat([c[1], zero, s[1]], axis=-1),
-            tf.concat([zero, one, zero], axis=-1),
-            tf.concat([-s[1], zero, c[1]], axis=-1),
-        ), axis=-2)
-        rot_z = tf.stack((
-            tf.concat([c[2], -s[2], zero], axis=-1),
-            tf.concat([s[2], c[2], zero], axis=-1),
-            tf.concat([zero, zero, one], axis=-1),
-        ), axis=-2)
-        out = tf.matmul(rot_x, tf.matmul(rot_y, rot_z))
+        ang2 = tf.asin(clip(mat[..., 0, 2]))
 
-    return tf.squeeze(out) if len(shape) < 2 else out
+        # Case abs(ang2) == 90 deg. Make ang1 zero as solution is not unique.
+        ang1_a = tf.zeros_like(ang2)
+        ang3_a = tf.atan2(y=clip(mat[..., 1, 0]), x=clip(mat[..., 1, 1]))
+
+        # Case abs(ang2) != 90 deg. Use safe divide, as we will always compute
+        # both cases, even if c2 is zero.
+        c2 = tf.cos(ang2)
+        y = tf.math.divide_no_nan(-mat[..., 1, 2], c2)
+        x = tf.math.divide_no_nan(mat[..., 2, 2], c2)
+        ang1_b = tf.atan2(clip(y), clip(x))
+        y = tf.math.divide_no_nan(-mat[..., 0, 1], c2)
+        x = tf.math.divide_no_nan(mat[..., 0, 0], c2)
+        ang3_b = tf.atan2(clip(y), clip(x))
+
+        # Choose between cases.
+        is_case = tf.abs((tf.abs(ang2) - 0.5 * np.pi)) < 1e-6
+        ang1 = tf.where(is_case, ang1_a, ang1_b)
+        ang3 = tf.where(is_case, ang3_a, ang3_b)
+        ang = tf.stack((ang1, ang2, ang3), axis=-1)
+
+    if deg:
+        ang *= 180 / np.pi
+    return ang
+
+
+def affine_matrix_to_params(mat, deg=True):
+    """Derive affine parameters from an N-dimensional transformation matrix.
+
+    The affine transform operates in a right-handed frame of reference, with
+    right-handed intrinsic rotations (see params_to_affine_matrix).
+
+    Arguments:
+        mat: Array-like input matrix to derive affine parameters from, of
+            shape (..., N, N + 1) or (..., N + 1, N + 1), as the last row
+            always is ``(*[0] * N, 1)``. N can be 2 or 3.
+        deg: Return rotation angles in degrees instead of radians.
+
+    Returns:
+        par: Tensor of shape (..., K) holding the affine parameters derived
+            from `mat`, where K is ``N * (N + 1)``. The parameters along the
+            last axis represent, in order: translation, rotation, scaling, and
+            shear. In 3D, for example, the first three indices specify
+            translations along the x, y, and z-axis, and similarly for the
+            remaining indices.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    if not tf.is_tensor(mat) or mat.dtype != tf.float32:
+        mat = tf.cast(mat, tf.float32)
+
+    # Input shape.
+    num_dim = mat.shape[-1] - 1
+    assert num_dim in (2, 3), f'invalid dimensionality {num_dim}'
+    assert mat.shape[-2] - num_dim in (0, 1), f'invalid shape {mat.shape}'
+
+    # Translation and scaling. Fix negative determinants.
+    shift = mat[..., :num_dim, -1]
+    mat = mat[..., :num_dim, :num_dim]
+    lower = tf.linalg.cholesky(tf.linalg.matrix_transpose(mat) @ mat)
+    scale = tf.linalg.diag_part(lower)
+    scale0 = scale[..., 0] * tf.sign(tf.linalg.det(mat))
+    scale = tf.concat((scale0[..., tf.newaxis], scale[..., 1:]), axis=-1)
+
+    # Strip scaling. Shear as upper triangular part.
+    strip = tf.linalg.diag(scale)
+    upper = tf.linalg.matrix_transpose(lower)
+    upper = tf.linalg.inv(strip) @ upper
+    flat_shape = tf.concat((tf.shape(scale0), [num_dim ** 2]), axis=0)
+    upper = tf.reshape(upper, flat_shape)
+    ind = (1,) if num_dim == 2 else (1, 2, 5)
+    shear = tf.gather(upper, ind, axis=-1)
+
+    # Rotations after stripping scale and shear. Treat shape as a tensor to
+    # support dynamically sized input matrices.
+    zero_shape = tf.concat((tf.shape(scale0), [(num_dim - 1) * 3]), axis=0)
+    zero = tf.zeros(zero_shape)
+    par = tf.concat((zero, scale, shear), axis=-1)
+    strip = params_to_affine_matrix(par, ndims=num_dim)[..., :-1]
+    mat = mat @ tf.linalg.inv(strip)
+    rot = rotation_matrix_to_angles(mat, deg=deg)
+
+    return tf.concat((shift, rot, scale, shear), axis=-1)
+
+
+def fit_affine(x_source, x_target, weights=None):
+    """Fit an affine transform between two sets of corresponding points.
+
+    Fit an N-dimensional affine transform between two sets of M corresponding
+    points in an ordinary or weighted least-squares sense. Note that when
+    working with images, source coordinates correspond to the target image and
+    vice versa.
+
+    Arguments:
+        x_source: Array-like source coordinates of shape (..., M, N).
+        x_target: Array-like target coordinates of shape (..., M, N).
+        weights: Optional array-like weights of shape (..., M) or (..., M, 1).
+
+    Returns:
+        mat: Affine transformation matrix of shape (..., N, N + 1), fitted such
+            that ``x_t = mat[..., :-1] @ x_s + mat[..., -1:]``, where x_s is
+            ``x_s = tf.linalg.matrix_transpose(x_t)``, and similarly for x_t
+            and `x_target`. The last row of `mat` is omitted as it is always
+            ``(*[0] * N, 1)``.
+
+    Author:
+        mu40
+
+    If you find this function useful, please consider citing:
+        M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
+        SynthMorph: learning contrast-invariant registration without acquired images
+        IEEE Transactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
+        https://doi.org/10.1109/TMI.2021.3116879
+    """
+    shape = tf.concat((tf.shape(x_target)[:-1], [1]), axis=0)
+    ones = tf.ones(shape, dtype=x_target.dtype)
+    x = tf.concat((x_target, ones), axis=-1)
+    x_transp = tf.linalg.matrix_transpose(x)
+    y = x_source
+
+    if weights is not None:
+        if len(weights.shape) == len(x.shape):
+            weights = weights[..., 0]
+        x_transp *= tf.expand_dims(weights, axis=-2)
+
+    beta = tf.linalg.inv(x_transp @ x) @ x_transp @ y
+    return tf.linalg.matrix_transpose(beta)
