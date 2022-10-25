@@ -115,7 +115,8 @@ class VxmDense(ne.modelio.LoadableModel):
         if hyp_model is not None:
             hyp_input = hyp_model.input
             hyp_tensor = hyp_model.output
-            inputs = (*inputs, hyp_input)
+            if not any([hyp_input is inp for inp in inputs]):
+                inputs = (*inputs, hyp_input)
         else:
             hyp_input = None
             hyp_tensor = None
@@ -1052,7 +1053,7 @@ class Unet(tf.keras.Model):
             model_inputs = input_model.inputs
 
         # add hyp_input tensor if provided
-        if hyp_input is not None:
+        if hyp_input is not None and not any([hyp_input is inp for inp in model_inputs]):
             model_inputs = model_inputs + [hyp_input]
 
         # default encoder and decoder layer features if nothing provided
