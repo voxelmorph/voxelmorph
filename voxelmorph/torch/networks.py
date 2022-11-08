@@ -137,7 +137,7 @@ class Unet(nn.Module):
                 x = conv(x)
             if not self.half_res or level < (self.nb_levels - 2):
                 x = self.upsampling[level](x)
-                # print(f"Mona-9: {level} - original x shape {x.shape} and x_history shape {(x_history.pop()).shape}")
+                # print(f"Mona-9: {level} - original x shape {x.shape} and x_history shape {(x_history[0]).shape}")
                 x = torch.cat([x, x_history.pop()], dim=1)
 
         # remaining convs at full resolution

@@ -112,11 +112,11 @@ def register_single(conf, subject, wandb_logger=None):
     warp = warp.transpose(3, 2, 1, 0)
     warp = np.flip(warp, axis=2)
     # print(f"Shape of orig {orig.shape} and moved {moved.shape} and warp {warp.shape}")
-    registered_gif_path = save_gif(orig, name, conf.result, "registered")
-    moved_gif_path = save_gif(moved, name, conf.result, "original")
+    registered_gif_path = save_gif(orig, name, conf.result, "original")
+    moved_gif_path = save_gif(moved, name, conf.result, "registered")
     quiver_path = save_quiver(warp, name, conf.result)
-    wandb_logger.log_register_gifs(registered_gif_path, label="registered Gif")
-    wandb_logger.log_register_gifs(moved_gif_path, label="original Gif")
+    wandb_logger.log_register_gifs(registered_gif_path, label="original Gif")
+    wandb_logger.log_register_gifs(moved_gif_path, label="registered Gif")
     wandb_logger.log_register_gifs(quiver_path, label="Quiver Gif")
 
     loss_rig, loss_org = 0, 0

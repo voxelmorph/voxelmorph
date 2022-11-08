@@ -1,10 +1,12 @@
 import os
-from random import seed
 import shutil
 import glob
 import SimpleITK as sitk
 import numpy as np
 import argparse
+
+import random
+random.seed(7)
 
 def resize(img, new_size, interpolator):
     # img = sitk.ReadImage(img)
@@ -66,7 +68,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', required=True, help='dataset name')
     args = parser.parse_args()
 
-    basepath = f"data/{args.dataset}_nii"
+    basepath = f"data/{args.dataset}"
     train_output = f"data/{args.dataset}_dataset/train"
     val_output = f"data/{args.dataset}_dataset/test"
     

@@ -4,6 +4,7 @@ import numpy as np
 import torchvision
 from omegaconf import OmegaConf
 import matplotlib.pyplot as plt
+from utils import *
 
 
 class WandbLogger(object):
@@ -39,27 +40,27 @@ class WandbLogger(object):
         print(type(vars(args)))
         self._wandb.config.update(vars(args))
 
-    def log_step_metric(self, step, losses, loss_1, loss_2, MI, x_img, y_img_pred, y_img_true):
+    def log_step_metric(self, step, losses, loss_1, loss_2, MI, folding_ratio, mag_det_jac_det):
         # morph = y_img_pred[1].transpose()
         # print(f"The shape of the morph field is {y_img_pred[1].shape} and the shape of the image is {x_img[0].shape}")
-        self.log_morph_field(np.squeeze(
-            y_img_pred[1][0, :, :, :].detach().cpu().numpy()), step)
+
         self._wandb.log({
+            "Step": step,
             "Step Loss": losses,
-            "Step Loss_1": loss_1,
-            "Step Loss_2": loss_2,
-            "input images 1": wandb.Image(np.squeeze(x_img[0][0, :, :, :])),
-            "output images 1": wandb.Image(np.squeeze(y_img_pred[0][0, :, :, :])),
-            "ground truth 1": wandb.Image(np.squeeze(y_img_true[0][0, :, :, :])),
-            "record MI": MI
+            "Step Similarity": loss_1,
+            "Step Regularizarion": loss_2,
+            "NMI": MI,
+            "Folding Ratio": folding_ratio,
+            "Mag Det Jac Det": mag_det_jac_det
         })
 
     def log_epoch_metric(self, epoch, losses, mu, l2):
         # morph = y_img_pred[1].transpose()
         self._wandb.log({
+            "Epoch": epoch,
             "Epoch Loss": losses,
-            "Epoch Loss_1": mu,
-            "Epoch Loss_2": l2,
+            "Epoch Similarity": mu,
+            "Epoch Regularization": l2,
         })
 
     def log_morph_field(self, input, step):
@@ -69,10 +70,12 @@ class WandbLogger(object):
         u, v = input[0, :, :], input[1, :, :]
         # print(f"The shape of the u and v are {u.shape} and {v.shape}, the shape of x and y are {x.shape} and {y.shape}")
         fig, ax = plt.subplots(figsize=(9, 9))
-        ax.quiver(x, y, u, v, units='width')
-        ax.xaxis.set_ticks([])
-        ax.yaxis.set_ticks([])
-        ax.set_aspect('equal')
+        bg_img = np.zeros_like(input[0, :, :])
+        plot_warped_grid(ax, input, bg_img, interval=3, title="$\phi_{pred}$", fontsize=30)
+        # ax.quiver(x, y, u, v, units='width')
+        # ax.xaxis.set_ticks([])
+        # ax.yaxis.set_ticks([])
+        # ax.set_aspect('equal')
 
         self._wandb.log({
             "Motion Field": wandb.Image(fig),

@@ -139,7 +139,8 @@ def train(conf, wandb_logger=None):
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
 
-    mutual_info = vxm.losses.MutualInformation_v4().loss
+    mutual_info = vxm.losses.NMI().metric
+    jacobian = vxm.losses.Jacobian().loss
 
     # need two image loss functions if bidirectional
     if bidir:
@@ -150,7 +151,10 @@ def train(conf, wandb_logger=None):
         weights = [conf.image_loss_weight]
 
     # prepare deformation loss
-    losses += [vxm.losses.Grad(conf.norm, loss_mult=conf.int_downsize).loss]
+    if conf.norm == 'l2' or conf.norm == 'l1':
+        losses += [vxm.losses.Grad(conf.norm, loss_mult=conf.int_downsize).loss]
+    elif conf.norm == 'd2':
+        losses += [vxm.losses.BendingEnergy2d().grad]
     weights += [conf.weight]
 
     # wandb_logger.watchModel(model)
@@ -174,6 +178,7 @@ def train(conf, wandb_logger=None):
             inputs, y_true = next(generator)
             inputs = [torch.from_numpy(d).to(
                 device).float().permute(0, 3, 1, 2) for d in inputs]
+            # print(f"inputs shape {inputs[0].shape} and {inputs[1].shape}")
             y_true = [torch.from_numpy(d).to(
                 device).float().permute(0, 3, 1, 2) for d in y_true]
             # run inputs through the model to produce a warped image and flow field
@@ -190,6 +195,8 @@ def train(conf, wandb_logger=None):
             epoch_total_loss.append(loss.item())
 
             MI = mutual_info(y_true[0], y_pred[0]).item()
+            # print(f"Mona: {type(y_pred[1])}")
+            folding_ratio, mag_det_jac_det = jacobian(y_pred[1])
 
             # backpropagate and optimize
             optimizer.zero_grad()
@@ -197,9 +204,7 @@ def train(conf, wandb_logger=None):
             optimizer.step()
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
-            if global_step % 200 == 0:
-                wandb_logger.log_step_metric(
-                    global_step, loss, loss_list[0], loss_list[1], MI, inputs, y_pred, y_true)
+            wandb_logger.log_step_metric(global_step, loss, loss_list[0], loss_list[1], MI, folding_ratio, mag_det_jac_det)
 
         # print epoch info
         epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)

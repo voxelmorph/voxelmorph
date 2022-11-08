@@ -134,189 +134,56 @@ class Grad:
             grad *= self.loss_mult
         return grad
 
-# class MutualInformation_v1:
-#     """
-#     Soft Mutual Information approximation for intensity volumes
+class BendingEnergy2d:
+    """Calculates bending energy penalty for a 2D coordinate grid."""
 
-#     More information/citation:
-#     - Courtney K Guo. 
-#       Multi-modal image registration with unsupervised deep learning. 
-#       PhD thesis, Massachusetts Institute of Technology, 2019.
-#     - M Hoffmann, B Billot, DN Greve, JE Iglesias, B Fischl, AV Dalca
-#       SynthMorph: learning contrast-invariant registration without acquired images
-#       IEEETransactions on Medical Imaging (TMI), 41 (3), 543-558, 2022
-#       https ://doi.org/10.1109/TMI.2021.3116879
+    def __init__(self):
+        self.dvf_input = False
+    
+    def grad(
+        self, _, coord_grid: Tensor, vector_dim: int = -1) -> Tensor:
+        """Calculates bending energy penalty for a 2D coordinate grid.
 
-#     When the image is not registered, the signal is less concentrated into a small number of bins, the mutual information has dropped.
-#     https://matthew-brett.github.io/teaching/mutual_information.html
-#     """
+        For further details regarding this regularization please read the work by `Rueckert 1999`_.
 
-#     def __init__(self, 
-#                  bin_centers=None,
-#                  nb_bins=None,
-#                  soft_bin_alpha=None,
-#                  min_clip=None,
-#                  max_clip=None) -> None:
+        Args:
+            coord_grid: 2D coordinate grid, i.e. a 4D Tensor with standard dimensions
+            (n_samples, 2, y, x).
+            vector_dim: Specifies the location of the vector dimension. Default: -1
+            dvf_input: If ``True``, coord_grid is assumed a displacement vector field and
+            an identity_grid will be added. Default: ``False``
 
-#         self.bin_centers = None
-#         if bin_centers is not None:
-#             self.bin_centers = tf.convert_to_tensor(bin_centers, dtype=tf.float32)
-#             assert nb_bins is None, 'cannot provide both bin_centers and nb_bins'
-#             nb_bins = bin_centers.shape[0]
+        Returns:
+            Bending energy per instance in the batch.
 
-#         self.nb_bins = nb_bins
-#         if bin_centers is None and nb_bins is None:
-#             self.nb_bins = 16
+        .. _Rueckert 1999: https://ieeexplore.ieee.org/document/796284
 
-#         self.min_clip = min_clip
-#         if self.min_clip is None:
-#             self.min_clip = -np.inf
+        """
+        assert coord_grid.ndim == 4, "Input tensor should be 4D, i.e. 2D images."
 
-#         self.max_clip = max_clip
-#         if self.max_clip is None:
-#             self.max_clip = np.inf
+        if vector_dim != 1:
+            coord_grid = coord_grid.movedim(vector_dim, -1)
 
-#         self.soft_bin_alpha = soft_bin_alpha
-#         if self.soft_bin_alpha is None:
-#             sigma_ratio = 0.5
-#             if self.bin_centers is None:
-#                 sigma = sigma_ratio / (self.nb_bins - 1)
-#             else:
-#                 sigma = sigma_ratio * tf.reduce_mean(tf.experimental.numpy.diff(bin_centers))
-#             self.soft_bin_alpha = 1 / (2 * tf.square(sigma))
+        if self.dvf_input:
+            coord_grid = coord_grid + self.identity_grid(coord_grid.shape[2:], stackdim=0)
 
-#     def loss(self, x, y):
-#         x = x.cpu().detach().numpy().transpose(0, 2, 3, 1)
-#         y = y.cpu().detach().numpy().transpose(0, 2, 3, 1)
-#         tensor_channels_x = K.shape(x)[-1]
-#         tensor_channels_y = K.shape(y)[-1]
-#         msg = 'volume_mi requires two single-channel volumes. See channelwise().'
-#         tf.debugging.assert_equal(tensor_channels_x, 1, msg)
-#         tf.debugging.assert_equal(tensor_channels_y, 1, msg)
+        d_y = torch.diff(coord_grid, dim=2)
+        d_x = torch.diff(coord_grid, dim=3)
 
-#         # volume mi
-#         loss = K.flatten(self.channelwise(x, y))
-#         print(f"Mona - debug: the mutual information loss is {loss.numpy()}")
-#         return 1.0 / loss.numpy()[0]
-
-#     def channelwise(self, x, y):
-#         """
-#         Mutual information for each channel in x and y. Thus for each item and channel this 
-#         returns retuns MI(x[...,i], x[...,i]). To do this, we use neurite.utils.soft_quantize() to 
-#         create a soft quantization (binning) of the intensities in each channel
-
-#         Parameters:
-#             x and y:  [bs, ..., C]
-
-#         Returns:
-#             Tensor of size [bs, C]
-#         """
-#         # check shapes
-#         tensor_shape_x = K.shape(x)
-#         tensor_shape_y = K.shape(y)
-#         tf.debugging.assert_equal(tensor_shape_x, tensor_shape_y, 'volume shapes do not match')
-
-#         # reshape to [bs, V, C]
-#         if tensor_shape_x.shape[0] != 3:
-#             new_shape = K.stack([tensor_shape_x[0], -1, tensor_shape_x[-1]])
-#             x = tf.reshape(x, new_shape)                             # [bs, V, C]
-#             y = tf.reshape(y, new_shape)                             # [bs, V, C]
-
-#         # move channels to first dimension
-#         ndims_k = len(x.shape)
-#         permute = [ndims_k - 1] + list(range(ndims_k - 1))
-#         cx = tf.transpose(x, permute)                                # [C, bs, V]
-#         cy = tf.transpose(y, permute)                                # [C, bs, V]
-
-#         # soft quantize
-#         cxq = self._soft_sim_map(cx)                                  # [C, bs, V, B]
-#         cyq = self._soft_sim_map(cy)                                  # [C, bs, V, B]
-
-#         # get mi
-#         map_fn = lambda x: self.maps(*x)
-#         cout = tf.map_fn(map_fn, [cxq, cyq], dtype=tf.float32)       # [C, bs]
-
-#         # permute back
-#         return tf.transpose(cout, [1, 0])                            # [bs, C]
- 
-#     def _soft_sim_map(self, x):
-#         """
-#         See neurite.utils.soft_quantize
-
-#         Parameters:
-#             x [bs, ...]: intensity image. 
-
-#         Returns:
-#             volume with one more dimension [bs, ..., B]
-#         """
+        d_yy = torch.diff(d_y, dim=2)[:, :, :, :-2]
+        d_yx = torch.diff(d_y, dim=3)[:, :, :-1, :-1]
+        d_xx = torch.diff(d_x, dim=3)[:, :, :-2, :]
+        # tmp = torch.mean(d_yy ** 2 + d_xx ** 2 + 2 * d_yx ** 2, axis=(1, 2, 3))
         
-#         return ne.utils.soft_quantize(x,
-#                                       alpha=self.soft_bin_alpha,
-#                                       bin_centers=self.bin_centers,
-#                                       nb_bins=self.nb_bins,
-#                                       min_clip=self.min_clip,
-#                                       max_clip=self.max_clip,
-#                                       return_log=False)              # [bs, ..., B]
+        return torch.mean(d_yy ** 2 + d_xx ** 2 + 2 * d_yx ** 2)
 
 
-#     def maps(self, x, y):
-#         """
-#         Computes mutual information for each entry in batch, assuming each item contains 
-#         probability or similarity maps *at each voxel*. These could be e.g. from a softmax output 
-#         (e.g. when performing segmentaiton) or from soft_quantization of intensity image.
-
-#         Note: the MI is computed separate for each itemin the batch, so the joint probabilities 
-#         might be  different across inputs. In some cases, computing MI actoss the whole batch 
-#         might be desireable (TODO).
-
-#         Parameters:
-#             x and y are probability maps of size [bs, ..., B], where B is the size of the 
-#               discrete probability domain grid (e.g. bins/labels). B can be different for x and y.
-
-#         Returns:
-#             Tensor of size [bs]
-#         """
-
-#         # check shapes
-#         tensor_shape_x = K.shape(x)
-#         tensor_shape_y = K.shape(y)
-#         tf.debugging.assert_equal(tensor_shape_x, tensor_shape_y)
-#         tf.debugging.assert_non_negative(x)
-#         tf.debugging.assert_non_negative(y)
-
-#         eps = K.epsilon()
-
-#         # reshape to [bs, V, B]
-#         if tensor_shape_x.shape[0] != 3:
-#             new_shape = K.stack([tensor_shape_x[0], -1, tensor_shape_x[-1]])
-#             x = tf.reshape(x, new_shape)                             # [bs, V, B1]
-#             y = tf.reshape(y, new_shape)                             # [bs, V, B2]
-
-#         # joint probability for each batch entry
-#         x_trans = tf.transpose(x, (0, 2, 1))                         # [bs, B1, V]
-#         # pxy = K.batch_dot(x_trans, y)                                # [bs, B1, B2]
-#         pxy = np.matmul(x_trans.numpy(), y.numpy())
-#         pxy = pxy / (K.sum(pxy, axis=[1, 2], keepdims=True) + eps)   # [bs, B1, B2]
-
-#         # x probability for each batch entry
-#         px = K.sum(x, 1, keepdims=True)                              # [bs, 1, B1]
-#         px = px / (K.sum(px, 2, keepdims=True) + eps)                # [bs, 1, B1]
-
-#         # y probability for each batch entry
-#         py = K.sum(y, 1, keepdims=True)                              # [bs, 1, B2]
-#         py = py / (K.sum(py, 2, keepdims=True) + eps)                # [bs, 1, B2]
-
-#         # independent xy probability
-#         px_trans = K.permute_dimensions(px, (0, 2, 1))               # [bs, B1, 1]
-        
-#         pxpy = np.matmul(px_trans.numpy(), py.numpy())
-#         # pxpy = K.batch_dot(px_trans, py)                             # [bs, B1, B2]
-#         pxpy_eps = pxpy + eps
-
-#         # mutual information
-#         log_term = K.log(pxy / pxpy_eps + eps)                       # [bs, B1, B2]
-#         mi = K.sum(pxy * log_term, axis=[1, 2])                      # [bs]
-#         return mi
+    def identity_grid(shape, stackdim, dtype=torch.float32, device="cpu"):
+        """Create an nd identity grid."""
+        tensors = (torch.arange(s, dtype=dtype, device=device) for s in shape)
+        return torch.stack(
+            torch.meshgrid(*tensors)[::-1], stackdim
+        )  # z,y,x shape and flip for x, y, z coords
 
 
 class MutualInformation_v2:
@@ -533,3 +400,53 @@ class NMI(_Loss):
         return -nmi_gauss_mask(
             fixed, warped, bins_fixed, bins_warped, mask, sigma=self.sigma
         )
+
+
+class Jacobian:
+    def __init__(self):
+        pass
+    
+    def loss(self, displacement):
+        dis = displacement.detach().cpu().numpy()
+        folding_ratio, mag_det_jac_det = self.calculate_jacobian_metrics(dis)
+        return folding_ratio, mag_det_jac_det
+    
+
+    def calculate_jacobian_metrics(self, disp):
+        """Calculate Jacobian related regularity metrics.
+        folding_ratio: (scalar) Folding ratio (ratio of Jacobian determinant < 0 points)
+        mag_grad_jac_det: (scalar) Mean magnitude of the spatial gradient of Jacobian determinant
+
+        Args:
+            disp: (numpy.ndarray, shape (N, ndim, *sizes) Displacement field
+
+        Returns:
+           folding_ratio: (scalar) Folding ratio (ratio of Jacobian determinant < 0 points)
+        mag_grad_jac_det: (scalar) Mean magnitude of the spatial gradient of Jacobian determinant
+        """
+        folding_ratio = []
+        mag_grad_jac_det = []
+        # print(f'Mona: the shape of disp is {disp.shape}')
+        for n in range(disp.shape[0]):
+            # print(f"Mona: the shape of disp[n] is {disp[n, ...].shape}")
+            disp_n = np.moveaxis(disp[n, ...], 0, -1)  # (*sizes, ndim)
+            jac_det_n = self.calculate_jacobian_det(disp_n)
+            folding_ratio += [(jac_det_n < 0).sum() / np.prod(jac_det_n.shape)]
+            mag_grad_jac_det += [np.abs(np.gradient(jac_det_n)).mean()]
+        return np.mean(folding_ratio), np.mean(mag_grad_jac_det)
+    
+
+    def calculate_jacobian_det(self, disp):
+        """Calculate Jacobian determinant of displacement field of one image/volume (2D/3D)
+
+        Args:
+            disp: (numpy.ndarray, shape (*sizes, ndim)) Displacement field
+
+        Returns:
+            jac_det: (numpy.adarray, shape (*sizes) Point-wise Jacobian determinant
+        """
+
+        disp_img = sitk.GetImageFromArray(disp, isVector=True)
+        jac_det_img = sitk.DisplacementFieldJacobianDeterminant(disp_img)
+        jac_det = sitk.GetArrayFromImage(jac_det_img)
+        return jac_det

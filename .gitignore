@@ -3,10 +3,11 @@ __pycache__/
 **/.DS_Store
 **/data/**
 scratch/*
-
+.eggs/*
 voxelmorph.egg-info/*
 wandb/*
 models/*
 configs/*
 jobScripts/*
 results/*
+model/*
