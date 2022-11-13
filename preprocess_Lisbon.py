@@ -6,6 +6,10 @@ import SimpleITK as sitk
 import numpy as np
 import argparse
 
+import random
+random.seed(42)
+
+
 def resize(img, new_size, interpolator):
     # img = sitk.ReadImage(img)
     dimension = img.GetDimension()
@@ -99,7 +103,7 @@ if __name__ == '__main__':
     print(f"Total file number {len(input_file_paths)}")
     print(f"The max shape is {max_shape}, median shape is {median_shape}, min_shape is {min_shape}")
 
-    test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*0.1))
+    test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*0.5))
 
     min_idx = np.argmin(np.vstack(image_shapes), 0)
     print(min_idx)
@@ -114,7 +118,7 @@ if __name__ == '__main__':
         # reshape the image to the median shape
         original_shape = image_shapes[idx]
         new_shape = (min_dim_0, min_dim_1, original_shape[-1])
-        new_shape = (192, 192, original_shape[-1])
+        # new_shape = (192, 192, original_shape[-1])
         print(f"Before shape {original_shape}, after shape {new_shape}")
         resize_img = resize(image, new_shape, sitk.sitkLinear)
         
@@ -128,6 +132,7 @@ if __name__ == '__main__':
         tmp = (output_file_paths[idx]).split("/")[-1]
         resize_img_array = normalize(resize_img_array)
         
+        resize_img_array = np.transpose(resize_img_array, (1, 2, 0))
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"
             print(output_name)

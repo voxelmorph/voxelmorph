@@ -44,7 +44,7 @@ class SpatialTransformer(nn.Module):
         elif len(shape) == 3:
             new_locs = new_locs.permute(0, 2, 3, 4, 1)
             new_locs = new_locs[..., [2, 1, 0]]
-
+        # TODO: add support for bspline??
         return nnf.grid_sample(src, new_locs, align_corners=True, mode=self.mode)
 
 

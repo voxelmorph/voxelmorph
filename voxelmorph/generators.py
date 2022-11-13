@@ -93,7 +93,7 @@ def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=
         slices = vols.shape[1]
         shuffle = np.random.shuffle(np.arange(slices))
         for slice in range(slices-1):
-            scan1 = vols[:, slice, :, :, :]
+            scan1 = vols[:, 0, :, :, :]
             if in_order:
                 scan2 = vols[:, (slice+1)%slices, :, :, :]
             else:

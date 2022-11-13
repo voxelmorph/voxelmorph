@@ -109,26 +109,26 @@ def register_single(conf, subject, wandb_logger=None):
     # save the gif
     orig = orig.transpose(1, 2, 0)
     moved = moved.transpose(1, 2, 0)
-    warp = warp.transpose(3, 2, 1, 0)
-    warp = np.flip(warp, axis=2)
+    warp = warp.transpose(3, 2, 0, 1)
+    # warp = np.flip(warp, axis=2)
     # print(f"Shape of orig {orig.shape} and moved {moved.shape} and warp {warp.shape}")
-    registered_gif_path = save_gif(orig, name, conf.result, "original")
+    original_gif_path = save_gif(orig, name, conf.result, "original")
     moved_gif_path = save_gif(moved, name, conf.result, "registered")
-    quiver_path = save_quiver(warp, name, conf.result)
-    wandb_logger.log_register_gifs(registered_gif_path, label="original Gif")
-    wandb_logger.log_register_gifs(moved_gif_path, label="registered Gif")
-    wandb_logger.log_register_gifs(quiver_path, label="Quiver Gif")
+    # quiver_path = save_quiver(warp, name, conf.result)
+    morph_field_path = save_morphField(warp, name, conf.result)
+    import sys
+    sys.exit()
 
     loss_rig, loss_org = 0, 0
     
     for j in range(1, moved.shape[-1]):
-        loss_rig += mse(moved[:, :, j-1], moved[:, :, j])
-        loss_org += mse(orig[:, :, j-1], orig[:, :, j])
+        rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
+        org_mse += mse(orig[:, :, j-1], orig[:, :, j])
 
     eig_org, org_K, org_dis = pca(
-        orig, name, conf.result, "original", n_components=20)
+        orig, name, conf.result, "original", n_components=5)
     eig_rig, rig_K, rig_dis = pca(
-        moved, name, conf.result, "registered", n_components=20)
+        moved, name, conf.result, "registered", n_components=5)
 
     f, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     sns.barplot(x=np.arange(len(eig_org)),
@@ -139,11 +139,15 @@ def register_single(conf, subject, wandb_logger=None):
     # ax2.bar_label(ax2.containers[0])
     ax1.set_title(f"Eigenvalues of original image {name}")
     ax2.set_title(f"Eigenvalues of registered image {name}")
+    if wandb_logger:
+        wandb_logger.log_register_gifs(original_gif_path, label="original Gif")
+        wandb_logger.log_register_gifs(moved_gif_path, label="registered Gif")
+        wandb_logger.log_register_gifs(morph_field_path, label="Quiver Gif")
+        wandb_logger.log_img(plt, "PCA change")
 
-    wandb_logger.log_img(plt, "PCA change")
     plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
 
     
-    print(f"File {name}, original MSE - {loss_org:.5f} PCA - {org_dis:.5f}, registered MSE - {loss_rig:5f} PCA - {rig_dis:.5f}")
+    print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
     return name, loss_org, org_dis, loss_rig, rig_dis
     

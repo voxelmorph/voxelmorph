@@ -4,6 +4,8 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 from skimage import exposure
 from array2gif import write_gif
+import gif
+
 
 def resize_img(img, new_size, interpolator):
     # img = sitk.ReadImage(img)
@@ -55,20 +57,25 @@ def resize_img(img, new_size, interpolator):
     return sitk.Resample(img, reference_image, centered_transform, interpolator, 0.0)
 
 
-def pca(array, name, output_dir, label, n_components=10):
+def normalize(img):
+    img = (img - np.min(img)) / (np.max(img) - np.min(img))
+    return img
+
+def pca(array, name, output_dir, label, n_components=5):
     # calculate the eigenvalues of data(covariance matrix)
     x, y, z = array.shape
     # print(f"Shape of array is {array.shape} and x is {x} and y is {y} and z is {z}")
     M = array.reshape(x*y, z)
     Sigma = np.diag(np.std(M, axis=0))
+    Sigma_inv = np.linalg.inv(Sigma)
     # print(f"Shape of Sigma is {Sigma.shape} and M is {M.shape} and sigma {Sigma}")
     M_avg = np.tile(np.average(M, axis=0), (x*y, 1))
-    K = np.dot(np.dot(np.dot(np.linalg.inv(Sigma), (M - M_avg).T),
-               (M - M_avg)), np.linalg.inv(Sigma)) / (x*y - 1)
+    K = np.dot(np.dot(np.dot(Sigma_inv, (M - M_avg).T),
+               (M - M_avg)), Sigma_inv) / (x*y - 1)
 
     eigenvalues = np.linalg.eigvals(K)
-
-    dis = z - np.sum(eigenvalues[:n_components])
+    G = np.sum(eigenvalues)
+    dis = np.sum(eigenvalues[:n_components])/G
 
     return eigenvalues, K, dis
 
@@ -76,15 +83,29 @@ def pca(array, name, output_dir, label, n_components=10):
 def percentage_change(col1, col2):
     return ((col2 - col1) / col1) * 100
 
+@gif.frame
+def help_mag_plot(data):
+    fig, ax = plt.subplots(figsize=(9,9))
+    ax.imshow(data, cmap='jet')
+    # ax.axis('off')
+    ax.grid(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_frame_on(False)
 
-def save_gif(data, name, output_dir, label):
+    
+def save_gif(data, name, output_dir, label, duration=100):
     # save gif and use hist equalization
-    data = exposure.equalize_hist(data)*255
-    data_list = [np.stack((data[:, :, i], data[:, :, i], data[:, :, i]))
-                 for i in range(data.shape[-1])]
+    rows, cols, slices = data.shape
+    frames = []
+    for slice in range(slices):
+
+        # frames.append(np.stack((data[:, :, slice], data[:, :, slice], data[:, :, slice])))
+        frames.append(help_mag_plot(data[:, :, slice]))
     os.makedirs(f"{output_dir}/gifs", exist_ok=True)
     path = f"{output_dir}/gifs/{label}_{name}.gif"
-    write_gif(data_list, path)
+    gif.save(frames, path, duration=duration)
+    # write_gif(frames, path)
     return path
 
 
@@ -114,6 +135,51 @@ def save_quiver(data, name, output_dir):
     path = f"{output_dir}/quiver/{name}.gif"
     write_gif(quiver_list, path)
     return path
+
+
+@gif.frame
+def help_morph_plot(data, title_font_size=8):
+    fig, ax = plt.subplots(figsize=(9,9))
+    field = np.squeeze(data)
+    bg_img = np.zeros_like(field[0, ...])
+    plot_warped_grid(ax, field, bg_img, interval=3, title="$\phi_{pred}$", fontsize=title_font_size)
+
+
+def save_morphField(data, name, output_dir, duration=100):
+    _, slices, rows, cols = data.shape
+    frames = []
+    for slice in range(slices):
+        frames.append(help_morph_plot(data[:, slice, :, :]))
+    os.makedirs(f"{output_dir}/morph_field", exist_ok=True)
+    path = f"{output_dir}/morph_field/{name}.gif"
+    gif.save(frames, path, duration=duration)
+    return path
+
+
+def plot_result_fig(warp, pred, fixed, size=(8, 8), title_font_size=8):
+    fig = plt.figure(figsize=size)
+    title_pad = 10
+    ax1 = fig.add_subplot(2, 2, 1)
+    plt.imshow(fixed[0, 0, ...], cmap='gray')
+    plt.axis('off')
+    ax1.set_title('Target', fontsize=title_font_size, pad=title_pad)
+
+    ax2 = fig.add_subplot(2, 2, 2)
+    plt.imshow(pred[0, 0, ...], cmap='gray')
+    plt.axis('off')
+    ax2.set_title('Pred Target', fontsize=title_font_size, pad=title_pad)
+
+    ax3 = fig.add_subplot(2, 2, 3)
+    bg_img = np.zeros_like(warp[0, 0, ...])
+    plot_warped_grid(ax3, warp[0, ...], bg_img, interval=3, title="$\phi_{pred}$", fontsize=title_font_size)
+
+    ax4 = fig.add_subplot(2, 2, 4)
+    error = pred - fixed
+    plt.imshow(error[0, 0, ...], cmap='seismic')
+    plt.axis('off')
+    ax4.set_title('Difference', fontsize=title_font_size, pad=title_pad)
+    plt.subplots_adjust(left=0.0001, right=0.99, top=0.9, bottom=0.1, wspace=0.001, hspace=0.2)
+    return fig
 
 
 

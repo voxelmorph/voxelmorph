@@ -3,35 +3,37 @@ import os
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
-from wandbLogger import WandbLogger
+import warnings
 
-from train import train
 from register_single import register_single
 from utils import *
+warnings.filterwarnings("ignore")
 
 
 if __name__ == '__main__':
+    wandb_logger = None
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
                         default='configs/MOLLI_nmi.yaml', help='config file')
+    parser.add_argument('--model_path', type=str,
+                        default='model/fbMOLLI_post_nmi_l2', help='model file')
+    parser.add_argument('--weight', type=float, default=0.01, help='weight for the loss')
+    parser.add_argument('--epochs', type=int, default=100, help='number of epochs')
     args = parser.parse_args()
 
     # load the config file
     cfg = OmegaConf.load(args.config)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
-    if conf.wandb:
-        wandb_logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+    conf.model_dir = f"{args.model_path}/weight_{args.weight}"
+    conf.inference = f"{conf.inference}/weight_{args.weight}/epochs_{args.epochs}"
 
-    # run the training
-    print(f"{'---'*10} Start Training {'---'*10}")
-    train(conf, wandb_logger)
-    print(f"{'---'*10} End of Training {'---'*10}")
-
-    # register the model
     print(f"{'---'*10} Start Testing {'---'*10}")
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
+    conf.moved = os.path.join(conf.inference, 'moved')
+    conf.warp = os.path.join(conf.inference, 'warp')
+    conf.result = os.path.join(conf.inference, 'summary')
+    print(f"Mona debug - conf: {conf}")
 
     os.makedirs(conf.moved, exist_ok=True)
     os.makedirs(conf.warp, exist_ok=True)
@@ -45,14 +47,12 @@ if __name__ == '__main__':
             conf, subject, wandb_logger)
         df = pd.concat([df, pd.DataFrame(
             [[name, loss_org, org_dis, loss_rig, rig_dis]], columns=col)], ignore_index=True)
-        # df.append(name, loss_org, org_dis, loss_rig, rig_dis)
-    # convert the registered images to gif and compute the results
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])
     df['PCA changes percentage'] = percentage_change(
         df['raw PCA'], df['registered PCA'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-
-    wandb_logger.log_dataframe(df, 'Results')
+    if wandb_logger:
+        wandb_logger.log_dataframe(df, 'Results')
     print(f"{'---'*10} End of Testing {'---'*10}")

@@ -54,7 +54,10 @@ setuptools.setup(
         'SimpleITK',
         'sewar',
         'array2gif',
-        'tqdm'
+        'tqdm',
+        'pandas',
+        'seaborn',
+        "gif"
         
     ]
 )

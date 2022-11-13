@@ -14,8 +14,9 @@ class NCC:
     Local (over window) normalized cross correlation loss.
     """
 
-    def __init__(self, win=None):
+    def __init__(self, win=None, device="cuda"):
         self.win = win
+        self.device = device
 
     def loss(self, y_true, y_pred):
 
@@ -31,7 +32,7 @@ class NCC:
         win = [9] * ndims if self.win is None else self.win
 
         # compute filters
-        sum_filt = torch.ones([1, 1, *win]).to("cuda")
+        sum_filt = torch.ones([1, 1, *win]).to(self.device)
 
         pad_no = math.floor(win[0] / 2)
 
@@ -186,142 +187,6 @@ class BendingEnergy2d:
         )  # z,y,x shape and flip for x, y, z coords
 
 
-class MutualInformation_v2:
-    """https://matthew-brett.github.io/teaching/mutual_information.html
-    """
-    def __init__(self, nb_bins=20) -> None:
-        self.bins = nb_bins
-    
-    def mutual_information(self, hgram):
-        """ Mutual information for joint histogram"""
-        # Convert bins counts to probability values
-        pxy = hgram / float(np.sum(hgram))
-        px = np.sum(pxy, axis=1) # marginal for x over y
-        py = np.sum(pxy, axis=0) # marginal for y over x
-        px_py = px[:, None] * py[None, :] # Broadcast to multiply marginals
-        # Now we can do the calculation using the pxy, px_py 2D arrays
-        nzs = pxy > 0 # Only non-zero pxy values contribute to the sum
-        return np.sum(pxy[nzs] * np.log(pxy[nzs] / px_py[nzs]))
-
-    def loss(self, y_true, y_pred):
-        y_true = y_true.detach().cpu().numpy()
-        y_pred = y_pred.detach().cpu().numpy()
-        hist_2d, x_edges, y_edges = np.histogram2d(y_true.ravel(), y_pred.ravel(), bins=self.bins)
-        MI = self.mutual_information(hist_2d)
-        # print(f"Mona debug - the mutual information is {loss}")
-        # hist_2d_test, x_edges, y_edges = np.histogram2d(y_true.ravel(), y_true.ravel(), bins=self.bins)
-        # loss_test = self.mutual_information(hist_2d_test)
-        # # print(f"The mutual information between same image is {loss_test} and registered image is {loss}")
-
-        return 1.0 / MI
-
-class MutualInformation_v3:
-    """https://scikit-image.org/docs/stable/api/skimage.metrics.html"""
-    def __init__(self) -> None:
-        pass
-    
-    def loss(self, y_true, y_pred):
-        y_true = y_true.detach().cpu().numpy()
-        y_pred = y_pred.detach().cpu().numpy()
-        batch = y_true.shape[0]
-        loss = 0
-        for i in range(batch):
-            nmi = normalized_mutual_information(np.squeeze(y_true[i,:,:,:]), np.squeeze(y_pred[i, :, :, :])) - 1
-            loss += nmi
-
-        return - loss / batch
-
-
-class MutualInformation_v4:
-    """https://simpleitk.readthedocs.io/en/v1.1.0/Documentation/docs/source/registrationOverview.html"""
-    def __init__(self) -> None:
-        registration_method = sitk.ImageRegistrationMethod()
-        registration_method.SetMetricAsMattesMutualInformation(numberOfHistogramBins=100)
-        # registration_method.SetMetricAsJointHistogramMutualInformation(numberOfHistogramBins=50)
-        registration_method.SetMetricSamplingStrategy(registration_method.RANDOM)
-        registration_method.SetMetricSamplingPercentage(1)
-        registration_method.SetInterpolator(sitk.sitkLinear)
-        self.register = registration_method
-    
-    def loss(self, y_true, y_pred):
-        y_true = y_true.detach().cpu().numpy()
-        y_pred = y_pred.detach().cpu().numpy()
-        # print(f"y_true shape is {y_true.shape}")
-        batch = y_true.shape[0]
-        loss = 0
-        for i in range(batch):
-            fixed_image = sitk.GetImageFromArray(np.squeeze(y_true[i, :, :, :]), isVector=False)
-            moving_image = sitk.GetImageFromArray(np.squeeze(y_pred[i, :, :, :]), isVector=False)
-
-            
-            transform_to_displacment_field_filter = sitk.TransformToDisplacementFieldFilter()
-            transform_to_displacment_field_filter.SetReferenceImage(fixed_image)
-            initial_transform = sitk.DisplacementFieldTransform(transform_to_displacment_field_filter.Execute(sitk.Transform(2,sitk.sitkIdentity)))
-            self.register.SetInitialTransform(initial_transform)
-
-            loss1 = self.register.MetricEvaluate(fixed_image, moving_image)
-            loss += loss1
-
-        return np.float32(loss/batch)
-
-
-def nmi_gauss(x1, x2, x1_bins, x2_bins, sigma=1e-3, e=1e-10):
-    assert x1.shape == x2.shape, "Inputs are not of similar shape"
-
-    def gaussian_window(x, bins, sigma):
-        assert x.ndim == 2, "Input tensor should be 2-dimensional."
-        return torch.exp(
-            -((x[:, None, :] - bins[None, :, None]) ** 2) / (2 * sigma ** 2)
-        ) / (math.sqrt(2 * math.pi) * sigma)
-
-    x1_windowed = gaussian_window(x1.flatten(1), x1_bins, sigma)
-    x2_windowed = gaussian_window(x2.flatten(1), x2_bins, sigma)
-    p_XY = torch.bmm(x1_windowed, x2_windowed.transpose(1, 2))
-    p_XY = p_XY + e  # deal with numerical instability
-
-    p_XY = p_XY / p_XY.sum((1, 2))[:, None, None]
-
-    p_X = p_XY.sum(1)
-    p_Y = p_XY.sum(2)
-
-    I = (p_XY * torch.log(p_XY / (p_X[:, None] * p_Y[:, :, None]))).sum((1, 2))
-
-    marg_ent_0 = (p_X * torch.log(p_X)).sum(1)
-    marg_ent_1 = (p_Y * torch.log(p_Y)).sum(1)
-
-    normalized = -1 * 2 * I / (marg_ent_0 + marg_ent_1)  # harmonic mean
-
-    return normalized
-
-
-def nmi_gauss_mask(x1, x2, x1_bins, x2_bins, mask, sigma=1e-3, e=1e-10):
-    def gaussian_window_mask(x, bins, sigma):
-
-        assert x.ndim == 1, "Input tensor should be 2-dimensional."
-        return torch.exp(-((x[None, :] - bins[:, None]) ** 2) / (2 * sigma ** 2)) / (
-            math.sqrt(2 * math.pi) * sigma
-        )
-
-    x1_windowed = gaussian_window_mask(torch.masked_select(x1, mask), x1_bins, sigma)
-    x2_windowed = gaussian_window_mask(torch.masked_select(x2, mask), x2_bins, sigma)
-    p_XY = torch.mm(x1_windowed, x2_windowed.transpose(0, 1))
-    p_XY = p_XY + e  # deal with numerical instability
-
-    p_XY = p_XY / p_XY.sum()
-
-    p_X = p_XY.sum(0)
-    p_Y = p_XY.sum(1)
-
-    I = (p_XY * torch.log(p_XY / (p_X[None] * p_Y[:, None]))).sum()
-
-    marg_ent_0 = (p_X * torch.log(p_X)).sum()
-    marg_ent_1 = (p_Y * torch.log(p_Y)).sum()
-
-    normalized = -1 * 2 * I / (marg_ent_0 + marg_ent_1)  # harmonic mean
-
-    return normalized
-
-
 class NMI(_Loss):
     """Normalized mutual information metric.
 
@@ -346,6 +211,13 @@ class NMI(_Loss):
             self.forward = self.metric
 
     def metric(self, fixed: Tensor, warped: Tensor) -> Tensor:
+        """
+        Compute the normalized mutual information metric.
+        Args:
+            fixed: Tensor of shape (batch, N, H, W), representing the fixed image.
+            warped: Tensor of shape (batch, N, H, W), representing the warped image.
+        
+        """
         with torch.no_grad():
             if self.intensity_range:
                 fixed_range = self.intensity_range
@@ -369,9 +241,7 @@ class NMI(_Loss):
             device=fixed.device,
         )
 
-        return -nmi_gauss(
-            fixed, warped, bins_fixed, bins_warped, sigma=self.sigma
-        ).mean()
+        return - self.nmi_gauss(fixed, warped, bins_fixed, bins_warped, sigma=self.sigma).mean()
 
     def masked_metric(self, fixed: Tensor, warped: Tensor, mask: Tensor) -> Tensor:
         with torch.no_grad():
@@ -397,9 +267,65 @@ class NMI(_Loss):
             device=fixed.device,
         )
 
-        return -nmi_gauss_mask(
+        return -self.nmi_gauss_mask(
             fixed, warped, bins_fixed, bins_warped, mask, sigma=self.sigma
         )
+    
+    def nmi_gauss(self, x1, x2, x1_bins, x2_bins, sigma=1e-3, e=1e-10):
+        assert x1.shape == x2.shape, "Inputs are not of similar shape"
+
+        def gaussian_window(x, bins, sigma):
+            assert x.ndim == 2, "Input tensor should be 2-dimensional."
+            return torch.exp(
+                -((x[:, None, :] - bins[None, :, None]) ** 2) / (2 * sigma ** 2)
+            ) / (math.sqrt(2 * math.pi) * sigma)
+
+        x1_windowed = gaussian_window(x1.flatten(1), x1_bins, sigma)
+        x2_windowed = gaussian_window(x2.flatten(1), x2_bins, sigma)
+        p_XY = torch.bmm(x1_windowed, x2_windowed.transpose(1, 2))
+        p_XY = p_XY + e  # deal with numerical instability
+
+        p_XY = p_XY / p_XY.sum((1, 2))[:, None, None]
+
+        p_X = p_XY.sum(1)
+        p_Y = p_XY.sum(2)
+
+        I = (p_XY * torch.log(p_XY / (p_X[:, None] * p_Y[:, :, None]))).sum((1, 2))
+
+        marg_ent_0 = (p_X * torch.log(p_X)).sum(1)
+        marg_ent_1 = (p_Y * torch.log(p_Y)).sum(1)
+
+        normalized = -1 * 2 * I / (marg_ent_0 + marg_ent_1)  # harmonic mean
+
+        return normalized
+
+
+    def nmi_gauss_mask(x1, x2, x1_bins, x2_bins, mask, sigma=1e-3, e=1e-10):
+        def gaussian_window_mask(x, bins, sigma):
+
+            assert x.ndim == 1, "Input tensor should be 2-dimensional."
+            return torch.exp(-((x[None, :] - bins[:, None]) ** 2) / (2 * sigma ** 2)) / (
+                math.sqrt(2 * math.pi) * sigma
+            )
+
+        x1_windowed = gaussian_window_mask(torch.masked_select(x1, mask), x1_bins, sigma)
+        x2_windowed = gaussian_window_mask(torch.masked_select(x2, mask), x2_bins, sigma)
+        p_XY = torch.mm(x1_windowed, x2_windowed.transpose(0, 1))
+        p_XY = p_XY + e  # deal with numerical instability
+
+        p_XY = p_XY / p_XY.sum()
+
+        p_X = p_XY.sum(0)
+        p_Y = p_XY.sum(1)
+
+        I = (p_XY * torch.log(p_XY / (p_X[None] * p_Y[:, None]))).sum()
+
+        marg_ent_0 = (p_X * torch.log(p_X)).sum()
+        marg_ent_1 = (p_Y * torch.log(p_Y)).sum()
+
+        normalized = -1 * 2 * I / (marg_ent_0 + marg_ent_1)  # harmonic mean
+
+        return normalized
 
 
 class Jacobian:

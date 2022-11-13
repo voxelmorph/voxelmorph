@@ -126,20 +126,18 @@ def train(conf, wandb_logger=None):
 
     # prepare image loss
     if conf.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC().loss
+        image_loss_func = vxm.losses.NCC(device=device).loss
     elif conf.image_loss == 'mse':
         image_loss_func = vxm.losses.MSE().loss
-    elif conf.image_loss == 'mu3':
-        image_loss_func = vxm.losses.MutualInformation_v3().loss
-    elif conf.image_loss == 'mu4':
-        image_loss_func = vxm.losses.MutualInformation_v4().loss
-    elif conf.image_loss == 'mi':
+    elif conf.image_loss == 'nmi':
         image_loss_func = vxm.losses.NMI().metric
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
-
-    mutual_info = vxm.losses.NMI().metric
+    
+    mse = vxm.losses.MSE().loss
+    ncc = vxm.losses.NCC(device=device).loss
+    nmi = vxm.losses.NMI().metric
     jacobian = vxm.losses.Jacobian().loss
 
     # need two image loss functions if bidirectional
@@ -157,14 +155,9 @@ def train(conf, wandb_logger=None):
         losses += [vxm.losses.BendingEnergy2d().grad]
     weights += [conf.weight]
 
-    # wandb_logger.watchModel(model)
-
     global_step = 0
     # training loops
     for epoch in range(conf.initial_epoch, conf.epochs):
-
-        if epoch % 100 == 0:
-            model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
         epoch_loss = []
         epoch_total_loss = []
@@ -176,17 +169,14 @@ def train(conf, wandb_logger=None):
 
             # generate inputs (and true outputs) and convert them to tensors
             inputs, y_true = next(generator)
-            inputs = [torch.from_numpy(d).to(
-                device).float().permute(0, 3, 1, 2) for d in inputs]
-            # print(f"inputs shape {inputs[0].shape} and {inputs[1].shape}")
-            y_true = [torch.from_numpy(d).to(
-                device).float().permute(0, 3, 1, 2) for d in y_true]
+            inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
+            y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
             # run inputs through the model to produce a warped image and flow field
             y_pred = model(*inputs)
-
             # calculate total loss
             loss = 0
             loss_list = []
+            metrics_list = []
             for n, loss_function in enumerate(losses):
                 curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
                 loss_list.append(curr_loss.item())
@@ -194,17 +184,27 @@ def train(conf, wandb_logger=None):
             epoch_loss.append(loss_list)
             epoch_total_loss.append(loss.item())
 
-            MI = mutual_info(y_true[0], y_pred[0]).item()
-            # print(f"Mona: {type(y_pred[1])}")
-            folding_ratio, mag_det_jac_det = jacobian(y_pred[1])
-
+            NMI = nmi(y_true[0], y_pred[0]).item()
+            MSE = mse(y_true[0], y_pred[0]).item()
+            NCC = ncc(y_true[0], y_pred[0]).item()
+            folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[1])
+            metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos]))
             # backpropagate and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
-            wandb_logger.log_step_metric(global_step, loss, loss_list[0], loss_list[1], MI, folding_ratio, mag_det_jac_det)
+
+            wandb_logger.log_step_metric(global_step, loss, loss_list[0], loss_list[1],
+                                         NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos)
+            
+            if global_step % 50 == 0:
+                wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[1], "Validation Image")
+        
+        if epoch % 100 == 0:
+            model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+        metrics = np.stack(metrics_list)
 
         # print epoch info
         epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)
@@ -216,7 +216,7 @@ def train(conf, wandb_logger=None):
         print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
         wandb_logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
-            epoch_loss, axis=0)[0], np.mean(epoch_loss, axis=0)[1])
+            epoch_loss, axis=0), np.mean(metrics, axis=0))
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
 
