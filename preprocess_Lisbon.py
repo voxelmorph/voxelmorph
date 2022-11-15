@@ -110,7 +110,7 @@ if __name__ == '__main__':
     min_dim_0 = image_shapes[min_idx[0]][0]
     min_dim_1 = image_shapes[min_idx[1]][1]
     print(f"Minimal shape {(min_dim_0, min_dim_1)}")
-
+    min_dim_0 = 192
     output_2d_filenames = []
     for idx, file in enumerate(input_file_paths):
         image = sitk.ReadImage(file)
@@ -132,7 +132,7 @@ if __name__ == '__main__':
         tmp = (output_file_paths[idx]).split("/")[-1]
         resize_img_array = normalize(resize_img_array)
         
-        resize_img_array = np.transpose(resize_img_array, (1, 2, 0))
+        # resize_img_array = np.transpose(resize_img_array, (1, 2, 0))
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"
             print(output_name)

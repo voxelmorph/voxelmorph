@@ -41,10 +41,8 @@ if __name__ == '__main__':
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA']
     df = pd.DataFrame(columns=col)
     for subject in tqdm(source_files):
-        name, loss_org, org_dis, loss_rig, rig_dis = register_single(
-            conf, subject, wandb_logger)
-        df = pd.concat([df, pd.DataFrame(
-            [[name, loss_org, org_dis, loss_rig, rig_dis]], columns=col)], ignore_index=True)
+        name, loss_org, org_dis, loss_rig, rig_dis = register_single(conf, subject, wandb_logger)
+        df = pd.concat([df, pd.DataFrame([[name, loss_org, org_dis, loss_rig, rig_dis]], columns=col)], ignore_index=True)
         # df.append(name, loss_org, org_dis, loss_rig, rig_dis)
     # convert the registered images to gif and compute the results
 

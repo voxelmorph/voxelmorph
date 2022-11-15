@@ -36,7 +36,7 @@ def main():
     # name = f"{conf\["dataset"\]}_{conf["image_loss"]}_{conf["weight"]}_{conf["norm"]}"
     
     conf.model_dir = f"{conf['model_dir']}/weight_{wandb_logger._wandb.config['weight']}"
-    conf.inference = f"{conf['model_dir']}"
+    conf.inference = f"{conf['inference']}/weight_{wandb_logger._wandb.config['weight']}"
     conf.weight = wandb_logger._wandb.config['weight']
     wandb_logger._wandb.config.update(conf)
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")

@@ -13,28 +13,26 @@ warnings.filterwarnings("ignore")
 if __name__ == '__main__':
     wandb_logger = None
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_nmi.yaml', help='config file')
-    parser.add_argument('--model_path', type=str,
-                        default='model/fbMOLLI_post_nmi_l2', help='model file')
-    parser.add_argument('--weight', type=float, default=0.01, help='weight for the loss')
+    parser.add_argument('--root', type=str,
+                        default='model/fbMOLLI_post_nmi_l2/', help='root path')
+    parser.add_argument('--weight', 
+                        default=0.001, help='weight')
     parser.add_argument('--epochs', type=int, default=100, help='number of epochs')
     args = parser.parse_args()
 
     # load the config file
-    cfg = OmegaConf.load(args.config)
+    conf_path = f"{args.root}/weight_{args.weight}/config.yaml"
+    cfg = OmegaConf.load(conf_path)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-
-    conf.model_dir = f"{args.model_path}/weight_{args.weight}"
-    conf.inference = f"{conf.inference}/weight_{args.weight}/epochs_{args.epochs}"
-
+    tmp = conf['inference'].replace('model', 'results')
+    conf['inference'] = tmp
     print(f"{'---'*10} Start Testing {'---'*10}")
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
     conf.moved = os.path.join(conf.inference, 'moved')
     conf.warp = os.path.join(conf.inference, 'warp')
     conf.result = os.path.join(conf.inference, 'summary')
     print(f"Mona debug - conf: {conf}")
-
+    
     os.makedirs(conf.moved, exist_ok=True)
     os.makedirs(conf.warp, exist_ok=True)
     os.makedirs(conf.result, exist_ok=True)

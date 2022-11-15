@@ -116,8 +116,6 @@ def register_single(conf, subject, wandb_logger=None):
     moved_gif_path = save_gif(moved, name, conf.result, "registered")
     # quiver_path = save_quiver(warp, name, conf.result)
     morph_field_path = save_morphField(warp, name, conf.result)
-    import sys
-    sys.exit()
 
     loss_rig, loss_org = 0, 0
     
