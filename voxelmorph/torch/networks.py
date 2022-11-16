@@ -448,7 +448,7 @@ class VxmDenseBspline(LoadableModel):
         # Network:
         # encoder: same u-net encoder
         # decoder: number of decoder layers / times of upsampling by 2 is decided by cps
-        num_dec_layers = 4 - int(math.ceil(math.log2(min(cps))))
+        num_dec_layers = 7 - int(math.ceil(math.log2(min(cps))))
 
         # configure core unet model
         self.unet_model = Unet(

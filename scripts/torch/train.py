@@ -220,9 +220,9 @@ def train(conf, wandb_logger=None):
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
 
-            wandb_logger.log_step_metric(global_step, loss, 
-                                         NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos,
-                                         L1, L2, D2)
+            # wandb_logger.log_step_metric(global_step, loss, 
+            #                              NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos,
+            #                              L1, L2, D2)
             
             if global_step % 50 == 0:
                 # print(f"Mona- pred shape {y_pred[0].shape}")
