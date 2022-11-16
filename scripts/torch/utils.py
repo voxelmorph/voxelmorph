@@ -86,7 +86,7 @@ def percentage_change(col1, col2):
 @gif.frame
 def help_mag_plot(data):
     fig, ax = plt.subplots(figsize=(3,3))
-    ax.imshow(data, cmap='jet')
+    ax.imshow(data, cmap='gray')
     # ax.axis('off')
     ax.grid(False)
     ax.set_xticks([])

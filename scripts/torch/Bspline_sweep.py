@@ -79,11 +79,11 @@ if __name__ == '__main__':
             'name': 'Epoch NMI'
             },
         'parameters': {
-            'cps': {'values': [1, 2, 4, 8, 16, 32, 64]},
+            'cps': {'values': [3, 4, 5, 6, 7]},
             'svf_steps': {'values': [1, 4]},
             'svf_scale': {'values': [1, 4]},
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='Voxel Morph')
 
-    wandb.agent(sweep_id, function=main, count=70)
+    wandb.agent(sweep_id, function=main, count=30)

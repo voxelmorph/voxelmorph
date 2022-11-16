@@ -67,7 +67,15 @@ def register_single(conf, subject, wandb_logger=None):
     name = (subject).split(".")[0]
 
     # load and set up model
-    model = vxm.networks.VxmDense.load(conf.model_path, device)
+    print(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
+    if conf.transformation == 'dense':
+        model = vxm.networks.VxmDense.load(conf.model_path, device)
+    elif conf.transformation == 'bspline':
+        
+        model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
+    else:
+        raise ValueError('transformation must be dense or bspline')
+
     model.to(device)
     model.eval()
     # load moving and fixed images
@@ -117,8 +125,8 @@ def register_single(conf, subject, wandb_logger=None):
     # quiver_path = save_quiver(warp, name, conf.result)
     morph_field_path = save_morphField(warp, name, conf.result)
 
-    loss_rig, loss_org = 0, 0
-    
+    org_mse, rig_mse = 0, 0
+    print(f"Shape of orig {orig.shape} and moved {moved.shape}")
     for j in range(1, moved.shape[-1]):
         rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
         org_mse += mse(orig[:, :, j-1], orig[:, :, j])
@@ -147,5 +155,5 @@ def register_single(conf, subject, wandb_logger=None):
 
     
     print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
-    return name, loss_org, org_dis, loss_rig, rig_dis
+    return name, org_mse, org_dis, rig_mse, rig_dis
     

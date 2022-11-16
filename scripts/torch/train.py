@@ -88,9 +88,10 @@ def train(conf, wandb_logger=None):
     # device handling
     nb_gpus = conf.gpu
     device = 'cuda' if nb_gpus > 0 else 'cpu'
-    assert np.mod(conf.batch_size, nb_gpus) == 0, \
-        'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (
-            conf.batch_size, nb_gpus)
+    if device == 'cuda':
+        assert np.mod(conf.batch_size, nb_gpus) == 0, \
+            'Batch size (%d) should be a multiple of the nr of gpus (%d)' % (
+                conf.batch_size, nb_gpus)
 
     # enabling cudnn determinism appears to speed up training by a lot
     torch.backends.cudnn.deterministic = not conf.cudnn_nondet
@@ -228,7 +229,7 @@ def train(conf, wandb_logger=None):
                 # print(f"Mona- pred shape {y_pred[0].shape}")
                 wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[-1], "Validation Image")
         
-        if epoch % 100 == 0:
+        if epoch % 1 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
         metrics = np.stack(metrics_list)
 

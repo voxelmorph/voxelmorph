@@ -445,10 +445,6 @@ class VxmDenseBspline(LoadableModel):
                     f"Control point spacing ({c}) at dim ({i}) not supported, must be within [1, 8]")
         self.output_size = tuple([int(math.ceil((imsz-1) / c) + 1 + 2)
                                   for imsz, c in zip(img_size, cps)])
-        # Network:
-        # encoder: same u-net encoder
-        # decoder: number of decoder layers / times of upsampling by 2 is decided by cps
-        num_dec_layers = 7 - int(math.ceil(math.log2(min(cps))))
 
         # configure core unet model
         self.unet_model = Unet(
@@ -460,14 +456,21 @@ class VxmDenseBspline(LoadableModel):
             nb_conv_per_level=nb_unet_conv_per_level,
             half_res=unet_half_res,
         )
+                # Network:
+        # encoder: same u-net encoder
+        # decoder: number of decoder layers / times of upsampling by 2 is decided by cps
+        enc_channels = nb_unet_features[0]
+        dec_channels = nb_unet_features[1]
+        n_dec = min(len(self.unet_model.decoder), len(self.unet_model.encoder))
+        num_dec_layers = n_dec - int(math.ceil(math.log2(min(cps))))
+
 
         self.unet_model.decoder = self.unet_model.decoder[:num_dec_layers]
         # delete the u-net final remaining cov layers
         self.unet_model.remaining = None
 
         # conv layers following resizing
-        enc_channels = nb_unet_features[0]
-        dec_channels = nb_unet_features[1]
+        
         self.resize_conv = nn.ModuleList()
         for i in range(len(resize_channels)):
             if i == 0:
@@ -556,7 +559,11 @@ class VxmDenseBspline(LoadableModel):
 
         # warp image with flow field
         y_source, pos_flow_svf = self.transformer(source, pos_flow)
-        y_target, neg_flow_svf = self.transformer(target, neg_flow) if self.bidir else None
+        if self.bidir and neg_flow:
+            y_target, neg_flow_svf = self.transformer(target, neg_flow)
+        else:
+            y_target = None
+            neg_flow_svf = None
 
         # return non-integrated flow field if training
         if not registration:
