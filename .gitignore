@@ -11,3 +11,4 @@ configs/*
 jobScripts/*
 results/*
 model/*
+matlab/tools
