@@ -229,7 +229,7 @@ def train(conf, wandb_logger=None):
                 # print(f"Mona- pred shape {y_pred[0].shape}")
                 wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[-1], "Validation Image")
         
-        if epoch % 1 == 0:
+        if epoch % 100 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
         metrics = np.stack(metrics_list)
 
