@@ -13,7 +13,7 @@ from utils import *
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_nmi.yaml', help='config file')
+                        default='configs/MOLLI_nmi_bspline.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file

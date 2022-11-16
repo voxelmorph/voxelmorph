@@ -57,7 +57,8 @@ setuptools.setup(
         'tqdm',
         'pandas',
         'seaborn',
-        "gif"
+        'gif',
+        'plotly'
         
     ]
 )

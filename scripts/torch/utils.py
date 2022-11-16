@@ -85,7 +85,7 @@ def percentage_change(col1, col2):
 
 @gif.frame
 def help_mag_plot(data):
-    fig, ax = plt.subplots(figsize=(9,9))
+    fig, ax = plt.subplots(figsize=(3,3))
     ax.imshow(data, cmap='jet')
     # ax.axis('off')
     ax.grid(False)
@@ -117,7 +117,7 @@ def save_quiver(data, name, output_dir):
     for slice in range(slices):
         u, v = data[0, slice, :, :], data[1, slice, :, :]
 
-        fig, ax = plt.subplots(figsize=(9,9))
+        fig, ax = plt.subplots(figsize=(5,5))
         ax.quiver(x, y, u, v, units='width')
         ax.xaxis.set_ticks([])
         ax.yaxis.set_ticks([])
@@ -138,8 +138,8 @@ def save_quiver(data, name, output_dir):
 
 
 @gif.frame
-def help_morph_plot(data, title_font_size=8):
-    fig, ax = plt.subplots(figsize=(9,9))
+def help_morph_plot(data, title_font_size=4):
+    fig, ax = plt.subplots(figsize=(3,3))
     field = np.squeeze(data)
     bg_img = np.zeros_like(field[0, ...])
     plot_warped_grid(ax, field, bg_img, interval=3, title="$\phi_{pred}$", fontsize=title_font_size)

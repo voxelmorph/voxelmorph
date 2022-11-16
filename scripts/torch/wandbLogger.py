@@ -43,7 +43,7 @@ class WandbLogger(object):
         print(type(vars(args)))
         self._wandb.config.update(vars(args), allow_val_change=True)
 
-    def log_step_metric(self, step, losses, loss_1, loss_2, NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos):
+    def log_step_metric(self, step, losses, NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos, l1, l2, d2):
         self._wandb.log({
             "Step": step,
             "Step Loss": losses,
@@ -51,7 +51,10 @@ class WandbLogger(object):
             "Step MSE": MSE,
             "Step NCC": NCC,
             "Step Folding Ratio pos": folding_ratio_pos,
-            "Step Mag Det Jac Det pos": mag_det_jac_det_pos
+            "Step Mag Det Jac Det pos": mag_det_jac_det_pos,
+            "Step L1": l1,
+            "Step L2": l2,
+            "Step D2": d2,
         })
 
 
@@ -66,7 +69,10 @@ class WandbLogger(object):
             "Epoch NCC": epoch_metrics[1],
             "Epoch NMI": epoch_metrics[2],
             "Epoch Folding Ratio pos": epoch_metrics[3],
-            "Epoch Mag Det Jac Det pos": epoch_metrics[4]
+            "Epoch Mag Det Jac Det pos": epoch_metrics[4],
+            "Epoch L1": epoch_metrics[5],
+            "Epoch L2": epoch_metrics[6],
+            "Epoch D2": epoch_metrics[7],
         })
 
     def log_morph_field(self, step, pred, fixed, warp, label):

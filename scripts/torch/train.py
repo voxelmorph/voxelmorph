@@ -41,8 +41,8 @@ import torch
 import argparse
 from omegaconf import OmegaConf
 from wandbLogger import WandbLogger
-
-os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
+# from image_slices_viewer import ImageSliceViewer3D
+# os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
@@ -104,13 +104,27 @@ def train(conf, wandb_logger=None):
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     else:
         # otherwise configure new model
-        model = vxm.networks.VxmDense(
-            inshape=inshape,
-            nb_unet_features=[enc_nf, dec_nf],
-            bidir=bidir,
-            int_steps=conf.int_steps,
-            int_downsize=conf.int_downsize
-        )
+        if conf.transformation == 'Dense':
+            model = vxm.networks.VxmDense(
+                inshape=inshape,
+                nb_unet_features=[enc_nf, dec_nf],
+                bidir=bidir,
+                int_steps=conf.int_steps,
+                int_downsize=conf.int_downsize
+            )
+        elif conf.transformation == 'bspline':
+            model = vxm.networks.VxmDenseBspline(
+                inshape=inshape,
+                nb_unet_features=[enc_nf, dec_nf],
+                bidir=bidir,
+                int_steps=conf.int_steps,
+                int_downsize=conf.int_downsize,
+                cps=conf.bspline_config.cps,
+                svf=conf.bspline_config.svf,
+                svf_steps=conf.bspline_config.svf_steps,
+                svf_scale=conf.bspline_config.svf_scale,
+                resize_channels=conf.bspline_config.resize_channels
+            )
 
     if nb_gpus > 1:
         # use multiple GPUs via DataParallel
@@ -130,14 +144,15 @@ def train(conf, wandb_logger=None):
     elif conf.image_loss == 'mse':
         image_loss_func = vxm.losses.MSE().loss
     elif conf.image_loss == 'nmi':
-        image_loss_func = vxm.losses.NMI().metric
+        # image_loss_func = vxm.losses.NMI().metric
+        image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
     
     mse = vxm.losses.MSE().loss
     ncc = vxm.losses.NCC(device=device).loss
-    nmi = vxm.losses.NMI().metric
+    nmi = vxm.losses.MILossGaussian(conf.mi_config)
     jacobian = vxm.losses.Jacobian().loss
 
     # need two image loss functions if bidirectional
@@ -154,6 +169,10 @@ def train(conf, wandb_logger=None):
     elif conf.norm == 'd2':
         losses += [vxm.losses.BendingEnergy2d().grad]
     weights += [conf.weight]
+
+    l1 = vxm.losses.Grad('l1', loss_mult=conf.int_downsize).loss
+    l2 = vxm.losses.Grad('l2', loss_mult=conf.int_downsize).loss
+    d2 = vxm.losses.BendingEnergy2d().grad
 
     global_step = 0
     # training loops
@@ -187,8 +206,13 @@ def train(conf, wandb_logger=None):
             NMI = nmi(y_true[0], y_pred[0]).item()
             MSE = mse(y_true[0], y_pred[0]).item()
             NCC = ncc(y_true[0], y_pred[0]).item()
-            folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[1])
-            metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos]))
+            folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[-1])
+            L1 = l1(y_true[0], y_pred[-1]).item()
+            L2 = l2(y_true[0], y_pred[-1]).item()
+            D2 = d2(y_true[0], y_pred[-1]).item()
+
+            metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos,
+                                          L1, L2, D2]))
             # backpropagate and optimize
             optimizer.zero_grad()
             loss.backward()
@@ -196,11 +220,13 @@ def train(conf, wandb_logger=None):
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
 
-            wandb_logger.log_step_metric(global_step, loss, loss_list[0], loss_list[1],
-                                         NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos)
+            wandb_logger.log_step_metric(global_step, loss, 
+                                         NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos,
+                                         L1, L2, D2)
             
             if global_step % 50 == 0:
-                wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[1], "Validation Image")
+                # print(f"Mona- pred shape {y_pred[0].shape}")
+                wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[-1], "Validation Image")
         
         if epoch % 100 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))

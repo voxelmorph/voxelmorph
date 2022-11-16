@@ -91,14 +91,16 @@ def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=
         # print(f"Mona-10: length vols {len(vols)} and vols shape {vols.shape}")
         
         slices = vols.shape[1]
-        shuffle = np.random.shuffle(np.arange(slices))
-        for slice in range(slices-1):
-            scan1 = vols[:, 0, :, :, :]
+        shuffle_tmp = np.arange(slices)
+        np.random.shuffle(shuffle_tmp)
+        for slice in range(1, slices):
             if in_order:
-                scan2 = vols[:, (slice+1)%slices, :, :, :]
+                scan1 = vols[:, 0, :, :, :]
+                scan2 = vols[:, slice, :, :, :]
             else:
-                scan2 = vols[:, :, :, shuffle[slice]]
-    
+                scan1 = vols[:, shuffle_tmp[0], :, :, :]
+                scan2 = vols[:, shuffle_tmp[slice], :, :, :]
+            # print(f"Mona-11: scan1 shape {scan1.shape} and scan2 shape {scan2.shape}")
             # some induced chance of making source and target equal
             if prob_same > 0 and np.random.rand() < prob_same:
                 if np.random.rand() > 0.5:
