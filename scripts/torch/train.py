@@ -147,6 +147,8 @@ def train(conf, wandb_logger=None):
     elif conf.image_loss == 'nmi':
         # image_loss_func = vxm.losses.NMI().metric
         image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
+    elif conf.image_loss == 'ngf':
+        image_loss_func = vxm.losses.GradientCorrelation2d()
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
@@ -155,6 +157,7 @@ def train(conf, wandb_logger=None):
     ncc = vxm.losses.NCC(device=device).loss
     nmi = vxm.losses.MILossGaussian(conf.mi_config)
     jacobian = vxm.losses.Jacobian().loss
+    ngf = vxm.losses.GradientCorrelation2d()
 
     # need two image loss functions if bidirectional
     if bidir:
@@ -229,7 +232,7 @@ def train(conf, wandb_logger=None):
                 # print(f"Mona- pred shape {y_pred[0].shape}")
                 wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[-1], "Validation Image")
         
-        if epoch % 1 == 0:
+        if epoch % 100 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
         metrics = np.stack(metrics_list)
 

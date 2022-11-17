@@ -7,7 +7,6 @@ scratch/*
 voxelmorph.egg-info/*
 wandb/*
 models/*
-configs/*
 jobScripts/*
 results/*
 model/*

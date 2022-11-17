@@ -73,7 +73,7 @@ if __name__ == '__main__':
 
     sweep_configuration = {
         'method': 'grid',
-        'name': 'Bspline Config Sweep',
+        'name': 'Bspline Random Midir Sweep',
         'metric': {
             'goal': 'minimize', 
             'name': 'Epoch NMI'

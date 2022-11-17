@@ -1,0 +1,57 @@
+project_name: ${dataset}_${image_loss}_w${weight}_${norm}_batch${batch_size}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}
+
+dataset: fbMOLLI_post
+# data organization parameters
+img_list: data/${dataset}_input.txt
+model_dir: model/${dataset}/${image_loss}_random_midir/${norm}/weight${weight}/batch${batch_size}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}
+img_prefix:
+img_suffix:
+atlas:
+multichannel: False
+in_order: False
+
+# training parameters
+gpu: 1
+batch_size: 20
+epochs: 200
+steps_per_epoch: 100
+load_model: False
+initial_epoch: 0
+lr: 1e-4
+cudnn_nondet:
+
+# network architecture parameters
+enc: [16, 32, 32, 32]
+dec: [32, 32, 32, 32, 32, 16, 16]
+int_steps: 7
+int_downsize: 2
+bidir: True
+
+# loss parameters
+image_loss: nmi
+weight: 0.1
+image_loss_weight: 1
+norm: l2
+
+mi_config:
+  vmin: 0.0
+  vmax: 1.0
+  num_bins: 128
+  sample_ratio: 0.7
+  normalised: True
+
+# transform parameters
+transformation: bspline
+bspline_config:
+  cps: 4
+  svf: True
+  svf_steps: 7
+  svf_scale: 1
+  resize_channels: [32, 16]
+
+wandb: True
+wandb_project: ${project_name}
+
+# register folder
+moving: data/${dataset}_dataset/test
+inference: results/${dataset}/${image_loss}_random_midir/${norm}/weight${weight}/batch${batch_size}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}

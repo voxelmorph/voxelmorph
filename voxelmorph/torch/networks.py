@@ -559,7 +559,7 @@ class VxmDenseBspline(LoadableModel):
 
         # warp image with flow field
         y_source, pos_flow_svf = self.transformer(source, pos_flow)
-        if self.bidir and neg_flow:
+        if self.bidir and neg_flow is not None:
             y_target, neg_flow_svf = self.transformer(target, neg_flow)
         else:
             y_target = None
