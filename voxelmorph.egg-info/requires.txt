@@ -1,0 +1,7 @@
+packaging
+scikit-image
+h5py
+numpy
+scipy
+nibabel
+neurite>=0.2

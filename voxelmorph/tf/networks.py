@@ -630,9 +630,10 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
         # cannot use gaussian initializations with the Unet likelihood at this time
-        if not gaussian_likelihood:
-            assert(not init_mu)
-            assert(not init_sigma)
+        if init_mu and (not gaussian_likelihood):
+            warnings.warn('init_mu ignored if not using a gaussian likelihood model')
+        if init_sigma and (not gaussian_likelihood):
+            warnings.warn('init_sigma ignored if not using a gaussian likelihood model')
 
         # build warp network
         vxm_model = VxmDense(inshape,
