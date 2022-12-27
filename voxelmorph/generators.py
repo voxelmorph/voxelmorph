@@ -121,6 +121,71 @@ def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=
             yield (invols, outvols)     
 
 
+def group_to_atlas(vol_names, in_order=True, batch_size=1, method='avg', **kwargs):
+    """
+    Generator for group-wise registration.
+
+    Args:
+        vol_names (list): List of volume files to load, or list of preloaded volumes.
+        in_order (bool, optional): Yield input pairs in sequence order. Default is True.
+        batch_size (int, optional): Batch size. Defaults to 1.
+        method (str, optional): Methods to generate implicit template. Defaults to 'avg'.
+        kwargs: Forwarded to the internal volgen generator.
+
+    Yields:
+        (invols, atlas): input vols(#batch, #slice, 1, H, W) and atlas(1, 1, H, W)
+    """
+    
+    gen = volgen(vol_names, batch_size=batch_size, **kwargs)
+    
+    while True:
+        vols = next(gen)[0]
+        # print(f"Mona-10: length vols {len(vols)} and vols shape {vols.shape}")
+        
+        slices = vols.shape[1]
+        shuffle_tmp = np.arange(slices)
+        np.random.shuffle(shuffle_tmp)
+        if in_order:
+            invols = vols
+        else:
+            invols = [vols[:, shuffle_tmp[slice], :, :, :] for slice in range(slices)]
+        # print(f"Mona-11: scan1 shape {scan1.shape} and scan2 shape {scan2.shape}")
+        atlas = atlas(invols, method)
+        yield (invols, atlas)
+
+
+def atlas(invols, method='avg'):
+    """
+    Generate implicit template from input volumes.
+
+    Args:
+        invols (_type_): (#batch, #slice, 1, H, W)
+        method (str, optional): Methods to generate implicit template. Defaults to 'avg'.
+
+    Raises:
+        ValueError: input volume should be 5D
+
+    Returns:
+        atlas: implicit template (1, 1, H, W)
+    """
+    if len(invols.shape) == 5:
+        if method == 'avg':
+            atlas = np.mean(invols, axis=1)
+        elif method == 'pca':
+            tmp = np.transpose(np.squeeze(invols), (1, 2, 0))
+            x, y, z = tmp.shape
+            M = tmp.reshape(x*y, z)
+            print(M.shape)
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=1, svd_solver='full')
+            img_pca = pca.fit_transform(M)
+            atlas = img_pca.reshape((x, y))
+            atlas = atlas[None, None, :, :]
+        return atlas
+    else:
+        raise ValueError("Input volume should be 5D")
+
+
 def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, segs=None, **kwargs):
     """
     Generator for scan-to-atlas registration.

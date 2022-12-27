@@ -41,11 +41,7 @@ import torch
 import argparse
 from omegaconf import OmegaConf
 from wandbLogger import WandbLogger
-# from image_slices_viewer import ImageSliceViewer3D
-# os.environ['TF_FORCE_GPU_ALLOW_GROWTH'] = 'true'
 
-# import voxelmorph with pytorch backend
-os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph as vxm  # nopep8
 
 # parse the commandline
@@ -65,12 +61,13 @@ def train(conf, wandb_logger=None):
     add_feat_axis = not conf.multichannel
 
     if conf.atlas:
-        # scan-to-atlas generator
-        atlas = vxm.py.utils.load_volfile(conf.atlas, np_var='vol',
-                                          add_batch_axis=True, add_feat_axis=add_feat_axis)
-        generator = vxm.generators.scan_to_atlas(train_files, atlas,
-                                                 batch_size=conf.batch_size, bidir=conf.bidir,
-                                                 add_feat_axis=add_feat_axis)
+        # group-to-atlas generator
+        print("Mona: use the group to atlas generator")
+        # group wise batch size is always 1
+        generator = vxm.generators.group_to_atlas(train_files, conf.atlas,
+                                                  batch_size=1, bidir=conf.bidir,
+                                                  add_feat_axis=add_feat_axis,
+                                                  method=conf.method)
     else:
         # scan-to-scan generator
         print("Mona: use the scan to scan generator")

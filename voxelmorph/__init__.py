@@ -23,9 +23,9 @@ from .py.utils import default_unet_features
 
 
 # import backend-dependent submodules
-backend = py.utils.get_backend()
+reg = "groupwise"
 
-if backend == 'pytorch':
+if reg == 'pairwise':
     # the pytorch backend can be enabled by setting the VXM_BACKEND
     # environment var to "pytorch"
     try:
@@ -34,6 +34,19 @@ if backend == 'pytorch':
         raise ImportError('Please install pytorch to use this voxelmorph backend')
 
     from . import torch
-    from .torch import layers
-    from .torch import networks
-    from .torch import losses
+    from .pairwise import layers
+    from .pairwise import networks
+    from .pairwise import losses
+
+elif reg == 'groupwise':
+    # the pytorch backend can be enabled by setting the VXM_BACKEND
+    # environment var to "pytorch"
+    try:
+        import torch
+    except ImportError:
+        raise ImportError('Please install pytorch to use this voxelmorph backend')
+
+    from . import torch
+    from .groupwise import layers
+    from .groupwise import networks
+    from .groupwise import losses

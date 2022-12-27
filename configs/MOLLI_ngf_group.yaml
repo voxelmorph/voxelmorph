@@ -1,21 +1,22 @@
-project_name: ${dataset}_${image_loss}_w${weight}_${norm}_batch${batch_size}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}
-
+project_name: group_${dataset}_${image_loss}_w${weight}_${norm}_b${batch_size}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
+path: ${dataset}/gruop/${image_loss}/${norm}/weight${weight}/batch${batch_size}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
 dataset: fbMOLLI_post
 # data organization parameters
 img_list: data/${dataset}_input.txt
-model_dir: model/${dataset}/${image_loss}_random_midir/${norm}/weight${weight}/batch${batch_size}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}
+model_dir: model/${path}
 img_prefix:
 img_suffix:
 atlas:
 multichannel: False
-in_order: False
+in_order: True
 
 # training parameters
 gpu: 1
-batch_size: 20
-epochs: 200
+batch_size: 1
+epochs: 100
 steps_per_epoch: 100
 load_model: False
+model_path: model/${path}/1500.pt
 initial_epoch: 0
 lr: 1e-4
 cudnn_nondet:
@@ -25,10 +26,10 @@ enc: [16, 32, 32, 32]
 dec: [32, 32, 32, 32, 32, 16, 16]
 int_steps: 7
 int_downsize: 2
-bidir: True
+bidir: False
 
 # loss parameters
-image_loss: nmi
+image_loss: ngf
 weight: 0.1
 image_loss_weight: 1
 norm: l2
@@ -54,4 +55,4 @@ wandb_project: ${project_name}
 
 # register folder
 moving: data/${dataset}_dataset/test
-inference: results/${dataset}/${image_loss}_random_midir/${norm}/weight${weight}/batch${batch_size}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}
+inference: results/${path}
