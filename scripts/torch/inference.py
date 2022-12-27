@@ -21,11 +21,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # load the config file
-    conf_path = f"{args.root}/weight_{args.weight}/config.yaml"
+    conf_path = f"{args.root}/config.yaml"
     cfg = OmegaConf.load(conf_path)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    tmp = conf['inference'].replace('model', 'results')
-    conf['inference'] = tmp
+
     print(f"{'---'*10} Start Testing {'---'*10}")
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
     conf.moved = os.path.join(conf.inference, 'moved')

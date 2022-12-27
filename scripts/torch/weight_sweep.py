@@ -14,20 +14,19 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_nmi.yaml', help='config file')
+                        default='configs/MOLLI_ngf_finetune.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
     cfg = OmegaConf.load(args.config)
-    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-
-    if conf.wandb:
-        wandb_logger = WandbLogger(sweep=True)
-    # name = f"{conf\["dataset"\]}_{conf["image_loss"]}_{conf["weight"]}_{conf["norm"]}"
     
-    conf.model_dir = f"{conf['model_dir']}/weight_{wandb_logger._wandb.config['weight']}"
-    conf.inference = f"{conf['inference']}/weight_{wandb_logger._wandb.config['weight']}"
-    conf.weight = wandb_logger._wandb.config['weight']
+
+    if cfg.wandb:
+        wandb_logger = WandbLogger(sweep=True)
+
+    cfg.weight = wandb_logger._wandb.config['weight']
+    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
+    
     wandb_logger._wandb.config.update(conf)
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
@@ -73,13 +72,13 @@ if __name__ == '__main__':
 
     sweep_configuration = {
         'method': 'grid',
-        'name': 'NMI weight Sweep Random Bidirectional',
+        'name': 'NGF finetune weight sweep',
         'metric': {
             'goal': 'minimize', 
             'name': 'Epoch Loss'
             },
         'parameters': {
-            'weight': {'values': [0.01, 0.03, 0.05, 0.07, 0.09, 0.11, 0.13, 0.15]}
+            'weight': {'values': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]}
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='Voxel Morph')

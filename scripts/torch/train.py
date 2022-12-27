@@ -102,7 +102,12 @@ def train(conf, wandb_logger=None):
 
     if conf.load_model:
         # load initial model (if specified)
-        model = vxm.networks.VxmDense.load(conf.model_path, device)
+        if conf.transformation == 'Dense':
+            model = vxm.networks.VxmDense.load(conf.model_path, device)
+            print("Mona: load the bspline model")
+        elif conf.transformation == 'bspline':
+            model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
+            print("Mona: load the bspline model")
     else:
         # otherwise configure new model
         if conf.transformation == 'Dense':
@@ -148,7 +153,7 @@ def train(conf, wandb_logger=None):
         # image_loss_func = vxm.losses.NMI().metric
         image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
     elif conf.image_loss == 'ngf':
-        image_loss_func = vxm.losses.GradientCorrelation2d()
+        image_loss_func = vxm.losses.GradientCorrelation2d(device=device)
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
@@ -157,7 +162,7 @@ def train(conf, wandb_logger=None):
     ncc = vxm.losses.NCC(device=device).loss
     nmi = vxm.losses.MILossGaussian(conf.mi_config)
     jacobian = vxm.losses.Jacobian().loss
-    ngf = vxm.losses.GradientCorrelation2d()
+    ngf = vxm.losses.GradientCorrelation2d(device=device)
 
     # need two image loss functions if bidirectional
     if bidir:
@@ -201,7 +206,7 @@ def train(conf, wandb_logger=None):
             loss_list = []
             metrics_list = []
             for n, loss_function in enumerate(losses):
-                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+                curr_loss = (loss_function(y_true[n], y_pred[n]) * weights[n]).to(device)
                 loss_list.append(curr_loss.item())
                 loss += curr_loss
             epoch_loss.append(loss_list)

@@ -32,7 +32,10 @@ if __name__ == '__main__':
     # register the model
     print(f"{'---'*10} Start Testing {'---'*10}")
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
-
+    conf.moved = os.path.join(conf.inference, 'moved')
+    conf.warp = os.path.join(conf.inference, 'warp')
+    conf.result = os.path.join(conf.inference, 'summary')
+    
     os.makedirs(conf.moved, exist_ok=True)
     os.makedirs(conf.warp, exist_ok=True)
     os.makedirs(conf.result, exist_ok=True)
@@ -42,7 +45,7 @@ if __name__ == '__main__':
     df = pd.DataFrame(columns=col)
     for subject in tqdm(source_files):
         name, loss_org, org_dis, loss_rig, rig_dis = register_single(conf, subject, wandb_logger)
-        df = pd.concat([df, pd.DataFrame([[name, loss_org, org_dis, loss_rig, rig_dis]], columns=col)], ignore_index=True)
+        df = pd.concat([df, pd.DataFrame([[name, loss_org, loss_rig, org_dis, rig_dis]], columns=col)], ignore_index=True)
         # df.append(name, loss_org, org_dis, loss_rig, rig_dis)
     # convert the registered images to gif and compute the results
 

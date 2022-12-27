@@ -61,6 +61,7 @@ def resize(img, new_size, interpolator):
 
 
 def normalize(img):
+    print(f"min {np.min(img)}, range {np.max(img) - np.min(img)}")
     img = (img - np.min(img)) / (np.max(img) - np.min(img))
     return img
 
@@ -68,9 +69,11 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', required=True, help='dataset name')
+    parser.add_argument('--test_ratio', required=True, type=float, help='test_ratio')
+    parser.add_argument('--threshold', required=True, type=int, help='simple threshold for clearance')
     args = parser.parse_args()
 
-    basepath = f"data/{args.dataset}_nii"
+    basepath = f"data/{args.dataset}"
     train_output = f"data/{args.dataset}_dataset/train"
     val_output = f"data/{args.dataset}_dataset/test"
     
@@ -88,7 +91,7 @@ if __name__ == '__main__':
     # print(files)
     for file in files:
         input_file_paths.append(file)
-        name = file.split("/")[-1][:-7]
+        name = file.split("/")[-1][:-4]
         output_file_path = f"{train_output}/{name}"
         output_file_paths.append(output_file_path)
 
@@ -102,8 +105,10 @@ if __name__ == '__main__':
 
     print(f"Total file number {len(input_file_paths)}")
     print(f"The max shape is {max_shape}, median shape is {median_shape}, min_shape is {min_shape}")
-
-    test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*0.5))
+    if args.test_ratio == 1:
+        test_idx = np.arange(len(input_file_paths))
+    else:
+        test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*args.test_ratio))
 
     min_idx = np.argmin(np.vstack(image_shapes), 0)
     print(min_idx)
@@ -117,21 +122,26 @@ if __name__ == '__main__':
 
         # reshape the image to the median shape
         original_shape = image_shapes[idx]
-        new_shape = (min_dim_0, min_dim_1, original_shape[-1])
+        new_shape = (min_dim_0, min_dim_0, original_shape[-1])
         # new_shape = (192, 192, original_shape[-1])
         print(f"Before shape {original_shape}, after shape {new_shape}")
-        resize_img = resize(image, new_shape, sitk.sitkLinear)
+        if original_shape != new_shape:
+            resize_img = resize(image, new_shape, sitk.sitkLinear)
+        else:
+            resize_img = image
         
         # remove the outside noise
         min, max = float(sitk.GetArrayFromImage(resize_img).min()), float(sitk.GetArrayFromImage(resize_img).max())
         print(f"Pixel range {min, max}")
-        resize_img = sitk.Threshold(resize_img, lower=min+20, upper=max, outsideValue=0)
+        resize_img = sitk.Threshold(resize_img, lower=min+args.threshold, upper=max, outsideValue=0)
 
         # normalize the image
         resize_img_array = sitk.GetArrayFromImage(resize_img)
+        # resize_img_array = resize_img_array.transpose(1, 2, 0)
         tmp = (output_file_paths[idx]).split("/")[-1]
         resize_img_array = normalize(resize_img_array)
         
+        print(f"Resize shape {resize_img_array.shape}")
         # resize_img_array = np.transpose(resize_img_array, (1, 2, 0))
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"

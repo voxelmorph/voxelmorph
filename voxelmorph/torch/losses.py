@@ -635,7 +635,8 @@ class GradientCorrelation2d(GradientDifference2d):
                  gauss_truncate=4.0,
                  return_map=False,
                  reduction='mean',
-                 eps=1e-8):
+                 eps=1e-8,
+                 device='cuda'):
 
         super().__init__(grad_method,
                         gauss_sigma,
@@ -644,10 +645,12 @@ class GradientCorrelation2d(GradientDifference2d):
                         reduction)
 
         self.eps = eps
+        self.device = device
 
 
     def forward(self, x, y):
-
+        x = x.to('cpu')
+        y = y.to('cpu')
         self._check_type_forward(x)
         self._check_type_forward(y)
         self._freeze_params()
@@ -686,8 +689,7 @@ class GradientCorrelation2d(GradientDifference2d):
 
         gc_map = 0.5 * (gc_map_u + gc_map_v)
         gc = 0.5 * (gc_u + gc_v)
-
         if not self.return_map:
-            return gc
+            return -gc
 
-        return gc, gc_map
+        return -gc, gc_map

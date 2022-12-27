@@ -68,7 +68,7 @@ def register_single(conf, subject, wandb_logger=None):
 
     # load and set up model
     print(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
-    if conf.transformation == 'dense':
+    if conf.transformation == 'Dense':
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
         
@@ -145,13 +145,12 @@ def register_single(conf, subject, wandb_logger=None):
     # ax2.bar_label(ax2.containers[0])
     ax1.set_title(f"Eigenvalues of original image {name}")
     ax2.set_title(f"Eigenvalues of registered image {name}")
+    plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
     if wandb_logger:
         wandb_logger.log_register_gifs(original_gif_path, label="original Gif")
         wandb_logger.log_register_gifs(moved_gif_path, label="registered Gif")
         wandb_logger.log_register_gifs(morph_field_path, label="Quiver Gif")
         wandb_logger.log_img(plt, "PCA change")
-
-    plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
 
     
     print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
