@@ -182,6 +182,46 @@ def plot_result_fig(warp, pred, fixed, size=(8, 8), title_font_size=8):
     return fig
 
 
+def plot_validation_fig(y_true, y_pred, new_atlas, atlas, disp, size=(8, 8), title_font_size=8):
+    fig = plt.figure(figsize=size)
+    title_pad = 10
+    ax1 = fig.add_subplot(2, 3, 1)
+    plt.imshow(y_true[0, 0, ...], cmap='gray')
+    plt.axis('off')
+    ax1.set_title('y_original', fontsize=title_font_size, pad=title_pad)
+
+    ax2 = fig.add_subplot(2, 3, 2)
+    plt.imshow(y_pred[0, 0, ...], cmap='gray')
+    plt.axis('off')
+    ax2.set_title('y_registered', fontsize=title_font_size, pad=title_pad)
+
+    ax3 = fig.add_subplot(2, 3, 3)
+    error = y_pred[0, 0, ...] - y_true[0, 0, ...]
+    plt.imshow(error, cmap='seismic')
+    # plt.colorbar(ax=ax3)
+    plt.axis('off')
+    ax3.set_title('Difference', fontsize=title_font_size, pad=title_pad)
+
+    ax4 = fig.add_subplot(2, 3, 4)
+    plt.imshow(new_atlas[0, 0, ...], cmap='gray')
+    plt.axis('off')
+    ax4.set_title('new_atlas', fontsize=title_font_size, pad=title_pad)
+
+    ax5 = fig.add_subplot(2, 3, 5)
+    error = new_atlas[0, 0, ...] - atlas[0, 0, ...]
+    plt.imshow(error, cmap='seismic')
+    plt.axis('off')
+    ax5.set_title('atlas Difference', fontsize=title_font_size, pad=title_pad)
+
+
+    ax6 = fig.add_subplot(2, 3, 6)
+    bg_img = np.zeros_like(disp[0, 0, ...])
+    plot_warped_grid(ax6, disp[0, ...], bg_img, interval=3, title="$\phi_{pred}$", fontsize=title_font_size)
+
+    plt.subplots_adjust(left=0.0001, right=0.99, top=0.9, bottom=0.1, wspace=0.001, hspace=0.2)
+    return fig
+
+
 
 def plot_warped_grid(ax, disp, bg_img=None, interval=3, title="$\mathcal{T}_\phi$", fontsize=30, color='c'):
     """disp shape (2, H, W)"""

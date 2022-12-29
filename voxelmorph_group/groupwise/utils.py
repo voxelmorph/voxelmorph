@@ -5,6 +5,8 @@ import scipy.stats as st
 import torch
 import torch.nn.functional as F
 import omegaconf
+from sklearn.decomposition import PCA
+
 
 def save2onxx(model, x, in_name, out_name, out_path):
     # Export the model
@@ -256,3 +258,35 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
         return ncc
 
     return ncc, ncc_map
+
+
+def update_atlas(invols, method='avg'):
+    """
+    Generate implicit template from input volumes.
+
+    Args:
+        invols (_type_): (N, C, H, W)
+        method (str, optional): Methods to generate implicit template. Defaults to 'avg'.
+
+    Raises:
+        ValueError: input volume should be 4D
+
+    Returns:
+        atlas: implicit template (1, 1, H, W)
+    """
+    if len(invols.shape) == 4:
+        if method == 'avg':
+            atlas = torch.mean(invols, axis=0, keepdims=True)
+        elif method == 'pca':
+            tmp = torch.transpose(torch.squeeze(invols), (1, 2, 0))
+
+            x, y, z = tmp.shape
+            M = tmp.reshape(x*y, z)
+            
+            pca = PCA(n_components=1, svd_solver='full')
+            img_pca = pca.fit_transform(M)
+            atlas = img_pca.reshape((x, y))
+            atlas = atlas[None, None, :, :]
+        return atlas
+    else:
+        raise ValueError("Input volume should be 4D")

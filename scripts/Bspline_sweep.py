@@ -14,7 +14,7 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_ngf_finetune.yaml', help='config file')
+                        default='configs/MOLLI_ngf_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
@@ -75,17 +75,17 @@ if __name__ == '__main__':
 
     sweep_configuration = {
         'method': 'grid',
-        'name': 'Bspline Random Midir NGF',
+        'name': 'Bspline Groupwise',
         'metric': {
             'goal': 'minimize', 
-            'name': 'Epoch NMI'
+            'name': 'Epoch Similarity'
             },
         'parameters': {
-            'cps': {'values': [3, 4, 5, 6, 7]},
+            'cps': {'values': [3, 4, 5, 7]},
             'svf_steps': {'values': [1, 4, 7]},
             'svf_scale': {'values': [1, 4, 7]},
         }
     }
     sweep_id = wandb.sweep(sweep=sweep_configuration, project='Voxel Morph')
 
-    wandb.agent(sweep_id, function=main, count=30)
+    wandb.agent(sweep_id, function=main, count=50)

@@ -1,5 +1,7 @@
 import argparse
 import os
+import shutil
+import tempfile
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
@@ -13,7 +15,7 @@ from utils import *
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_ngf.yaml', help='config file')
+                        default='configs/MOLLI_ngf_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
@@ -27,6 +29,10 @@ if __name__ == '__main__':
     # run the training
     print(f"{'---'*10} Start Training {'---'*10}")
     train(conf, wandb_logger)
+    config_path = f"{conf['model_dir']}/config.yaml"
+    with tempfile.NamedTemporaryFile() as fp:
+        OmegaConf.save(config=conf, f=fp.name)
+        shutil.copy(fp.name, config_path)
     print(f"{'---'*10} End of Training {'---'*10}")
 
     # register the model

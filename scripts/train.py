@@ -41,8 +41,9 @@ import torch
 import argparse
 from omegaconf import OmegaConf
 from wandbLogger import WandbLogger
+from torchsummary import summary
 
-import voxelmorph as vxm  # nopep8
+import voxelmorph_group as vxm  # nopep8
 
 # parse the commandline
 
@@ -67,7 +68,7 @@ def train(conf, wandb_logger=None):
         generator = vxm.generators.group_to_atlas(train_files, conf.atlas,
                                                   batch_size=1, bidir=conf.bidir,
                                                   add_feat_axis=add_feat_axis,
-                                                  method=conf.method)
+                                                  method=conf.atlas_methods)
     else:
         # scan-to-scan generator
         print("Mona: use the scan to scan generator")
@@ -75,7 +76,9 @@ def train(conf, wandb_logger=None):
             train_files, in_order=conf.in_order, batch_size=conf.batch_size, bidir=conf.bidir, add_feat_axis=add_feat_axis)
 
     # extract shape from sampled input
-    inshape = next(generator)[0][0].shape[1:-1]
+    shapes = next(generator)[0].shape
+    inshape = shapes[1:-1]
+    n_inputs = shapes[0]
     print(f"Mona-2: inshape {inshape}")
 
     # prepare model folder
@@ -116,18 +119,22 @@ def train(conf, wandb_logger=None):
                 int_downsize=conf.int_downsize
             )
         elif conf.transformation == 'bspline':
-            model = vxm.networks.VxmDenseBspline(
+            model = vxm.networks.GroupVxmDenseBspline(
                 inshape=inshape,
                 nb_unet_features=[enc_nf, dec_nf],
                 bidir=bidir,
                 int_steps=conf.int_steps,
                 int_downsize=conf.int_downsize,
+                src_feats=20,
+                trg_feats=40,
                 cps=conf.bspline_config.cps,
                 svf=conf.bspline_config.svf,
                 svf_steps=conf.bspline_config.svf_steps,
                 svf_scale=conf.bspline_config.svf_scale,
                 resize_channels=conf.bspline_config.resize_channels
             )
+            print("Mona: use the bspline model")
+            # summary(model, input_size=(20, 224, 224), batch_size=1, device='cpu')
 
     if nb_gpus > 1:
         # use multiple GPUs via DataParallel
@@ -193,50 +200,46 @@ def train(conf, wandb_logger=None):
             step_start_time = time.time()
 
             # generate inputs (and true outputs) and convert them to tensors
-            inputs, y_true = next(generator)
-            inputs = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in inputs]
-            y_true = [torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) for d in y_true]
+            inputs, atlas = next(generator)
+            inputs = [torch.from_numpy(inputs).to(device).float().permute(3, 0, 1, 2)] # (C, n, H, W)
+            atlas = torch.from_numpy(atlas).to(device).float().permute(3, 0, 1, 2) # (C, n, H, W)
             # run inputs through the model to produce a warped image and flow field
-            y_pred = model(*inputs)
+            y_pred, new_atlas, flow = model(*inputs)
             # calculate total loss
-            loss = 0
             loss_list = []
             metrics_list = []
-            for n, loss_function in enumerate(losses):
-                curr_loss = (loss_function(y_true[n], y_pred[n]) * weights[n]).to(device)
-                loss_list.append(curr_loss.item())
-                loss += curr_loss
+            sim_loss = 0
+            reg_loss = 0
+            for slice in range(y_pred.shape[0]):
+                y = y_pred[slice, ...]
+                sim_loss += (losses[0](y[None, ...], atlas) * weights[0]).to(device)
+                reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
+            loss_list.append(sim_loss.item()/y_pred.shape[0])
+            loss_list.append(reg_loss.item()/y_pred.shape[0])
+            loss = (sim_loss + reg_loss)/y_pred.shape[0]
+
             epoch_loss.append(loss_list)
             epoch_total_loss.append(loss.item())
 
-            NMI = nmi(y_true[0], y_pred[0]).item()
-            MSE = mse(y_true[0], y_pred[0]).item()
-            NCC = ncc(y_true[0], y_pred[0]).item()
-            folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[-1])
-            L1 = l1(y_true[0], y_pred[-1]).item()
-            L2 = l2(y_true[0], y_pred[-1]).item()
-            D2 = d2(y_true[0], y_pred[-1]).item()
+            # NMI = nmi(y_pred, new_atlas).item()
+            # MSE = mse(y_pred, new_atlas).item()
+            # NCC = ncc(y_pred, new_atlas).item()
+            # folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[-1])
 
-            metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos,
-                                          L1, L2, D2]))
+            # metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos]))
             # backpropagate and optimize
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
-
-            # wandb_logger.log_step_metric(global_step, loss, 
-            #                              NMI, MSE, NCC, folding_ratio_pos, mag_det_jac_det_pos,
-            #                              L1, L2, D2)
             
             if global_step % 50 == 0:
                 # print(f"Mona- pred shape {y_pred[0].shape}")
-                wandb_logger.log_morph_field(global_step, y_pred[0], y_true[0], y_pred[-1], "Validation Image")
+                wandb_logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
         
         if epoch % 100 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
-        metrics = np.stack(metrics_list)
 
         # print epoch info
         epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)
@@ -248,7 +251,7 @@ def train(conf, wandb_logger=None):
         print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
         wandb_logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
-            epoch_loss, axis=0), np.mean(metrics, axis=0))
+            epoch_loss, axis=0))
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
 
@@ -256,7 +259,7 @@ def train(conf, wandb_logger=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/ncc_b1.yaml', help='config file')
+                        default='configs/MOLLI_ngf_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file

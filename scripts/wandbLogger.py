@@ -58,29 +58,23 @@ class WandbLogger(object):
         })
 
 
-    def log_epoch_metric(self, epoch, losses, epoch_loss, epoch_metrics):
+    def log_epoch_metric(self, epoch, losses, epoch_loss):
         # morph = y_img_pred[1].transpose()
         self._wandb.log({
             "Epoch": epoch,
             "Epoch Loss": losses,
             "Epoch Similarity": epoch_loss[0],
-            "Epoch Regularization": epoch_loss[1],
-            "Epoch MSE": epoch_metrics[0],
-            "Epoch NCC": epoch_metrics[1],
-            "Epoch NMI": epoch_metrics[2],
-            "Epoch Folding Ratio pos": epoch_metrics[3],
-            "Epoch Mag Det Jac Det pos": epoch_metrics[4],
-            "Epoch L1": epoch_metrics[5],
-            "Epoch L2": epoch_metrics[6],
-            "Epoch D2": epoch_metrics[7],
+            "Epoch Regularization": epoch_loss[1]
         })
 
-    def log_morph_field(self, step, pred, fixed, warp, label):
+    def log_morph_field(self, step, pred, fixed, atlas, new_atlas, warp, label):
         # print(f"The shape of the morph field is {input.shape}")
         pred = pred.detach().cpu().numpy()
         fixed = fixed.detach().cpu().numpy()
         warp = warp.detach().cpu().numpy()
-        fig = plot_result_fig(warp, pred, fixed)
+        atlas = atlas.detach().cpu().numpy()
+        new_atlas = new_atlas.detach().cpu().numpy()
+        fig = plot_validation_fig(fixed, pred, new_atlas, atlas, warp)
         self._wandb.log({
             "Step": step,
             label: wandb.Image(fig)

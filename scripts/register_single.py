@@ -51,7 +51,7 @@ from utils import *
 
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
-import voxelmorph as vxm   # nopep8
+import voxelmorph_group as vxm   # nopep8
 
 # parse commandline conf
 
@@ -72,7 +72,7 @@ def register_single(conf, subject, wandb_logger=None):
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
         
-        model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
+        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
     else:
         raise ValueError('transformation must be dense or bspline')
 
@@ -83,30 +83,17 @@ def register_single(conf, subject, wandb_logger=None):
     vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
 
     [_, slices, x, y, _] = vols.shape
-    input_fixed = torch.from_numpy(vols[:, 0, :, :, :]).float().permute(0, 3, 1, 2)
+    fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(3, 0, 1, 2).to(device)
+
     
-    # print(f"Mona: vols shape {vols.shape} and input fixed {input_fixed.shape}")
+    predvols, warp = model(fixed, registration=True)
 
-    output_moved = [input_fixed.squeeze()]
-    output_warp = []
-    output_orig = [input_fixed.squeeze()]
-
-    input_fixed = input_fixed.to(device)
-    for slice in range(slices-1):
-        input_moving = torch.from_numpy(vols[:, slice+1, :, :, :]).to(device).float().permute(0, 3, 1, 2)
-        # print(f"The shape of moving is {input_moving.shape} and shape of fixed {input_fixed.shape}")
-        moved, warp = model(input_moving, input_fixed, registration=True) # register all sequence to the first sequence
-
-        output_moved.append(moved.detach().cpu().numpy().squeeze())
-        output_warp.append(warp.detach().cpu().numpy().squeeze())
-        output_orig.append(input_moving.detach().cpu().numpy().squeeze())
-
-    moved = np.stack(output_moved)
-    warp = np.stack(output_warp)
-    orig = np.stack(output_orig)
+    invols = np.squeeze(fixed.detach().cpu().numpy())
+    outvols = np.squeeze(predvols.detach().cpu().numpy())
+    warp = warp.detach().cpu().numpy()
 
     if conf.moved:
-        vxm.py.utils.save_volfile(moved, os.path.join(conf.moved, f"{name}.nii"), fixed_affine)
+        vxm.py.utils.save_volfile(outvols, os.path.join(conf.moved, f"{name}.nii"), fixed_affine)
 
     if conf.warp:
         warp = warp.transpose(2, 3, 0, 1)
@@ -115,8 +102,8 @@ def register_single(conf, subject, wandb_logger=None):
 
     # output the metrics
     # save the gif
-    orig = orig.transpose(1, 2, 0)
-    moved = moved.transpose(1, 2, 0)
+    orig = invols.transpose(1, 2, 0)
+    moved = outvols.transpose(1, 2, 0)
     warp = warp.transpose(3, 2, 0, 1)
     # warp = np.flip(warp, axis=2)
     # print(f"Shape of orig {orig.shape} and moved {moved.shape} and warp {warp.shape}")

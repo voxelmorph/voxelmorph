@@ -9,6 +9,7 @@ from .. import default_unet_features
 from . import layers
 from .modelio import LoadableModel, store_config_args
 from .utils import *
+from .. import py
 
 
 class Unet(nn.Module):
@@ -24,6 +25,7 @@ class Unet(nn.Module):
     def __init__(self,
                  inshape=None,
                  infeats=None,
+                 outfeats=None,
                  nb_features=None,
                  nb_levels=None,
                  max_pool=2,
@@ -111,7 +113,7 @@ class Unet(nn.Module):
             convs = nn.ModuleList()
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
-                convs.append(ConvBlock(ndims, prev_nf, nf))
+                convs.append(ConvBlock(ndims, prev_nf, nf, normalize=True))
                 prev_nf = nf
             self.decoder.append(convs)
             if not half_res or level < (self.nb_levels - 2):
@@ -120,11 +122,11 @@ class Unet(nn.Module):
         # now we take care of any remaining convolutions
         self.remaining = nn.ModuleList()
         for num, nf in enumerate(final_convs):
-            self.remaining.append(ConvBlock(ndims, prev_nf, nf))
+            self.remaining.append(ConvBlock(ndims, prev_nf, nf, normalize=False))
             prev_nf = nf
 
         # cache final number of features
-        self.final_nf = prev_nf
+        self.final_nf = outfeats
 
     def forward(self, x):
 
@@ -154,169 +156,25 @@ class Unet(nn.Module):
 
         return x
 
-
-class VxmDense(LoadableModel):
-    """
-    VoxelMorph network for (unsupervised) nonlinear registration between two images.
-    """
-
-    @store_config_args
-    def __init__(self,
-                 inshape,
-                 nb_unet_features=None,
-                 nb_unet_levels=None,
-                 unet_feat_mult=1,
-                 nb_unet_conv_per_level=1,
-                 int_steps=7,
-                 int_downsize=2,
-                 bidir=False,
-                 use_probs=False,
-                 src_feats=1,
-                 trg_feats=1,
-                 unet_half_res=False):
-        """ 
-        Parameters:
-            inshape: Input shape. e.g. (192, 192, 192)
-            nb_unet_features: Unet convolutional features. Can be specified via a list of lists with
-                the form [[encoder feats], [decoder feats]], or as a single integer. 
-                If None (default), the unet features are defined by the default config described in 
-                the unet class documentation.
-            nb_unet_levels: Number of levels in unet. Only used when nb_features is an integer. 
-                Default is None.
-            unet_feat_mult: Per-level feature multiplier. Only used when nb_features is an integer. 
-                Default is 1.
-            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
-            int_steps: Number of flow integration steps. The warp is non-diffeomorphic when this 
-                value is 0.
-            int_downsize: Integer specifying the flow downsample factor for vector integration. 
-                The flow field is not downsampled when this value is 1.
-            bidir: Enable bidirectional cost function. Default is False.
-            use_probs: Use probabilities in flow field. Default is False.
-            src_feats: Number of source image features. Default is 1.
-            trg_feats: Number of target image features. Default is 1.
-            unet_half_res: Skip the last unet decoder upsampling. Requires that int_downsize=2. 
-                Default is False.
-        """
-        super().__init__()
-
-        # internal flag indicating whether to return flow or integrated warp during inference
-        self.training = True
-
-        # ensure correct dimensionality
-        ndims = len(inshape)
-        assert ndims in [
-            1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
-
-        # configure core unet model
-        self.unet_model = Unet(
-            inshape,
-            infeats=(src_feats + trg_feats),
-            nb_features=nb_unet_features,
-            nb_levels=nb_unet_levels,
-            feat_mult=unet_feat_mult,
-            nb_conv_per_level=nb_unet_conv_per_level,
-            half_res=unet_half_res,
-        )
-
-        # configure unet to flow field layer
-        Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.flow = Conv(self.unet_model.final_nf,
-                         ndims, kernel_size=3, padding=1)
-
-        # init flow layer with small weights and bias
-        self.flow.weight = nn.Parameter(
-            Normal(0, 1e-5).sample(self.flow.weight.shape))
-        self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
-
-        # probabilities are not supported in pytorch
-        if use_probs:
-            raise NotImplementedError(
-                'Flow variance has not been implemented in pytorch - set use_probs to False')
-
-        # configure optional resize layers (downsize)
-        if not unet_half_res and int_steps > 0 and int_downsize > 1:
-            self.resize = layers.ResizeTransform(int_downsize, ndims)
-        else:
-            self.resize = None
-
-        # resize to full res
-        if int_steps > 0 and int_downsize > 1:
-            self.fullsize = layers.ResizeTransform(1 / int_downsize, ndims)
-        else:
-            self.fullsize = None
-
-        # configure bidirectional training
-        self.bidir = bidir
-
-        # configure optional integration layer for diffeomorphic warp
-        down_shape = [int(dim / int_downsize) for dim in inshape]
-        self.integrate = layers.VecInt(
-            down_shape, int_steps) if int_steps > 0 else None
-
-        # configure transformer
-        self.transformer = layers.SpatialTransformer(inshape)
-
-    def forward(self, source, target, registration=False):
-        '''
-        Parameters:
-            source: Source image tensor.
-            target: Target image tensor.
-            registration: Return transformed image and flow. Default is False.
-        '''
-
-        # concatenate inputs and propagate unet
-        x = torch.cat([source, target], dim=1)
-        # print(f"Mona-11: the input x shape is {x.shape} and source {source.shape} and targe {target.shape}")
-        x = self.unet_model(x)
-
-        # transform into flow field
-        flow_field = self.flow(x)
-
-        # resize flow for integration
-        pos_flow = flow_field
-        if self.resize:
-            pos_flow = self.resize(pos_flow)
-
-        preint_flow = pos_flow
-
-        # negate flow for bidirectional model
-        neg_flow = -pos_flow if self.bidir else None
-
-        # integrate to produce diffeomorphic warp
-        if self.integrate:
-            pos_flow = self.integrate(pos_flow)
-            neg_flow = self.integrate(neg_flow) if self.bidir else None
-
-            # resize to final resolution
-            if self.fullsize:
-                pos_flow = self.fullsize(pos_flow)
-                neg_flow = self.fullsize(neg_flow) if self.bidir else None
-
-        # warp image with flow field
-        y_source = self.transformer(source, pos_flow)
-        y_target = self.transformer(target, neg_flow) if self.bidir else None
-
-        # return non-integrated flow field if training
-        if not registration:
-            return (y_source, y_target, preint_flow) if self.bidir else (y_source, preint_flow)
-        else:
-            return y_source, pos_flow
-
-
 class ConvBlock(nn.Module):
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
 
-    def __init__(self, ndims, in_channels, out_channels, stride=1):
+    def __init__(self, ndims, in_channels, out_channels, kernel_size=3, stride=1, normalize=True):
         super().__init__()
 
         Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.main = Conv(in_channels, out_channels, 3, stride, 1)
+        self.main = Conv(in_channels, out_channels, kernel_size, stride, 1)
+        self.normalize = normalize
+        if normalize:
+            self.norm = nn.InstanceNorm2d(out_channels)
         self.activation = nn.LeakyReLU(0.2)
 
     def forward(self, x):
         out = self.main(x)
+        if self.normalize:
+            out = self.norm(out)
         out = self.activation(out)
         return out
 
@@ -373,7 +231,7 @@ def interpolate_(x, scale_factor=None, size=None, mode=None):
     return y
 
 
-class VxmDenseBspline(LoadableModel):
+class GroupVxmDenseBspline(LoadableModel):
     """
     VoxelMorph network for (unsupervised) nonlinear registration between two images.
     """
@@ -396,7 +254,8 @@ class VxmDenseBspline(LoadableModel):
                  svf=True,
                  svf_steps=7,
                  svf_scale=1,
-                 resize_channels=[32, 16]
+                 resize_channels=[32, 20],
+                 method='avg'
                  ):
         """ 
         Parameters:
@@ -430,6 +289,8 @@ class VxmDenseBspline(LoadableModel):
         # internal flag indicating whether to return flow or integrated warp during inference
         self.training = True
 
+        self.method = method
+
         # ensure correct dimensionality
         ndims = len(inshape)
         assert ndims in [
@@ -447,9 +308,13 @@ class VxmDenseBspline(LoadableModel):
                                   for imsz, c in zip(img_size, cps)])
 
         # configure core unet model
+        self.n = src_feats
+        self.dims = inshape
+
         self.unet_model = Unet(
             inshape,
-            infeats=(src_feats + trg_feats),
+            infeats=src_feats,
+            outfeats=trg_feats,
             nb_features=nb_unet_features,
             nb_levels=nb_unet_levels,
             feat_mult=unet_feat_mult,
@@ -468,6 +333,9 @@ class VxmDenseBspline(LoadableModel):
         self.unet_model.decoder = self.unet_model.decoder[:num_dec_layers]
         # delete the u-net final remaining cov layers
         self.unet_model.remaining = None
+        # self.unet_model.remaining = nn.ModuleList()
+        # prev_nf = enc_channels[num_dec_layers] + dec_channels[num_dec_layers]
+        # self.unet_model.remaining.append(ConvBlock(ndims, prev_nf, trg_feats, kernel_size=1, normalize=False))
 
         # conv layers following resizing
         
@@ -487,8 +355,8 @@ class VxmDenseBspline(LoadableModel):
 
         # configure unet to flow field layer
 
-        self.flow = Conv(self.unet_model.final_nf,
-                         ndims, kernel_size=3, padding=1)
+        self.flow = Conv(resize_channels[-1], self.unet_model.final_nf,
+                         kernel_size=3, padding=1)
 
         # init flow layer with small weights and bias
         self.flow.weight = nn.Parameter(
@@ -524,49 +392,40 @@ class VxmDenseBspline(LoadableModel):
         # configure transformer
         self.transformer = layers.SpatialTransformerBspline(
             ndims, inshape, cps=cps, svf=svf, svf_steps=svf_steps, svf_scale=svf_scale)
+    
+    
+    def forward(self, source, registration=False):
+        """
 
-    def forward(self, source, target, registration=False):
-        '''
-        Parameters:
-            source: Source image tensor.
-            target: Target image tensor.
-            registration: Return transformed image and flow. Default is False.
-        '''
+        Args:
+            source (_type_): (#batch, N, *size)
+            registration (bool, optional): _description_. Defaults to False.
 
-        # concatenate inputs and propagate unet
-        x = torch.cat([source, target], dim=1)
-        # print(f"Mona-11: the input x shape is {x.shape} and source {source.shape} and targe {target.shape}")
-        x = self.unet_model(x)
+        Returns:
+            _type_: _description_
+        """
+        x = self.unet_model(source)
+        
 
         # resize output of encoder-decoder
         x = interpolate_(x, size=self.output_size)
         # layers after resize
         for resize_layer in self.resize_conv:
             x = resize_layer(x)
-
+        
         # transform into flow field
         flow_field = self.flow(x)
 
         # resize flow for integration
         pos_flow = flow_field
-        # if self.resize:
-        #     pos_flow = self.resize(pos_flow)
-
-        preint_flow = pos_flow
-
-        # negate flow for bidirectional model
-        neg_flow = -pos_flow if self.bidir else None
-
+        dims = pos_flow.shape[2:]
+        pos_flow = torch.reshape(pos_flow, (2, self.n, *dims)).transpose(0, 1)
         # warp image with flow field
-        y_source, pos_flow_svf = self.transformer(source, pos_flow)
-        if self.bidir and neg_flow is not None:
-            y_target, neg_flow_svf = self.transformer(target, neg_flow)
-        else:
-            y_target = None
-            neg_flow_svf = None
+        warp_img, pos_flow_svf = self.transformer(source.transpose(0, 1), pos_flow)
 
+        template = update_atlas(warp_img, self.method)
         # return non-integrated flow field if training
         if not registration:
-            return (y_source, y_target, pos_flow_svf) if self.bidir else (y_source, pos_flow_svf)
+            return (warp_img, template, pos_flow_svf)
         else:
-            return y_source, pos_flow_svf
+            return warp_img, pos_flow_svf

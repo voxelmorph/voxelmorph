@@ -506,3 +506,33 @@ def jacobian_determinant(disp):
         dfdy = J[1]
 
         return dfdx[..., 0] * dfdy[..., 1] - dfdy[..., 0] * dfdx[..., 1]
+
+def create_atlas(invols, method='avg'):
+    """
+    Generate implicit template from input volumes.
+
+    Args:
+        invols (_type_): (N, C, H, W)
+        method (str, optional): Methods to generate implicit template. Defaults to 'avg'.
+
+    Raises:
+        ValueError: input volume should be 4D
+
+    Returns:
+        atlas: implicit template (1, H, W, 1)
+    """
+    if len(invols.shape) == 4:
+        if method == 'avg':
+            atlas = np.mean(invols, axis=0, keepdims=True)
+        elif method == 'pca':
+            tmp = np.transpose(np.squeeze(invols), (1, 2, 0))
+            x, y, z = tmp.shape
+            M = tmp.reshape(x*y, z)
+            from sklearn.decomposition import PCA
+            pca = PCA(n_components=1, svd_solver='full')
+            img_pca = pca.fit_transform(M)
+            atlas = img_pca.reshape((x, y))
+            atlas = atlas[None, :, :, None]
+        return atlas
+    else:
+        raise ValueError("Input volume should be 4D")

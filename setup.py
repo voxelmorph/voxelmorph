@@ -12,7 +12,7 @@ import packaging.version
 base_dir = pathlib.Path(__file__).parent.resolve()
 
 # extract the current version
-init_file = base_dir.joinpath('voxelmorph/__init__.py')
+init_file = base_dir.joinpath('voxelmorph_group/__init__.py')
 init_text = open(init_file, 'rt').read()
 pattern = r"^__version__ = ['\"]([^'\"]*)['\"]"
 match = re.search(pattern, init_text, re.M)
@@ -24,7 +24,7 @@ if isinstance(packaging.version.parse(version), packaging.version.LegacyVersion)
 
 # run setup
 setuptools.setup(
-    name='voxelmorph',
+    name='voxelmorph_group',
     version=version,
     license='Apache 2.0',
     description='Image Registration with Convolutional Networks',
@@ -58,7 +58,8 @@ setuptools.setup(
         'pandas',
         'seaborn',
         'gif',
-        'plotly'
+        'plotly',
+        'torchsummary'
         
     ]
 )
