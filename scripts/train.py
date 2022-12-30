@@ -158,6 +158,8 @@ def train(conf, wandb_logger=None):
         image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
     elif conf.image_loss == 'ngf':
         image_loss_func = vxm.losses.GradientCorrelation2d(device=device)
+    elif conf.image_loss == 'jointcorrelation':
+        image_loss_func = vxm.losses.JointCorrelation()
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
@@ -204,16 +206,21 @@ def train(conf, wandb_logger=None):
             inputs = [torch.from_numpy(inputs).to(device).float().permute(3, 0, 1, 2)] # (C, n, H, W)
             atlas = torch.from_numpy(atlas).to(device).float().permute(3, 0, 1, 2) # (C, n, H, W)
             # run inputs through the model to produce a warped image and flow field
-            y_pred, new_atlas, flow = model(*inputs)
+            y_pred, new_atlas, flow = model(*inputs) # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
             # calculate total loss
             loss_list = []
             metrics_list = []
             sim_loss = 0
             reg_loss = 0
-            for slice in range(y_pred.shape[0]):
-                y = y_pred[slice, ...]
-                sim_loss += (losses[0](y[None, ...], atlas) * weights[0]).to(device)
-                reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
+            if conf.image_loss == 'jointcorrelation':
+                sim_loss += (losses[0](y_pred) * weights[0]).to(device)
+                for slice in range(y_pred.shape[0]):
+                    reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
+            else:
+                for slice in range(y_pred.shape[0]):
+                    y = y_pred[slice, ...]
+                    sim_loss += (losses[0](y[None, ...], new_atlas) * weights[0]).to(device)
+                    reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
             loss_list.append(sim_loss.item()/y_pred.shape[0])
             loss_list.append(reg_loss.item()/y_pred.shape[0])
             loss = (sim_loss + reg_loss)/y_pred.shape[0]
@@ -221,12 +228,6 @@ def train(conf, wandb_logger=None):
             epoch_loss.append(loss_list)
             epoch_total_loss.append(loss.item())
 
-            # NMI = nmi(y_pred, new_atlas).item()
-            # MSE = mse(y_pred, new_atlas).item()
-            # NCC = ncc(y_pred, new_atlas).item()
-            # folding_ratio_pos, mag_det_jac_det_pos = jacobian(y_pred[-1])
-
-            # metrics_list.append(np.array([MSE, NCC, NMI, folding_ratio_pos, mag_det_jac_det_pos]))
             # backpropagate and optimize
             optimizer.zero_grad()
             loss.backward()

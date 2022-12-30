@@ -14,7 +14,7 @@ import shutil
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_ngf_finetune.yaml', help='config file')
+                        default='configs/MOLLI_jointcorrelation_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file

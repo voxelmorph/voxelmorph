@@ -367,6 +367,7 @@ class NMI(_Loss):
 
 
 class MILossGaussian(nn.Module):
+
     """
     Mutual information loss using Gaussian kernel in KDE
     """
@@ -451,6 +452,7 @@ class MILossGaussian(nn.Module):
             return -torch.mean((ent_x + ent_y) / ent_joint)
         else:
             return -torch.mean(ent_x + ent_y - ent_joint)
+
 
 class Jacobian:
     def __init__(self):
@@ -693,3 +695,28 @@ class GradientCorrelation2d(GradientDifference2d):
             return -gc
 
         return -gc, gc_map
+
+
+class JointCorrelation(nn.Module):
+    def __init__(self, eps=0.5):
+        super(JointCorrelation, self).__init__()
+        self.eps = eps
+    
+
+    def forward(self, invols):
+        n_imgs = invols.shape[0]
+
+        M = torch.transpose(torch.squeeze(torch.flatten(invols, start_dim=1, end_dim=-1)), 0, 1) # M = [n, c, h, w] -> [c*h*w, n]
+        M_avg = torch.mean(M, dim=1, keepdim=True) # [c*h*w, 1]
+        M_avg = torch.tile(M_avg, (1, n_imgs)) # [c*h*w, n]
+
+        C = (M - M_avg).T @ (M - M_avg) / (n_imgs - 1) # [n, n]
+
+        M_std = torch.std(M, dim=0)
+        Sigma_inv = torch.diag(1/M_std)
+        K = Sigma_inv @ C @ Sigma_inv
+
+        eigenvalues = torch.real(torch.linalg.eigvals(K))
+        print(f"Mona - eigenvalues: {eigenvalues}")
+        dissimilarity = 0.5 * torch.nansum(torch.log(eigenvalues + self.eps))
+        return dissimilarity
