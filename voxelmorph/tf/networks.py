@@ -702,7 +702,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
         def log_pdf(prob_ll, atl):
-            return prob_ll + K.log(atl + K.epsilon())
+            return prob_ll + K.log(K.clip(atl, 1e-36, 1.0))
         logpdf = KL.Lambda(lambda x: log_pdf(*x), name='log_pdf')([uloglhood, warped_atlas])
 
         def logsum(logpdf):
