@@ -5,7 +5,7 @@ import tempfile
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
-from wandbLogger import WandbLogger
+from NeptuneLogger import NeptuneLogger
 
 from train import train
 from register_single import register_single
@@ -15,7 +15,7 @@ from utils import *
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_ngf_group.yaml', help='config file')
+                        default='configs/MOLLI_jointcorrelation_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
@@ -24,11 +24,11 @@ if __name__ == '__main__':
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
     if conf.wandb:
-        wandb_logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+        logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training
     print(f"{'---'*10} Start Training {'---'*10}")
-    train(conf, wandb_logger)
+    train(conf, logger)
     config_path = f"{conf['model_dir']}/config.yaml"
     with tempfile.NamedTemporaryFile() as fp:
         OmegaConf.save(config=conf, f=fp.name)
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA']
     df = pd.DataFrame(columns=col)
     for subject in tqdm(source_files):
-        name, loss_org, org_dis, loss_rig, rig_dis = register_single(conf, subject, wandb_logger)
+        name, loss_org, org_dis, loss_rig, rig_dis = register_single(conf, subject, logger)
         df = pd.concat([df, pd.DataFrame([[name, loss_org, loss_rig, org_dis, rig_dis]], columns=col)], ignore_index=True)
         # df.append(name, loss_org, org_dis, loss_rig, rig_dis)
     # convert the registered images to gif and compute the results
@@ -61,5 +61,5 @@ if __name__ == '__main__':
         df['raw PCA'], df['registered PCA'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
 
-    wandb_logger.log_dataframe(df, 'Results')
+    logger.log_dataframe(df, 'Results')
     print(f"{'---'*10} End of Testing {'---'*10}")

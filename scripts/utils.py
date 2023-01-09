@@ -2,8 +2,6 @@ import os
 import numpy as np
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
-from skimage import exposure
-from array2gif import write_gif
 import gif
 
 
@@ -109,32 +107,32 @@ def save_gif(data, name, output_dir, label, duration=100):
     return path
 
 
-def save_quiver(data, name, output_dir):
-    os.makedirs(f"{output_dir}/quiver", exist_ok=True)
-    _, slices, rows, cols = data.shape
-    x, y = np.meshgrid(np.arange(0, rows, 1), np.arange(0, cols, 1))
-    quiver_list = []
-    for slice in range(slices):
-        u, v = data[0, slice, :, :], data[1, slice, :, :]
+# def save_quiver(data, name, output_dir):
+#     os.makedirs(f"{output_dir}/quiver", exist_ok=True)
+#     _, slices, rows, cols = data.shape
+#     x, y = np.meshgrid(np.arange(0, rows, 1), np.arange(0, cols, 1))
+#     quiver_list = []
+#     for slice in range(slices):
+#         u, v = data[0, slice, :, :], data[1, slice, :, :]
 
-        fig, ax = plt.subplots(figsize=(5,5))
-        ax.quiver(x, y, u, v, units='width')
-        ax.xaxis.set_ticks([])
-        ax.yaxis.set_ticks([])
-        ax.set_aspect('equal')
-        fig.canvas.draw()
+#         fig, ax = plt.subplots(figsize=(5,5))
+#         ax.quiver(x, y, u, v, units='width')
+#         ax.xaxis.set_ticks([])
+#         ax.yaxis.set_ticks([])
+#         ax.set_aspect('equal')
+#         fig.canvas.draw()
 
-# grab the pixel buffer and dump it into a numpy array
-        X = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        image = X.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        # print(image.shape)
-        quiver_list.append(image)
+# # grab the pixel buffer and dump it into a numpy array
+#         X = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+#         image = X.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+#         # print(image.shape)
+#         quiver_list.append(image)
 
-        # plt.savefig(f"{output_dir}/quiver/{name}_{slice}.png")
-        plt.close()
-    path = f"{output_dir}/quiver/{name}.gif"
-    write_gif(quiver_list, path)
-    return path
+#         # plt.savefig(f"{output_dir}/quiver/{name}_{slice}.png")
+#         plt.close()
+#     path = f"{output_dir}/quiver/{name}.gif"
+#     write_gif(quiver_list, path)
+#     return path
 
 
 @gif.frame

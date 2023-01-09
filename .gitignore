@@ -11,3 +11,4 @@ jobScripts/*
 results/*
 model/*
 matlab/tools
+.neptune

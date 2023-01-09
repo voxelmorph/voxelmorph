@@ -55,7 +55,7 @@ import voxelmorph_group as vxm   # nopep8
 
 # parse commandline conf
 
-def register_single(conf, subject, wandb_logger=None):
+def register_single(conf, subject, logger=None):
     # device handling
     if conf.gpu and (conf.gpu != '-1'):
         device = 'cuda'
@@ -92,8 +92,11 @@ def register_single(conf, subject, wandb_logger=None):
     outvols = np.squeeze(predvols.detach().cpu().numpy())
     warp = warp.detach().cpu().numpy()
 
+    orig = invols.transpose(1, 2, 0)
+    moved = outvols.transpose(1, 2, 0)
+
     if conf.moved:
-        vxm.py.utils.save_volfile(outvols, os.path.join(conf.moved, f"{name}.nii"), fixed_affine)
+        vxm.py.utils.save_volfile(outvols.transpose(1, 2, 0), os.path.join(conf.moved, f"{name}.nii"), fixed_affine)
 
     if conf.warp:
         warp = warp.transpose(2, 3, 0, 1)
@@ -102,8 +105,7 @@ def register_single(conf, subject, wandb_logger=None):
 
     # output the metrics
     # save the gif
-    orig = invols.transpose(1, 2, 0)
-    moved = outvols.transpose(1, 2, 0)
+    
     warp = warp.transpose(3, 2, 0, 1)
     # warp = np.flip(warp, axis=2)
     # print(f"Shape of orig {orig.shape} and moved {moved.shape} and warp {warp.shape}")
@@ -133,11 +135,11 @@ def register_single(conf, subject, wandb_logger=None):
     ax1.set_title(f"Eigenvalues of original image {name}")
     ax2.set_title(f"Eigenvalues of registered image {name}")
     plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
-    if wandb_logger:
-        wandb_logger.log_register_gifs(original_gif_path, label="original Gif")
-        wandb_logger.log_register_gifs(moved_gif_path, label="registered Gif")
-        wandb_logger.log_register_gifs(morph_field_path, label="Quiver Gif")
-        wandb_logger.log_img(plt, "PCA change")
+    if logger:
+        logger.log_gifs(original_gif_path, label="original Gif")
+        logger.log_gifs(moved_gif_path, label="registered Gif")
+        logger.log_gifs(morph_field_path, label="Quiver Gif")
+        logger.log_img(plt, "PCA change")
 
     
     print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")

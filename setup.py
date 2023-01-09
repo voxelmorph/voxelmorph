@@ -46,7 +46,7 @@ setuptools.setup(
         'scipy',
         'nibabel',
         'neurite>=0.2',
-        'wandb',
+        'neptune-client',
         'torch',
         'torchvision',
         'torchaudio',
@@ -59,7 +59,8 @@ setuptools.setup(
         'seaborn',
         'gif',
         'plotly',
-        'torchsummary'
+        'torchsummary',
+        'pystrum'
         
     ]
 )

@@ -40,7 +40,7 @@ import numpy as np
 import torch
 import argparse
 from omegaconf import OmegaConf
-from wandbLogger import WandbLogger
+from NeptuneLogger import NeptuneLogger
 from torchsummary import summary
 
 import voxelmorph_group as vxm  # nopep8
@@ -48,7 +48,7 @@ import voxelmorph_group as vxm  # nopep8
 # parse the commandline
 
 
-def train(conf, wandb_logger=None):
+def train(conf, logger=None):
 
     bidir = conf.bidir
 
@@ -214,8 +214,10 @@ def train(conf, wandb_logger=None):
             reg_loss = 0
             if conf.image_loss == 'jointcorrelation':
                 sim_loss += (losses[0](y_pred) * weights[0]).to(device)
+                folding_ratio, mag_det_jac_det = jacobian(flow)
                 for slice in range(y_pred.shape[0]):
                     reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
+                reg_loss += torch.tensor(mag_det_jac_det * weights[1]).to(device)
             else:
                 for slice in range(y_pred.shape[0]):
                     y = y_pred[slice, ...]
@@ -235,10 +237,6 @@ def train(conf, wandb_logger=None):
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
             
-            if global_step % 50 == 0:
-                # print(f"Mona- pred shape {y_pred[0].shape}")
-                wandb_logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
-        
         if epoch % 100 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
@@ -251,8 +249,15 @@ def train(conf, wandb_logger=None):
             np.mean(epoch_total_loss), losses_info)
         print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
-        wandb_logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
+        logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
             epoch_loss, axis=0))
+        logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
+
+        logger.log_metric(epoch, "Folding Ratio", folding_ratio)
+        logger.log_metric(epoch, "Mag Det Jac Det", mag_det_jac_det)
+        logger.log_metric(epoch, "L1", l1(y_pred, flow))
+        logger.log_metric(epoch, "L2", l2(y_pred, flow))
+        logger.log_metric(epoch, "D2", d2(y_pred, flow))
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
 
@@ -260,7 +265,7 @@ def train(conf, wandb_logger=None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_ngf_group.yaml', help='config file')
+                        default='configs/MOLLI_jointcorrelation_group.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
@@ -269,7 +274,7 @@ if __name__ == '__main__':
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
     if conf.wandb:
-        wandb_logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+        logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training
-    train(conf, wandb_logger)
+    train(conf, logger)

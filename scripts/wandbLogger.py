@@ -21,7 +21,7 @@ class WandbLogger(object):
         # Initialize a W&B run
         if not sweep and self._wandb.run is None:
             self._wandb.init(
-                project='Voxel Morph',
+                project='Group Registration',
                 name=project_name,
                 config=OmegaConf.to_container(cfg, resolve=True)
             )
@@ -98,4 +98,10 @@ class WandbLogger(object):
     def log_img(self, img, label):
         self._wandb.log({
             label: img
+        })
+
+    def log_metric(self, epoch, label, value):
+        self._wandb.log({
+            "Epoch": epoch,
+            label: value
         })
