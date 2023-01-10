@@ -75,29 +75,29 @@ class WandbLogger(object):
         atlas = atlas.detach().cpu().numpy()
         new_atlas = new_atlas.detach().cpu().numpy()
         fig = plot_validation_fig(fixed, pred, new_atlas, atlas, warp)
-        self._wandb.log({
-            "Step": step,
-            label: wandb.Image(fig)
-            # label: fig
-        })
-        plt.close(fig)
+        return fig
 
     def watchModel(self, model):
         self._wandb.watch(model, 'all')
 
-    def log_register_gifs(self, path, label):
+    def log_gifs(self, path, label):
         self._wandb.log({
             label: wandb.Video(path, fps=4, format="gif")
         })
 
-    def log_dataframe(self, df, label):
-        self._wandb.log({
-            label: wandb.Table(dataframe=df)
-        })
+    def log_dataframe(self, df, label, path):
+        self._wandb_artifacts = wandb.Artifact("result", type="val_result")
+        self._wandb_artifacts.add_file(path)
+
     
     def log_img(self, img, label):
         self._wandb.log({
             label: img
+        })
+    
+    def log_img_frompath(self, img, label, path):
+        self._wandb.log({
+            label: wandb.Image(path)
         })
 
     def log_metric(self, epoch, label, value):

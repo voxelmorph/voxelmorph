@@ -42,7 +42,7 @@ import argparse
 from omegaconf import OmegaConf
 from NeptuneLogger import NeptuneLogger
 from torchsummary import summary
-
+import matplotlib.pyplot as plt
 import voxelmorph_group as vxm  # nopep8
 
 # parse the commandline
@@ -212,9 +212,9 @@ def train(conf, logger=None):
             metrics_list = []
             sim_loss = 0
             reg_loss = 0
+            folding_ratio, mag_det_jac_det = jacobian(flow)
             if conf.image_loss == 'jointcorrelation':
                 sim_loss += (losses[0](y_pred) * weights[0]).to(device)
-                folding_ratio, mag_det_jac_det = jacobian(flow)
                 for slice in range(y_pred.shape[0]):
                     reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
                 reg_loss += torch.tensor(mag_det_jac_det * weights[1]).to(device)
@@ -236,8 +236,14 @@ def train(conf, logger=None):
             optimizer.step()
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
+
+            logger.log_metric(global_step, "Step/Folding Ratio", folding_ratio)
+            logger.log_metric(global_step, "Step/Mag Det Jac Det", mag_det_jac_det)
+            logger.log_metric(global_step, "Step/L1", l1(y_pred, flow))
+            logger.log_metric(global_step, "Step/L2", l2(y_pred, flow))
+            logger.log_metric(global_step, "Step/D2", d2(y_pred, flow))
             
-        if epoch % 100 == 0:
+        if epoch % 10 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
         # print epoch info
@@ -251,13 +257,16 @@ def train(conf, logger=None):
 
         logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
             epoch_loss, axis=0))
-        logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
+        fig = logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
 
-        logger.log_metric(epoch, "Folding Ratio", folding_ratio)
-        logger.log_metric(epoch, "Mag Det Jac Det", mag_det_jac_det)
-        logger.log_metric(epoch, "L1", l1(y_pred, flow))
-        logger.log_metric(epoch, "L2", l2(y_pred, flow))
-        logger.log_metric(epoch, "D2", d2(y_pred, flow))
+        plt.savefig(os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
+        logger.log_img_frompath(fig, "Validation Image", os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
+
+        logger.log_metric(epoch, "Epoch/Folding Ratio", folding_ratio)
+        logger.log_metric(epoch, "Epoch/Mag Det Jac Det", mag_det_jac_det)
+        logger.log_metric(epoch, "Epoch/L1", l1(y_pred, flow))
+        logger.log_metric(epoch, "Epoch/L2", l2(y_pred, flow))
+        logger.log_metric(epoch, "Epoch/D2", d2(y_pred, flow))
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
 

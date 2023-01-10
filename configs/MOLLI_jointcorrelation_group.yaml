@@ -12,10 +12,10 @@ multichannel: False
 in_order: True
 
 # training parameters
-gpu: 0
+gpu: 1
 batch_size: 1
-epochs: 10
-steps_per_epoch: 1
+epochs: 100
+steps_per_epoch: 10
 load_model: False
 model_path: model/${path}/500.pt
 initial_epoch: 0
@@ -51,7 +51,7 @@ bspline_config:
   svf_scale: 1
   resize_channels: [64, 32]
 
-wandb: True
+log: wandb
 wandb_project: ${project_name}
 
 # register folder

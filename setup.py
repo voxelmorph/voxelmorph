@@ -42,7 +42,7 @@ setuptools.setup(
         'packaging',
         'scikit-image',
         'h5py',
-        'numpy',
+        'numpy==1.23.1',
         'scipy',
         'nibabel',
         'neurite>=0.2',
@@ -60,7 +60,8 @@ setuptools.setup(
         'gif',
         'plotly',
         'torchsummary',
-        'pystrum'
+        'pystrum',
+        'wandb'
         
     ]
 )

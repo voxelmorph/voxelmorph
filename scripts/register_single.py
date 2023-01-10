@@ -139,7 +139,7 @@ def register_single(conf, subject, logger=None):
         logger.log_gifs(original_gif_path, label="original Gif")
         logger.log_gifs(moved_gif_path, label="registered Gif")
         logger.log_gifs(morph_field_path, label="Quiver Gif")
-        logger.log_img(plt, "PCA change")
+        # logger.log_img(plt, "PCA change")
 
     
     print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")

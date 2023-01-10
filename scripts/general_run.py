@@ -6,6 +6,7 @@ import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from NeptuneLogger import NeptuneLogger
+from wandbLogger import WandbLogger
 
 from train import train
 from register_single import register_single
@@ -23,28 +24,35 @@ if __name__ == '__main__':
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
-    if conf.wandb:
+    conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
+    conf.moved = os.path.join(conf.inference, 'moved')
+    conf.warp = os.path.join(conf.inference, 'warp')
+    conf.result = os.path.join(conf.inference, 'summary')
+    conf.val = os.path.join(conf.inference, 'val')
+    
+    os.makedirs(conf.moved, exist_ok=True)
+    os.makedirs(conf.warp, exist_ok=True)
+    os.makedirs(conf.result, exist_ok=True)
+    os.makedirs(conf.val, exist_ok=True)
+
+    if conf.log == 'wandb':
+        logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+    elif conf.log == 'neptune':
         logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training
     print(f"{'---'*10} Start Training {'---'*10}")
     train(conf, logger)
     config_path = f"{conf['model_dir']}/config.yaml"
-    with tempfile.NamedTemporaryFile() as fp:
-        OmegaConf.save(config=conf, f=fp.name)
-        shutil.copy(fp.name, config_path)
+    try:
+        with open(config_path, 'w') as fp:
+            OmegaConf.save(config=conf, f=fp.name)
+    except:
+        print("Unable to copy the config")
     print(f"{'---'*10} End of Training {'---'*10}")
 
     # register the model
     print(f"{'---'*10} Start Testing {'---'*10}")
-    conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
-    conf.moved = os.path.join(conf.inference, 'moved')
-    conf.warp = os.path.join(conf.inference, 'warp')
-    conf.result = os.path.join(conf.inference, 'summary')
-    
-    os.makedirs(conf.moved, exist_ok=True)
-    os.makedirs(conf.warp, exist_ok=True)
-    os.makedirs(conf.result, exist_ok=True)
 
     source_files = os.listdir(conf.moving)
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA']
@@ -60,6 +68,6 @@ if __name__ == '__main__':
     df['PCA changes percentage'] = percentage_change(
         df['raw PCA'], df['registered PCA'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-
-    logger.log_dataframe(df, 'Results')
+    
+    logger.log_dataframe(df, 'Results', path=os.path.join(conf.result, 'results.csv'))
     print(f"{'---'*10} End of Testing {'---'*10}")
