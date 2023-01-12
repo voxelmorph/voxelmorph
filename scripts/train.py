@@ -261,6 +261,7 @@ def train(conf, logger=None):
 
         plt.savefig(os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
         logger.log_img_frompath(fig, "Validation Image", os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
+        plt.close(fig)
 
         logger.log_metric(epoch, "Epoch/Folding Ratio", folding_ratio)
         logger.log_metric(epoch, "Epoch/Mag Det Jac Det", mag_det_jac_det)

@@ -47,9 +47,8 @@ def main():
     print(f"{'---'*10} End of Training {'---'*10}")
     config_path = f"{conf['model_dir']}/config.yaml"
     try:
-        with tempfile.NamedTemporaryFile() as fp:
+        with open(config_path, 'w') as fp:
             OmegaConf.save(config=conf, f=fp.name)
-            shutil.copy(fp.name, config_path)
     except:
         print("Unable to copy the config")
 
@@ -71,14 +70,14 @@ def main():
         df['raw PCA'], df['registered PCA'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
 
-    logger.log_dataframe(df, 'Results')
+    logger.log_dataframe(df, 'Results', path=os.path.join(conf.result, 'results.csv'))
     print(f"{'---'*10} End of Testing {'---'*10}")
 
 if __name__ == '__main__':
 
     sweep_configuration = {
         'method': 'grid',
-        'name': 'NGF finetune weight sweep',
+        'name': 'Group NGF finetune weight',
         'metric': {
             'goal': 'minimize', 
             'name': 'Epoch Loss'
