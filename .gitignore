@@ -5,6 +5,7 @@ __pycache__/
 scratch/*
 .eggs/*
 voxelmorph.egg-info/*
+voxelmorph_group.egg-info/*
 wandb/*
 models/*
 jobScripts/*
@@ -12,3 +13,4 @@ results/*
 model/*
 matlab/tools
 .neptune
+jobscripts/*
