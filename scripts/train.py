@@ -37,6 +37,7 @@ License.
 import os
 import time
 import numpy as np
+import logging
 import torch
 import argparse
 from omegaconf import OmegaConf
@@ -44,6 +45,7 @@ import matplotlib.pyplot as plt
 import voxelmorph_group as vxm  # nopep8
 from utils import *
 
+hydralog = logging.getLogger(__name__)
 
 def train(conf, logger=None):
 
@@ -52,7 +54,7 @@ def train(conf, logger=None):
     # load and prepare training data
     train_files = vxm.py.utils.read_file_list(conf.img_list, prefix=conf.img_prefix,
                                               suffix=conf.img_suffix)
-    print(f"Mona-1: the number of input files {len(train_files)}")
+    hydralog.info(f"The number of input files {len(train_files)}")
     assert len(train_files) > 0, 'Could not find any training data.'
 
     # no need to append an extra feature axis if data is multichannel
@@ -60,7 +62,7 @@ def train(conf, logger=None):
 
     if conf.atlas:
         # group-to-atlas generator
-        print("Mona: use the group to atlas generator")
+        hydralog.debug("Use the group to atlas generator")
         # group wise batch size is always 1
         generator = vxm.generators.group_to_atlas(train_files, conf.atlas,
                                                   batch_size=1, bidir=conf.bidir,
@@ -68,15 +70,14 @@ def train(conf, logger=None):
                                                   method=conf.atlas_methods)
     else:
         # scan-to-scan generator
-        print("Mona: use the scan to scan generator")
+        hydralog.debug("Mona: use the scan to scan generator")
         generator = vxm.generators.scan_to_scan(
             train_files, in_order=conf.in_order, batch_size=conf.batch_size, bidir=conf.bidir, add_feat_axis=add_feat_axis)
 
     # extract shape from sampled input
     shapes = next(generator)[0].shape
     inshape = shapes[1:-1]
-    n_inputs = shapes[0]
-    print(f"Mona-2: inshape {inshape}")
+    hydralog.info(f"Inshape {inshape}")
 
     # prepare model folder
     model_dir = conf.model_dir
@@ -101,10 +102,10 @@ def train(conf, logger=None):
         # load initial model (if specified)
         if conf.transformation == 'Dense':
             model = vxm.networks.VxmDense.load(conf.model_path, device)
-            print("Mona: load the bspline model")
+            hydralog.debug("Mona: load the Dense model")
         elif conf.transformation == 'bspline':
             model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
-            print("Mona: load the bspline model")
+            hydralog.debug("Mona: load the Bspline model")
     else:
         # otherwise configure new model
         if conf.transformation == 'Dense':
@@ -130,7 +131,7 @@ def train(conf, logger=None):
                 svf_scale=conf.bspline_config.svf_scale,
                 resize_channels=conf.bspline_config.resize_channels
             )
-            print("Mona: use the bspline model")
+            hydralog.debug("Mona: use the bspline model")
             # summary(model, input_size=(20, 224, 224), batch_size=1, device='cpu')
 
     if nb_gpus > 1:
@@ -300,6 +301,9 @@ def validation(conf, model, global_step, device, logger=None):
 
 
 if __name__ == '__main__':
+
+    hydralog = logging.getLogger('Group Registration')
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
                         default='conf/config.yaml', help='config file')
@@ -310,7 +314,7 @@ if __name__ == '__main__':
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
     conf.val = os.path.join(conf.inference, 'val')
     os.makedirs(conf.val, exist_ok=True)
-    print(f"Mona debug - conf: {conf} and type: {type(conf)}")
+    hydralog.info(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
     if conf.log == 'wandb':
         from wandbLogger import WandbLogger
