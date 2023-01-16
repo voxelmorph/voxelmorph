@@ -36,13 +36,11 @@ the License.
 """
 
 import os
-import argparse
+import logging
 
 # third party
 import numpy as np
-import nibabel as nib
 import torch
-from skimage import exposure
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sewar.full_ref import mse
@@ -54,7 +52,7 @@ os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm   # nopep8
 
 # parse commandline conf
-
+hydralog = logging.getLogger(__name__)
 def register_single(conf, subject, logger=None):
     # device handling
     if conf.gpu and (conf.gpu != '-1'):
@@ -67,7 +65,7 @@ def register_single(conf, subject, logger=None):
     name = (subject).split(".")[0]
 
     # load and set up model
-    print(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
+    hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
     if conf.transformation == 'Dense':
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
@@ -115,7 +113,7 @@ def register_single(conf, subject, logger=None):
     morph_field_path = save_morphField(warp, name, conf.result)
 
     org_mse, rig_mse = 0, 0
-    print(f"Shape of orig {orig.shape} and moved {moved.shape}")
+    hydralog.debug(f"Shape of orig {orig.shape} and moved {moved.shape}")
     for j in range(1, moved.shape[-1]):
         rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
         org_mse += mse(orig[:, :, j-1], orig[:, :, j])
@@ -140,6 +138,6 @@ def register_single(conf, subject, logger=None):
         # logger.log_img(plt, "PCA change")
 
     
-    print(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
+    hydralog.info(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
     return name, org_mse, org_dis, rig_mse, rig_dis
     

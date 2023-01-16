@@ -1,8 +1,6 @@
-import argparse
 import os
 import hydra
-import shutil
-import tempfile
+import logging
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf, DictConfig
@@ -12,6 +10,7 @@ from train import train
 from register_single import register_single
 from utils import *
 
+hydralog = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg:DictConfig):
@@ -23,7 +22,7 @@ def main(cfg:DictConfig):
     # # load the config file
     # cfg = OmegaConf.load(args.config)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    print(f"Mona debug - conf: {conf} and type: {type(conf)}")
+    hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
 
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
     conf.moved = os.path.join(conf.inference, 'moved')
@@ -43,18 +42,18 @@ def main(cfg:DictConfig):
         logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training
-    print(f"{'---'*10} Start Training {'---'*10}")
+    hydralog.info(f"{'---'*10} Start Training {'---'*10}")
     train(conf, logger)
     config_path = f"{conf['model_dir']}/config.yaml"
     try:
         with open(config_path, 'w') as fp:
             OmegaConf.save(config=conf, f=fp.name)
     except:
-        print("Unable to copy the config")
-    print(f"{'---'*10} End of Training {'---'*10}")
+        hydralog.warning("Unable to copy the config")
+    hydralog.info(f"{'---'*10} End of Training {'---'*10}")
 
     # register the model
-    print(f"{'---'*10} Start Testing {'---'*10}")
+    hydralog.info(f"{'---'*10} Start Testing {'---'*10}")
 
     source_files = os.listdir(conf.moving)
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA']
@@ -72,7 +71,7 @@ def main(cfg:DictConfig):
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
     
     logger.log_dataframe(df, 'Results', path=os.path.join(conf.result, 'results.csv'))
-    print(f"{'---'*10} End of Testing {'---'*10}")
+    hydralog.info(f"{'---'*10} End of Testing {'---'*10}")
 
 
 if __name__ == '__main__':
