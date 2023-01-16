@@ -182,7 +182,8 @@ if nb_devices > 1:
     save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
     model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
 else:
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, 
+                                                       save_freq=20 * args.steps_per_epoch)
 
 model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
 
