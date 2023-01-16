@@ -1,11 +1,11 @@
 import argparse
 import os
+import hydra
 import shutil
 import tempfile
 import pandas as pd
 from tqdm import tqdm
-from omegaconf import OmegaConf
-from NeptuneLogger import NeptuneLogger
+from omegaconf import OmegaConf, DictConfig
 from wandbLogger import WandbLogger
 
 from train import train
@@ -13,14 +13,15 @@ from register_single import register_single
 from utils import *
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_jointcorrelation_group.yaml', help='config file')
-    args = parser.parse_args()
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def main(cfg:DictConfig):
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--config', type=str,
+    #                     default='conf/config.yaml', help='config file')
+    # args = parser.parse_args()
 
-    # load the config file
-    cfg = OmegaConf.load(args.config)
+    # # load the config file
+    # cfg = OmegaConf.load(args.config)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
@@ -38,6 +39,7 @@ if __name__ == '__main__':
     if conf.log == 'wandb':
         logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
     elif conf.log == 'neptune':
+        from NeptuneLogger import NeptuneLogger
         logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training
@@ -71,3 +73,7 @@ if __name__ == '__main__':
     
     logger.log_dataframe(df, 'Results', path=os.path.join(conf.result, 'results.csv'))
     print(f"{'---'*10} End of Testing {'---'*10}")
+
+
+if __name__ == '__main__':
+    main()

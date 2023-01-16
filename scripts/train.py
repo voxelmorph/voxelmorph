@@ -40,12 +40,9 @@ import numpy as np
 import torch
 import argparse
 from omegaconf import OmegaConf
-from NeptuneLogger import NeptuneLogger
-from torchsummary import summary
 import matplotlib.pyplot as plt
 import voxelmorph_group as vxm  # nopep8
-
-# parse the commandline
+from utils import *
 
 
 def train(conf, logger=None):
@@ -169,7 +166,7 @@ def train(conf, logger=None):
     nmi = vxm.losses.MILossGaussian(conf.mi_config)
     jacobian = vxm.losses.Jacobian().loss
     ngf = vxm.losses.GradientCorrelation2d(device=device)
-
+    totalcorr = vxm.losses.JointCorrelation()
     # need two image loss functions if bidirectional
     if bidir:
         losses = [image_loss_func, image_loss_func]
@@ -192,6 +189,7 @@ def train(conf, logger=None):
     global_step = 0
     # training loops
     for epoch in range(conf.initial_epoch, conf.epochs):
+        model.train()
 
         epoch_loss = []
         epoch_total_loss = []
@@ -209,10 +207,22 @@ def train(conf, logger=None):
             y_pred, new_atlas, flow = model(*inputs) # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
             # calculate total loss
             loss_list = []
-            metrics_list = []
             sim_loss = 0
             reg_loss = 0
+            mse_loss = 0
+            nmi_loss = 0
+            ncc_loss = 0
+            ngf_loss = 0
+
             folding_ratio, mag_det_jac_det = jacobian(flow)
+            # compute all metric
+            tc = totalcorr(y_pred)
+            for slice in range(y_pred.shape[0]):
+                ncc_loss += ncc(y_pred[slice, ...][None, ...], new_atlas)
+                mse_loss += mse(y_pred[slice, ...][None, ...], new_atlas)
+                nmi_loss += nmi(y_pred[slice, ...][None, ...], new_atlas)
+                ngf_loss += ngf(y_pred[slice, ...][None, ...], new_atlas)
+            
             if conf.image_loss == 'jointcorrelation':
                 sim_loss += (losses[0](y_pred) * weights[0]).to(device)
                 for slice in range(y_pred.shape[0]):
@@ -242,6 +252,12 @@ def train(conf, logger=None):
             logger.log_metric(global_step, "Step/L1", l1(y_pred, flow))
             logger.log_metric(global_step, "Step/L2", l2(y_pred, flow))
             logger.log_metric(global_step, "Step/D2", d2(y_pred, flow))
+
+            logger.log_metric(global_step, "Step/MSE", mse_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NMI", nmi_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NCC", ncc_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NGF", ngf_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/TC", tc.item()/y_pred.shape[0])
             
         if epoch % 10 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
@@ -263,27 +279,44 @@ def train(conf, logger=None):
         logger.log_img_frompath(fig, "Validation Image", os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
         plt.close(fig)
 
-        logger.log_metric(epoch, "Epoch/Folding Ratio", folding_ratio)
-        logger.log_metric(epoch, "Epoch/Mag Det Jac Det", mag_det_jac_det)
-        logger.log_metric(epoch, "Epoch/L1", l1(y_pred, flow))
-        logger.log_metric(epoch, "Epoch/L2", l2(y_pred, flow))
-        logger.log_metric(epoch, "Epoch/D2", d2(y_pred, flow))
+        validation(conf, model, global_step, device, logger)
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
+
+
+def validation(conf, model, global_step, device, logger=None):
+    model.eval()
+    source_files = os.listdir(conf.moving)
+    add_feat_axis = not conf.multichannel
+    rig_dis_list = []
+    for subject in source_files:
+        vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
+        fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(3, 0, 1, 2).to(device)
+        predvols, warp = model(fixed, registration=True)
+        eig_rig, rig_K, rig_dis = pca(np.squeeze(predvols.detach().cpu().numpy()).transpose(1,2,0), topk=1)
+        rig_dis_list.append(rig_dis)
+    
+    logger.log_metric(global_step, "Epoch/PCA_Dist", np.mean(rig_dis))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str,
-                        default='configs/MOLLI_jointcorrelation_group.yaml', help='config file')
+                        default='conf/config.yaml', help='config file')
     args = parser.parse_args()
 
     # load the config file
     cfg = OmegaConf.load(args.config)
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
+    conf.val = os.path.join(conf.inference, 'val')
+    os.makedirs(conf.val, exist_ok=True)
     print(f"Mona debug - conf: {conf} and type: {type(conf)}")
 
-    if conf.wandb:
+    if conf.log == 'wandb':
+        from wandbLogger import WandbLogger
+        logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+    elif conf.log == 'neptune':
+        from NeptuneLogger import NeptuneLogger
         logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # run the training

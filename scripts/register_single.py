@@ -120,10 +120,8 @@ def register_single(conf, subject, logger=None):
         rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
         org_mse += mse(orig[:, :, j-1], orig[:, :, j])
 
-    eig_org, org_K, org_dis = pca(
-        orig, name, conf.result, "original", n_components=2)
-    eig_rig, rig_K, rig_dis = pca(
-        moved, name, conf.result, "registered", n_components=2)
+    eig_org, org_K, org_dis = pca(orig, topk=1)
+    eig_rig, rig_K, rig_dis = pca(moved, topk=1)
 
     f, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 6), sharex=True)
     sns.barplot(x=np.arange(len(eig_org)),

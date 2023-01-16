@@ -59,21 +59,24 @@ def normalize(img):
     img = (img - np.min(img)) / (np.max(img) - np.min(img))
     return img
 
-def pca(array, name, output_dir, label, n_components=5):
-    # calculate the eigenvalues of data(covariance matrix)
+def pca(array, topk=1):
+    """calculate the eigenvalues of data's(covariance matrix). And the top-K eigenvalue's percentage
+
+    Args:
+        array (_type_): input volumes. shape is (H, W, slice)
+        topk (int, optional): The first K eigenvalues. Defaults to 1.
+
+    Returns:
+        _type_: _description_
+    """
+    # 
     x, y, z = array.shape
     # print(f"Shape of array is {array.shape} and x is {x} and y is {y} and z is {z}")
     M = array.reshape(x*y, z)
-    Sigma = np.diag(np.std(M, axis=0))
-    Sigma_inv = np.linalg.inv(Sigma)
-    # print(f"Shape of Sigma is {Sigma.shape} and M is {M.shape} and sigma {Sigma}")
-    M_avg = np.tile(np.average(M, axis=0), (x*y, 1))
-    K = np.dot(np.dot(np.dot(Sigma_inv, (M - M_avg).T),
-               (M - M_avg)), Sigma_inv) / (x*y - 1)
-
+    K = np.corrcoef(M.T)
     eigenvalues = np.linalg.eigvals(K)
     G = np.sum(eigenvalues)
-    dis = np.sum(eigenvalues[:n_components])/G
+    dis = np.sum(eigenvalues[:topk])/G
 
     return eigenvalues, K, dis
 

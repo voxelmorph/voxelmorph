@@ -14,3 +14,8 @@ model/*
 matlab/tools
 .neptune
 jobscripts/*
+outputs/*
+multirun/*
+notebooks/test_rpca/*
+**/.ipynb_checkpoints/*
+**.log

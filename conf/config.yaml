@@ -1,5 +1,15 @@
+defaults:
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+
+hydra:
+  sweeper:
+    params:
+      weight: range(0.5, 1, 0.1)
+
 project_name: Group_${dataset}_${image_loss}_i${image_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
 path: ${dataset}/group/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
+
 dataset: fbMOLLI_post
 # data organization parameters
 img_list: data/${dataset}_input.txt
@@ -31,8 +41,8 @@ bidir: False
 
 # loss parameters
 image_loss: jointcorrelation
-weight: 1
-image_loss_weight: 0.5
+weight: 0.5
+image_loss_weight: 1
 norm: l2
 
 mi_config:

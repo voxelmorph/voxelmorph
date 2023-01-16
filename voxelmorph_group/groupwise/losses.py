@@ -707,15 +707,15 @@ class JointCorrelation(nn.Module):
         n_imgs = invols.shape[0]
 
         M = torch.transpose(torch.squeeze(torch.flatten(invols, start_dim=1, end_dim=-1)), 0, 1) # M = [n, c, h, w] -> [c*h*w, n]
-        M_avg = torch.mean(M, dim=1, keepdim=True) # [c*h*w, 1]
-        M_avg = torch.tile(M_avg, (1, n_imgs)) # [c*h*w, n]
+        # M_avg = torch.mean(M, dim=1, keepdim=True) # [c*h*w, 1]
+        # M_avg = torch.tile(M_avg, (1, n_imgs)) # [c*h*w, n]
 
-        C = (M - M_avg).T @ (M - M_avg) / (n_imgs - 1) # [n, n]
+        # C = (M - M_avg).T @ (M - M_avg) / (n_imgs - 1) # [n, n]
 
-        M_std = torch.std(M, dim=0)
-        Sigma_inv = torch.diag(1/M_std)
-        K = Sigma_inv @ C @ Sigma_inv
-
+        # M_std = torch.std(M, dim=0)
+        # Sigma_inv = torch.diag(1/M_std)
+        # K = Sigma_inv @ C @ Sigma_inv
+        K = torch.corrcoef(M.T)
         eigenvalues = torch.real(torch.linalg.eigvals(K))
         # print(f"Mona - eigenvalues: {eigenvalues}")
         dissimilarity = 0.5 * torch.nansum(torch.log(eigenvalues + self.eps))

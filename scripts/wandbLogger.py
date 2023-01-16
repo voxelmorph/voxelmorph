@@ -86,8 +86,11 @@ class WandbLogger(object):
         })
 
     def log_dataframe(self, df, label, path):
-        self._wandb_artifacts = wandb.Artifact("result", type="val_result")
-        self._wandb_artifacts.add_file(path)
+        try:
+            self._wandb.log({label: df})
+        except:
+            self._wandb_artifacts = wandb.Artifact("result", type="val_result")
+            self._wandb_artifacts.add_file(path)
 
     
     def log_img(self, img, label):

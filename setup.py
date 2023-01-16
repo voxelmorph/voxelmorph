@@ -61,7 +61,9 @@ setuptools.setup(
         'plotly',
         'torchsummary',
         'pystrum',
-        'wandb'
+        'wandb',
+        'hydra_colorlog',
+        'hydra-core'
         
     ]
 )
