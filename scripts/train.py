@@ -46,7 +46,8 @@ def train(conf, logger=None):
     # extract shape from sampled input
     shapes = next(generator)[0].shape
     inshape = shapes[1:-1]
-    hydralog.info(f"Inshape {inshape}")
+    sequences = shapes[0]
+    hydralog.info(f"Inshape {shapes}")
 
     # prepare model folder
     model_dir = conf.model_dir
@@ -92,8 +93,8 @@ def train(conf, logger=None):
                 bidir=bidir,
                 int_steps=conf.int_steps,
                 int_downsize=conf.int_downsize,
-                src_feats=20,
-                trg_feats=40,
+                src_feats=sequences,
+                trg_feats=sequences*2,
                 cps=conf.bspline_config.cps,
                 svf=conf.bspline_config.svf,
                 svf_steps=conf.bspline_config.svf_steps,

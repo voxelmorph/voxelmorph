@@ -47,7 +47,7 @@ def register_single(conf, subject, logger=None):
     fbMOLLI_size = fbMOLLI_vols.shape[1:]
     fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...]).float().to(device)
 
-    resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
+    resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear').to(device)
     fbMOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols, resized_warp)
 
     # # Save the results of resize image

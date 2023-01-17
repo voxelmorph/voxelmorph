@@ -78,6 +78,7 @@ def train_and_register(conf):
     hydralog.info(f"{'---'*10} End of Testing {'---'*10}")
 
     logger._wandb.finish()
+    assert logger._wandb.run is None
 
 
 def save2mat(conf):
