@@ -1,10 +1,7 @@
-from logging.config import dictConfig
-import wandb
-import numpy as np
-import torchvision
 from omegaconf import OmegaConf
-import matplotlib.pyplot as plt
 from utils import *
+
+import wandb
 
 
 class WandbLogger(object):
@@ -19,6 +16,14 @@ class WandbLogger(object):
             )
 
         # Initialize a W&B run
+        if self._wandb.run is not None:
+            if self._wandb.run.name == project_name:
+                self._wandb.init(
+                    project='Group Registration',
+                    name=project_name,
+                    config=OmegaConf.to_container(cfg, resolve=True)
+                )
+                return
         if not sweep and self._wandb.run is None:
             self._wandb.init(
                 project='Group Registration',
@@ -27,7 +32,6 @@ class WandbLogger(object):
             )
         elif sweep:
             self._wandb.init(allow_val_change=True)
-
 
     def log_config(self, args):
         """save the config of this training
@@ -56,7 +60,6 @@ class WandbLogger(object):
             "Step L2": l2,
             "Step D2": d2,
         })
-
 
     def log_epoch_metric(self, epoch, losses, epoch_loss):
         # morph = y_img_pred[1].transpose()
@@ -92,12 +95,11 @@ class WandbLogger(object):
             self._wandb_artifacts = wandb.Artifact("result", type="val_result")
             self._wandb_artifacts.add_file(path)
 
-    
     def log_img(self, img, label):
         self._wandb.log({
             label: img
         })
-    
+
     def log_img_frompath(self, img, label, path):
         self._wandb.log({
             label: wandb.Image(path)

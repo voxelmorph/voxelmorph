@@ -1,55 +1,18 @@
 #!/usr/bin/env python
-
-"""
-Example script to register two volumes with VoxelMorph models.
-
-Please make sure to use trained models appropriately. Let's say we have a model trained to register 
-a scan (moving) to an atlas (fixed). To register a scan to the atlas and save the warp field, run:
-
-    register.py --moving moving.nii.gz --fixed fixed.nii.gz --model model.pt 
-        --moved moved.nii.gz --warp warp.nii.gz
-
-The source and target input images are expected to be affinely registered.
-
-If you use this code, please cite the following, and read function docs for further info/citations
-    VoxelMorph: A Learning Framework for Deformable Medical Image Registration 
-    G. Balakrishnan, A. Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. 
-    IEEE TMI: Transactions on Medical Imaging. 38(8). pp 1788-1800. 2019. 
-
-    or
-
-    Unsupervised Learning for Probabilistic Diffeomorphic Registration for Images and Surfaces
-    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu. 
-    MedIA: Medical Image Analysis. (57). pp 226-236, 2019 
-
-Copyright 2020 Adrian V. Dalca
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in 
-compliance with the License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or 
-implied. See the License for the specific language governing permissions and limitations under 
-the License.
-"""
-
-import os
 import logging
+import os
 
-# third party
-import numpy as np
-import torch
-import seaborn as sns
 import matplotlib.pyplot as plt
+
+import numpy as np
+import seaborn as sns
+import torch
 from sewar.full_ref import mse
 from utils import *
 
-
 # import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
-import voxelmorph_group as vxm   # nopep8
+import voxelmorph_group as vxm  # nopep8
 
 # parse commandline conf
 hydralog = logging.getLogger(__name__)
@@ -136,7 +99,7 @@ def register_single(conf, subject, logger=None):
         logger.log_gifs(moved_gif_path, label="registered Gif")
         logger.log_gifs(morph_field_path, label="Quiver Gif")
         # logger.log_img(plt, "PCA change")
-
+    plt.close('all')
     
     hydralog.info(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
     return name, org_mse, org_dis, rig_mse, rig_dis

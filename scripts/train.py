@@ -1,51 +1,20 @@
 #!/usr/bin/env python
 
-"""
-Example script to train a VoxelMorph model.
-
-You will likely have to customize this script slightly to accommodate your own data. All images
-should be appropriately cropped and scaled to values between 0 and 1.
-
-If an atlas file is provided with the --atlas flag, then scan-to-atlas training is performed.
-Otherwise, registration will be scan-to-scan.
-
-If you use this code, please cite the following, and read function docs for further info/citations.
-
-    VoxelMorph: A Learning Framework for Deformable Medical Image Registration G. Balakrishnan, A.
-    Zhao, M. R. Sabuncu, J. Guttag, A.V. Dalca. IEEE TMI: Transactions on Medical Imaging. 38(8). pp
-    1788-1800. 2019. 
-
-    or
-
-    Unsupervised Learning for Probabilistic Diffeomorphic Registration for Images and Surfaces
-    A.V. Dalca, G. Balakrishnan, J. Guttag, M.R. Sabuncu. 
-    MedIA: Medical Image Analysis. (57). pp 226-236, 2019 
-
-Copyright 2020 Adrian V. Dalca
-
-Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
-compliance with the License. You may obtain a copy of the License at
-
-http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software distributed under the License is
-distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-implied. See the License for the specific language governing permissions and limitations under the
-License.
-"""
-
+import argparse
+import logging
 import os
 import time
-import numpy as np
-import logging
-import torch
-import argparse
-from omegaconf import OmegaConf
+
 import matplotlib.pyplot as plt
-import voxelmorph_group as vxm  # nopep8
+import numpy as np
+import torch
+from omegaconf import OmegaConf
 from utils import *
 
+import voxelmorph_group as vxm  # nopep8
+
 hydralog = logging.getLogger(__name__)
+
 
 def train(conf, logger=None):
 
@@ -161,7 +130,7 @@ def train(conf, logger=None):
     else:
         raise ValueError(
             'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
-    
+
     mse = vxm.losses.MSE().loss
     ncc = vxm.losses.NCC(device=device).loss
     nmi = vxm.losses.MILossGaussian(conf.mi_config)
@@ -178,7 +147,8 @@ def train(conf, logger=None):
 
     # prepare deformation loss
     if conf.norm == 'l2' or conf.norm == 'l1':
-        losses += [vxm.losses.Grad(conf.norm, loss_mult=conf.int_downsize).loss]
+        losses += [vxm.losses.Grad(conf.norm,
+                                   loss_mult=conf.int_downsize).loss]
     elif conf.norm == 'd2':
         losses += [vxm.losses.BendingEnergy2d().grad]
     weights += [conf.weight]
@@ -202,10 +172,13 @@ def train(conf, logger=None):
 
             # generate inputs (and true outputs) and convert them to tensors
             inputs, atlas = next(generator)
-            inputs = [torch.from_numpy(inputs).to(device).float().permute(3, 0, 1, 2)] # (C, n, H, W)
-            atlas = torch.from_numpy(atlas).to(device).float().permute(3, 0, 1, 2) # (C, n, H, W)
+            inputs = [torch.from_numpy(inputs).to(
+                device).float().permute(3, 0, 1, 2)]  # (C, n, H, W)
+            atlas = torch.from_numpy(atlas).to(
+                device).float().permute(3, 0, 1, 2)  # (C, n, H, W)
             # run inputs through the model to produce a warped image and flow field
-            y_pred, new_atlas, flow = model(*inputs) # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
+            # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
+            y_pred, new_atlas, flow = model(*inputs)
             # calculate total loss
             loss_list = []
             sim_loss = 0
@@ -223,17 +196,21 @@ def train(conf, logger=None):
                 mse_loss += mse(y_pred[slice, ...][None, ...], new_atlas)
                 nmi_loss += nmi(y_pred[slice, ...][None, ...], new_atlas)
                 ngf_loss += ngf(y_pred[slice, ...][None, ...], new_atlas)
-            
+
             if conf.image_loss == 'jointcorrelation':
                 sim_loss += (losses[0](y_pred) * weights[0]).to(device)
                 for slice in range(y_pred.shape[0]):
-                    reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
-                reg_loss += torch.tensor(mag_det_jac_det * weights[1]).to(device)
+                    reg_loss += (losses[1](y_pred[slice, ...],
+                                 flow) * weights[1]).to(device)
+                reg_loss += torch.tensor(mag_det_jac_det *
+                                         weights[1]).to(device)
             else:
                 for slice in range(y_pred.shape[0]):
                     y = y_pred[slice, ...]
-                    sim_loss += (losses[0](y[None, ...], new_atlas) * weights[0]).to(device)
-                    reg_loss += (losses[1](y_pred[slice, ...], flow) * weights[1]).to(device)
+                    sim_loss += (losses[0](y[None, ...],
+                                 new_atlas) * weights[0]).to(device)
+                    reg_loss += (losses[1](y_pred[slice, ...],
+                                 flow) * weights[1]).to(device)
             loss_list.append(sim_loss.item()/y_pred.shape[0])
             loss_list.append(reg_loss.item()/y_pred.shape[0])
             loss = (sim_loss + reg_loss)/y_pred.shape[0]
@@ -249,17 +226,23 @@ def train(conf, logger=None):
             epoch_step_time.append(time.time() - step_start_time)
 
             logger.log_metric(global_step, "Step/Folding Ratio", folding_ratio)
-            logger.log_metric(global_step, "Step/Mag Det Jac Det", mag_det_jac_det)
+            logger.log_metric(
+                global_step, "Step/Mag Det Jac Det", mag_det_jac_det)
             logger.log_metric(global_step, "Step/L1", l1(y_pred, flow))
             logger.log_metric(global_step, "Step/L2", l2(y_pred, flow))
             logger.log_metric(global_step, "Step/D2", d2(y_pred, flow))
 
-            logger.log_metric(global_step, "Step/MSE", mse_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NMI", nmi_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NCC", ncc_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NGF", ngf_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/TC", tc.item()/y_pred.shape[0])
-            
+            logger.log_metric(global_step, "Step/MSE",
+                              mse_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NMI",
+                              nmi_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NCC",
+                              ncc_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/NGF",
+                              ngf_loss.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/TC",
+                              tc.item()/y_pred.shape[0])
+
         if epoch % 10 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
@@ -274,10 +257,12 @@ def train(conf, logger=None):
 
         logger.log_epoch_metric(epoch, np.mean(epoch_total_loss), np.mean(
             epoch_loss, axis=0))
-        fig = logger.log_morph_field(global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
+        fig = logger.log_morph_field(
+            global_step, y_pred, inputs[0], atlas, new_atlas, flow, "Validation Image")
 
-        plt.savefig(os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
-        logger.log_img_frompath(fig, "Validation Image", os.path.join(conf.val, 'valimg_%04d.png' % conf.epochs))
+        plt.savefig(os.path.join(conf.val, 'valimg_%04d.png' % epoch))
+        logger.log_img_frompath(fig, "Validation Image", os.path.join(
+            conf.val, 'valimg_%04d.png' % epoch))
         plt.close(fig)
 
         validation(conf, model, global_step, device, logger)
@@ -291,12 +276,15 @@ def validation(conf, model, global_step, device, logger=None):
     add_feat_axis = not conf.multichannel
     rig_dis_list = []
     for subject in source_files:
-        vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
-        fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(3, 0, 1, 2).to(device)
+        vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
+            conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
+        fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(
+            3, 0, 1, 2).to(device)
         predvols, warp = model(fixed, registration=True)
-        eig_rig, rig_K, rig_dis = pca(np.squeeze(predvols.detach().cpu().numpy()).transpose(1,2,0), topk=1)
+        eig_rig, rig_K, rig_dis = pca(np.squeeze(
+            predvols.detach().cpu().numpy()).transpose(1, 2, 0), topk=1)
         rig_dis_list.append(rig_dis)
-    
+
     logger.log_metric(global_step, "Epoch/PCA_Dist", np.mean(rig_dis))
 
 
