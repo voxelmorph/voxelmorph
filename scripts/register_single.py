@@ -3,24 +3,21 @@ import logging
 import os
 
 import matplotlib.pyplot as plt
-
+from pathlib import Path
 import numpy as np
 import seaborn as sns
 import torch
 from sewar.full_ref import mse
 from utils import *
 
-# import voxelmorph with pytorch backend
 os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
-# parse commandline conf
+
 hydralog = logging.getLogger(__name__)
 def register_single(conf, subject, logger=None):
-    # device handling
     if conf.gpu and (conf.gpu != '-1'):
         device = 'cuda'
-        # os.environ['CUDA_VISIBLE_DEVICES'] = conf.gpu
     else:
         device = 'cpu'
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -39,20 +36,35 @@ def register_single(conf, subject, logger=None):
 
     model.to(device)
     model.eval()
-    # load moving and fixed images
     add_feat_axis = not conf.multichannel
-    vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
-
-    [_, slices, x, y, _] = vols.shape
-    fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(3, 0, 1, 2).to(device)
-
-    
+    vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+    fixed = torch.from_numpy(vols).float().permute(3, 0, 1, 2).to(device)
     predvols, warp = model(fixed, registration=True)
 
-    invols = np.squeeze(fixed.detach().cpu().numpy())
-    outvols = np.squeeze(predvols.detach().cpu().numpy())
-    warp = warp.detach().cpu().numpy()
+    # Apply the warp to the original image
+    original_name = os.path.join(conf.orig_folder, f"{name}.nii.gz")
+    fbMOLLI_vols = sitk.GetArrayFromImage(sitk.ReadImage(original_name))
+    fbMOLLI_size = fbMOLLI_vols.shape[1:]
+    fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...]).float().to(device)
 
+    resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
+    fbMOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols, resized_warp)
+
+    # # Save the results of resize image
+    # invols = np.squeeze(fixed.detach().cpu().numpy())
+    # outvols = np.squeeze(predvols.detach().cpu().numpy())
+    # warp = warp.detach().cpu().numpy()
+    # name, org_mse, org_dis, rig_mse, rig_dis = saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None)
+
+    # Save the results of original image
+    fbMOLLI_invols = np.squeeze(fbMOLLI_vols.detach().cpu().numpy())
+    fbMOLLI_outvols = np.squeeze(fbMOLLI_vols_pred.detach().cpu().numpy())
+    fbMOLLI_warp = resized_warp.detach().cpu().numpy()
+    name, org_mse, org_dis, rig_mse, rig_dis = saveEval(fbMOLLI_invols, fbMOLLI_outvols, fbMOLLI_warp, conf, name, fixed_affine, logger)
+    return name, org_mse, org_dis, rig_mse, rig_dis
+    
+
+def saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None):
     orig = invols.transpose(1, 2, 0)
     moved = outvols.transpose(1, 2, 0)
 
@@ -63,16 +75,9 @@ def register_single(conf, subject, logger=None):
         warp = warp.transpose(2, 3, 0, 1)
         vxm.py.utils.save_volfile(warp, os.path.join(conf.warp, f"{name}.nii"), fixed_affine)
 
-
-    # output the metrics
-    # save the gif
-    
     warp = warp.transpose(3, 2, 0, 1)
-    # warp = np.flip(warp, axis=2)
-    # print(f"Shape of orig {orig.shape} and moved {moved.shape} and warp {warp.shape}")
     original_gif_path = save_gif(orig, name, conf.result, "original")
     moved_gif_path = save_gif(moved, name, conf.result, "registered")
-    # quiver_path = save_quiver(warp, name, conf.result)
     morph_field_path = save_morphField(warp, name, conf.result)
 
     org_mse, rig_mse = 0, 0
@@ -89,8 +94,6 @@ def register_single(conf, subject, logger=None):
                 y=np.around(eig_org, 2), palette="rocket", ax=ax1)
     sns.barplot(x=np.arange(len(eig_rig)),
                 y=np.around(eig_rig, 2), palette="rocket", ax=ax2)
-    # ax1.bar_label(ax1.containers[0])
-    # ax2.bar_label(ax2.containers[0])
     ax1.set_title(f"Eigenvalues of original image {name}")
     ax2.set_title(f"Eigenvalues of registered image {name}")
     plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
@@ -98,7 +101,6 @@ def register_single(conf, subject, logger=None):
         logger.log_gifs(original_gif_path, label="original Gif")
         logger.log_gifs(moved_gif_path, label="registered Gif")
         logger.log_gifs(morph_field_path, label="Quiver Gif")
-        # logger.log_img(plt, "PCA change")
     plt.close('all')
     
     hydralog.info(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
