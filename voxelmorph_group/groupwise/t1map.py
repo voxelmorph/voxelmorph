@@ -7,9 +7,15 @@ import warnings
 from scipy import optimize
 import multiprocessing
 from joblib import Parallel, delayed
+import contextlib
+import joblib
+import logging
 
 warnings.simplefilter(action='ignore', category=RuntimeWarning)
 warnings.simplefilter(action='ignore', category=UserWarning)
+
+
+hydralog = logging.getLogger(__name__)
 
 def t1_3params(t, p):
     c, k, t1 = p
@@ -33,8 +39,9 @@ class MOLLIT1mapParallel:
         tx, ty = args
         dvec = np.squeeze(self.frames_sorted[tx, ty, :])
             # mask out the air and region outside the mask
-        if (max(dvec) < 0.001) or (self.mask[tx, ty] == 0):
-            # print(f"MSE fitting: (tx, ty) = ({tx}, {ty}), continue")
+        if (max(dvec) <= 0) or (self.mask[tx, ty] == 0):
+            print(f"MSE fitting: (tx, ty) = ({tx}, {ty}), {max(dvec)} and {dvec}")
+
             return None
         
         # mask out the air and region outside the mask
@@ -87,9 +94,10 @@ class MOLLIT1mapParallel:
         start = time.time()
         items = itertools.product(range(H), range(W))
         num_cores = multiprocessing.cpu_count()
-        processed_list = Parallel(n_jobs=num_cores)(delayed(self.helper)(i) for i in items)
+        hydralog.debug(f"Number of cores: {num_cores} and #items {len(list(items))}")
+        processed_list = Parallel(n_jobs=int(num_cores/4), verbose=10)(delayed(self.helper)(i) for i in items)
         et = time.time()
-        print(f"Time elapsed: {(et - start)/60} mins")
+        hydralog.debug(f"Time elapsed: {(et - start)/60} mins")
         for result in processed_list:   
             if result is not None:
                 pred_mse, pres, SD, nl, tx, ty = result 

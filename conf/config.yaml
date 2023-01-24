@@ -67,5 +67,5 @@ log: wandb
 wandb_project: ${project_name}
 
 # register folder
-moving: data/${dataset}_dataset/test
+moving: data/${dataset}_dataset/train
 inference: results/${path}

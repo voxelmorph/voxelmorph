@@ -274,6 +274,7 @@ def update_atlas(invols, method='avg', tvec=None):
     Returns:
         atlas: implicit template (1, 1, H, W)
     """
+    print(f"Mona - invols shape {invols.shape} and method {method} and tvec {tvec}")
     if len(invols.shape) == 4:
         if method == 'avg':
             atlas = torch.mean(invols, axis=0, keepdims=True)
@@ -289,7 +290,7 @@ def update_atlas(invols, method='avg', tvec=None):
             atlas = atlas[None, None, :, :]
         elif method == 't1map':
             t1map = MOLLIT1mapParallel()
-            
+            print(f"Mona - {invols.shape}")
             inversion_img, pmap, sdmap, null_index, S = t1map.mestimation_abs(np.array(tvec), torch.squeeze(invols).permute(1, 2, 0).detach().cpu().numpy())
             atlas = S[None, None, :, :]
         return atlas

@@ -42,14 +42,15 @@ def register_single(conf, subject, logger=None):
     predvols, warp = model(fixed, registration=True)
 
     # Apply the warp to the original image
-    original_name = os.path.join(conf.orig_folder, f"{name}.nii.gz")
+    original_name = os.path.join(conf.orig_folder, f"{name}.nii")
     fbMOLLI_vols = sitk.GetArrayFromImage(sitk.ReadImage(original_name))
     fbMOLLI_size = fbMOLLI_vols.shape[1:]
-    fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...]).float().to(device)
+    fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...].astype(np.int16)).float().to(device)
 
     resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
     hydralog.debug(f"Type of resized_warp {resized_warp.get_device()} and type of fbMOLLI_vols {fbMOLLI_vols.get_device()}")
-    fbMOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols, resized_warp.to(device))
+    # hydralog.debug(f"Type fbmolli {type(fbMOLLI_vols)} and warp {type(resized_warp.to(device))}")
+    fbMOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols.to('cpu'), resized_warp.to('cpu'))
 
     # # Save the results of resize image
     # invols = np.squeeze(fixed.detach().cpu().numpy())
