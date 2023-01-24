@@ -10,8 +10,8 @@ hydra:
 project_name: Group_${dataset}_${image_loss}_i${image_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
 path: ${dataset}/group/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
 
-dataset: LisbonD8_postconT1w
-orig_folder: data/LisbonD8_postconT1w
+dataset: MOLLI_post
+orig_folder: data/MOLLI_post
 TI_json: data/${dataset}_TI.json
 # data organization parameters
 img_list: data/${dataset}_input.txt
@@ -19,15 +19,15 @@ model_dir: model/${path}
 img_prefix:
 img_suffix:
 atlas: True
-atlas_methods: t1map
+atlas_methods: avg
 multichannel: False
 in_order: True
 
 # training parameters
 gpu: 0
 batch_size: 1
-epochs: 20
-steps_per_epoch: 10
+epochs: 3
+steps_per_epoch: 1
 load_model: False
 model_path: model/${path}/200.pt
 initial_epoch: 0

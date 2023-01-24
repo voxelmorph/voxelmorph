@@ -34,7 +34,6 @@ def train(conf, logger=None):
         import json
         with open(f"{conf.TI_json}") as json_file:
             TI_dict = json.load(json_file)
-        hydralog.debug(f"Loading TI from json {TI_dict}")
 
     if conf.atlas:
         # group-to-atlas generator
@@ -182,20 +181,17 @@ def train(conf, logger=None):
 
             # generate inputs (and true outputs) and convert them to tensors
             inputs, name = next(generator)
-            name = name[:-4]
-            hydralog.debug(f"The subject name is {name}")
-            hydralog.debug(f"The subject's TI vector is {TI_dict[name]}")
-            inputs = [torch.from_numpy(inputs).to(
-                device).float().permute(3, 0, 1, 2)]  # (C, n, H, W)
-            hydralog.debug(f"The tvec {TI_dict[name]}")
+            hydralog.debug(f"The subject name is {name}, TI is {TI_dict[name]}")
+            low_matrix, sparse_matrix = rpca(np.squeeze(inputs).transpose(1, 2, 0), rank=conf.rank) # (H, W, N)
+            inputs = [torch.from_numpy(low_matrix[None, ...]).to(
+                device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)
+
             atlas = vxm.groupwise.utils.update_atlas(inputs[0].permute(1, 0, 2, 3), conf.atlas_methods, tvec=TI_dict[name])
             # run inputs through the model to produce a warped image and flow field
             # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
             # hydralog.debug(f"Mona atlas {np.sum(atlas)}")
             y_pred, new_atlas, flow = model(*inputs, tvec=TI_dict[name])
-            atlas = torch.from_numpy(atlas).to(device)
             hydralog.debug(f"The atlas shape {atlas.shape} and new atlas shape {new_atlas.shape}, type {type(new_atlas)}")
-            hydralog.info(f"The T1 mapping error {name} - {np.sum(atlas)} - {np.sum(new_atlas)}")
             # calculate total loss
             loss_list = []
             sim_loss = 0

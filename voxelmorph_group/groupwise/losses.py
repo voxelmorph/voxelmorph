@@ -717,6 +717,5 @@ class JointCorrelation(nn.Module):
         # K = Sigma_inv @ C @ Sigma_inv
         K = torch.corrcoef(M.T)
         eigenvalues = torch.real(torch.linalg.eigvals(K))
-        # print(f"Mona - eigenvalues: {eigenvalues}")
         dissimilarity = 0.5 * torch.nansum(torch.log(eigenvalues + self.eps))
         return dissimilarity

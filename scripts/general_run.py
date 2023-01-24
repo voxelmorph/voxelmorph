@@ -22,63 +22,111 @@ def main(cfg: DictConfig):
     hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
 
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
-    conf.moved = os.path.join(conf.inference, 'moved')
-    conf.warp = os.path.join(conf.inference, 'warp')
-    conf.result = os.path.join(conf.inference, 'summary')
-    conf.val = os.path.join(conf.inference, 'val')
 
-    os.makedirs(conf.moved, exist_ok=True)
-    os.makedirs(conf.warp, exist_ok=True)
-    os.makedirs(conf.result, exist_ok=True)
-    os.makedirs(conf.val, exist_ok=True)
-
-    train_and_register(conf)
-    save2mat(conf)
-
-
-def train_and_register(conf):
     if conf.log == 'wandb':
         logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
     elif conf.log == 'neptune':
         from NeptuneLogger import NeptuneLogger
         logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
-    # run the training
-    hydralog.info(f"{'---'*10} Start Training {'---'*10}")
-    train(conf, logger)
+    # save the config
     config_path = f"{conf['model_dir']}/config.yaml"
     try:
         with open(config_path, 'w') as fp:
             OmegaConf.save(config=conf, f=fp.name)
     except:
         hydralog.warning("Unable to copy the config")
-    hydralog.info(f"{'---'*10} End of Training {'---'*10}")
 
-    # register the model
-    hydralog.info(f"{'---'*10} Start Testing {'---'*10}")
+    pipeline(conf, logger)
+
+
+    logger._wandb.finish()
+    assert logger._wandb.run is None
+
+def createdir(conf):
+    conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
+    conf.warp = os.path.join(conf.inference, f"round{conf.round}", 'warp')
+    conf.result = os.path.join(conf.inference, f"round{conf.round}", 'summary')
+    conf.val = os.path.join(conf.inference, f"round{conf.round}", 'val')
+
+    os.makedirs(conf.moved, exist_ok=True)
+    os.makedirs(conf.warp, exist_ok=True)
+    os.makedirs(conf.result, exist_ok=True)
+    os.makedirs(conf.val, exist_ok=True)
+
+
+def generate_input(conf):
+    if not conf.final:
+        files = glob.glob(os.path.join(conf.moved, '*.npy'))
+        txt_string = "\n".join(files)
+        with open(f"{conf.moved}/MOLLI_post_input.txt", "w") as f:
+            f.write(txt_string) 
+        conf.img_list = f"{conf.moved}/MOLLI_post_input.txt"
+    return conf
+
+def pipeline(conf, logger=None):
+    # first train the model with rpca rank=5?
+    conf.final = False
+    hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
+    conf.rank = 5
+    conf.round = 1
+    createdir(conf)
+    train(conf, logger)
+    validate(conf, logger)
+    conf = generate_input(conf)
+    hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
+
+    hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
+    conf.rank = 5
+    conf.round = 2
+    createdir(conf)
+    
+    train(conf, logger)
+    validate(conf, logger)
+    conf = generate_input(conf)
+    hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
+
+    hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
+    conf.final = True
+    conf.rank = 5
+    conf.round = 2
+    createdir(conf)
+    
+    train(conf, logger)
+    validate(conf, logger)
+    hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
+
+def validate(conf, logger=None):
 
     source_files = os.listdir(conf.moving)
-    col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA']
+    col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
+
+        # load the TI for all subjects
+    if conf.TI_json:
+        import json
+        with open(f"{conf.TI_json}") as json_file:
+            TI_dict = json.load(json_file)
+        hydralog.debug(f"Loading TI from json {TI_dict}")
+
     for subject in source_files:
-        name, loss_org, org_dis, loss_rig, rig_dis = register_single(
-            conf, subject, logger)
+        name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
+            conf, subject, TI_dict[Path(subject).stem], logger)
         df = pd.concat([df, pd.DataFrame(
-            [[name, loss_org, loss_rig, org_dis, rig_dis]], columns=col)], ignore_index=True)
+            [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
     # convert the registered images to gif and compute the results
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])
     df['PCA changes percentage'] = percentage_change(
         df['raw PCA'], df['registered PCA'])
+    df['T1err changes percentage'] = percentage_change(
+        df['raw T1err'], df['registered T1err'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
+    hydralog.info(f"The summary is \n {df.describe()}")
 
     logger.log_dataframe(df, 'Results', path=os.path.join(
         conf.result, 'results.csv'))
-    hydralog.info(f"{'---'*10} End of Testing {'---'*10}")
-
-    logger._wandb.finish()
-    assert logger._wandb.run is None
 
 
 def save2mat(conf):

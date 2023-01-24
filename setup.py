@@ -63,7 +63,8 @@ setuptools.setup(
         'pystrum',
         'wandb',
         'hydra_colorlog',
-        'hydra-core'
+        'hydra-core',
+        'hyperspy'
         
     ]
 )

@@ -4,6 +4,7 @@ import gif
 import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
+from hyperspy.learn.rpca import rpca_godec, orpca
 
 
 def resize_img(img, new_size, interpolator):
@@ -265,3 +266,22 @@ def plot_warped_grid(ax, disp, bg_img=None, interval=3, title="$\mathcal{T}_\phi
     ax.set_xticks([])
     ax.set_yticks([])
     ax.set_frame_on(False)
+
+
+def rpca(vols, rank=2):
+    """Robust OCA with missing or corrupted data
+    Ref: https://hyperspy.readthedocs.io/en/stable/api/hyperspy.learn.rpca.html#zhou2011
+
+    Args:
+        vols (_type_): (H, W, N)
+        rank (int, optional): The model dimensionality. Defaults to 2.
+
+    Returns:
+        _type_: _description_
+    """
+    x, y, z = vols.shape
+    M = vols.reshape(x*y, z)
+    low, sparse, U, S, V = rpca_godec(M, rank=rank)
+    low_matrix = low.reshape((x, y, z))
+    sparse_matrix = sparse.reshape((x, y, z))
+    return low_matrix, sparse_matrix
