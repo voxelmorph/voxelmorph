@@ -533,8 +533,6 @@ def create_atlas(invols, method='avg', Tvec=None):
             img_pca = pca.fit_transform(M)
             atlas = img_pca.reshape((x, y))
             atlas = atlas[None, :, :, None]
-        elif method == 't1map':
-
         return atlas
     else:
         raise ValueError("Input volume should be 4D")

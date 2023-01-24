@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import omegaconf
 from sklearn.decomposition import PCA
-from t1map import MOLLIT1mapParallel
+from .t1map import MOLLIT1mapParallel
 
 def save2onxx(model, x, in_name, out_name, out_path):
     # Export the model
@@ -290,7 +290,7 @@ def update_atlas(invols, method='avg', tvec=None):
         elif method == 't1map':
             t1map = MOLLIT1mapParallel()
             
-            pmap, sdmap, null_index, S = t1map.mestimation_abs(tvec, torch.squeeze(invols).permute(1, 2, 0).detach().cpu().numpy())
+            inversion_img, pmap, sdmap, null_index, S = t1map.mestimation_abs(np.array(tvec), torch.squeeze(invols).permute(1, 2, 0).detach().cpu().numpy())
             atlas = S[None, None, :, :]
         return atlas
     else:

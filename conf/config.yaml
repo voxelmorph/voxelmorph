@@ -26,7 +26,7 @@ in_order: True
 # training parameters
 gpu: 0
 batch_size: 1
-epochs: 200
+epochs: 20
 steps_per_epoch: 10
 load_model: False
 model_path: model/${path}/200.pt

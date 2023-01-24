@@ -9,7 +9,7 @@ import multiprocessing
 from joblib import Parallel, delayed
 
 warnings.simplefilter(action='ignore', category=RuntimeWarning)
-
+warnings.simplefilter(action='ignore', category=UserWarning)
 
 def t1_3params(t, p):
     c, k, t1 = p
@@ -33,7 +33,7 @@ class MOLLIT1mapParallel:
         tx, ty = args
         dvec = np.squeeze(self.frames_sorted[tx, ty, :])
             # mask out the air and region outside the mask
-        if (max(dvec) < 10) or (self.mask[tx, ty] == 0):
+        if (max(dvec) < 0.001) or (self.mask[tx, ty] == 0):
             # print(f"MSE fitting: (tx, ty) = ({tx}, {ty}), continue")
             return None
         

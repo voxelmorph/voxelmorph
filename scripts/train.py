@@ -184,10 +184,10 @@ def train(conf, logger=None):
             inputs, name = next(generator)
             inputs = [torch.from_numpy(inputs).to(
                 device).float().permute(3, 0, 1, 2)]  # (C, n, H, W)
-            atlas = vxm.groupwise.utils.update_atlas(inputs[0], conf.atlas_config, tvec=TI_dict[name])
+            atlas = vxm.groupwise.utils.update_atlas(inputs[0], conf.atlas_methods, tvec=TI_dict[name[:-4]])
             # run inputs through the model to produce a warped image and flow field
             # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
-            y_pred, new_atlas, flow = model(*inputs, tvec=TI_dict[name])
+            y_pred, new_atlas, flow = model(*inputs, tvec=TI_dict[name:-4])
             hydralog.info(f"The T1 mapping error before the registraion {torch.sum(atlas)} and after {torch.sum(new_atlas)}")
             # calculate total loss
             loss_list = []
