@@ -48,7 +48,7 @@ def register_single(conf, subject, logger=None):
     fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...]).float().to(device)
 
     resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
-    hydralog.info(f"Type of resized_warp {type(resized_warp)} and type of fbMOLLI_vols {type(fbMOLLI_vols)}")
+    hydralog.debug(f"Type of resized_warp {resized_warp.get_device()} and type of fbMOLLI_vols {fbMOLLI_vols.get_device()}")
     fbMOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols, resized_warp.to(device))
 
     # # Save the results of resize image

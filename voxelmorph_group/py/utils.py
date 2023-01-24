@@ -507,7 +507,7 @@ def jacobian_determinant(disp):
 
         return dfdx[..., 0] * dfdy[..., 1] - dfdy[..., 0] * dfdx[..., 1]
 
-def create_atlas(invols, method='avg'):
+def create_atlas(invols, method='avg', Tvec=None):
     """
     Generate implicit template from input volumes.
 
@@ -533,6 +533,8 @@ def create_atlas(invols, method='avg'):
             img_pca = pca.fit_transform(M)
             atlas = img_pca.reshape((x, y))
             atlas = atlas[None, :, :, None]
+        elif method == 't1map':
+
         return atlas
     else:
         raise ValueError("Input volume should be 4D")

@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 import omegaconf
 from sklearn.decomposition import PCA
-
+from t1map import MOLLIT1mapParallel
 
 def save2onxx(model, x, in_name, out_name, out_path):
     # Export the model
@@ -260,7 +260,7 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
     return ncc, ncc_map
 
 
-def update_atlas(invols, method='avg'):
+def update_atlas(invols, method='avg', tvec=None):
     """
     Generate implicit template from input volumes.
 
@@ -287,6 +287,11 @@ def update_atlas(invols, method='avg'):
             img_pca = pca.fit_transform(M)
             atlas = img_pca.reshape((x, y))
             atlas = atlas[None, None, :, :]
+        elif method == 't1map':
+            t1map = MOLLIT1mapParallel()
+            
+            pmap, sdmap, null_index, S = t1map.mestimation_abs(tvec, torch.squeeze(invols).permute(1, 2, 0).detach().cpu().numpy())
+            atlas = S[None, None, :, :]
         return atlas
     else:
         raise ValueError("Input volume should be 4D")

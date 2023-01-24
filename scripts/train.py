@@ -29,6 +29,14 @@ def train(conf, logger=None):
     # no need to append an extra feature axis if data is multichannel
     add_feat_axis = not conf.multichannel
 
+    # load the TI for all subjects
+    if conf.TI_json:
+        import json
+        hydralog.info("Loading TI from json")
+        with open(f"{conf.TI_json}") as json_file:
+            TI_dict = json.load(json_file)
+        hydralog.debug("Loading TI from json")
+
     if conf.atlas:
         # group-to-atlas generator
         hydralog.debug("Use the group to atlas generator")
@@ -160,6 +168,7 @@ def train(conf, logger=None):
 
     global_step = 0
     # training loops
+
     for epoch in range(conf.initial_epoch, conf.epochs):
         model.train()
 
@@ -172,14 +181,14 @@ def train(conf, logger=None):
             step_start_time = time.time()
 
             # generate inputs (and true outputs) and convert them to tensors
-            inputs, atlas = next(generator)
+            inputs, name = next(generator)
             inputs = [torch.from_numpy(inputs).to(
                 device).float().permute(3, 0, 1, 2)]  # (C, n, H, W)
-            atlas = torch.from_numpy(atlas).to(
-                device).float().permute(3, 0, 1, 2)  # (C, n, H, W)
+            atlas = vxm.groupwise.utils.update_atlas(inputs[0], conf.atlas_config, tvec=TI_dict[name])
             # run inputs through the model to produce a warped image and flow field
             # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
-            y_pred, new_atlas, flow = model(*inputs)
+            y_pred, new_atlas, flow = model(*inputs, tvec=TI_dict[name])
+            hydralog.info(f"The T1 mapping error before the registraion {torch.sum(atlas)} and after {torch.sum(new_atlas)}")
             # calculate total loss
             loss_list = []
             sim_loss = 0

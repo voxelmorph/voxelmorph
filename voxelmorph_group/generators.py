@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 import glob
 import numpy as np
 from skimage import exposure
@@ -44,6 +45,7 @@ def volgen(
     if isinstance(segs, list) and len(segs) != len(vol_names):
         raise ValueError('Number of image files must match number of seg files.')
 
+
     while True:
         # generate [batchsize] random image indices
         indices = np.random.randint(len(vol_names), size=batch_size)
@@ -66,7 +68,7 @@ def volgen(
             s = [py.utils.load_volfile(segs[i], **load_params) for i in indices]
             vols.append(np.concatenate(s, axis=0))
 
-        yield tuple(vols)
+        yield (tuple(vols), Path(vol_names[indices[0]]).stem)
 
 
 def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
@@ -121,7 +123,7 @@ def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=
             yield (invols, outvols)     
 
 
-def group_to_atlas(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, method='avg', **kwargs):
+def group_to_atlas(vol_names, TI=None, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, method='avg', **kwargs):
     """
     Generator for group-wise registration.
     For group registration, the batch size could only be 1.
@@ -140,7 +142,8 @@ def group_to_atlas(vol_names, in_order=True, bidir=False, batch_size=1, prob_sam
     gen = volgen(vol_names, batch_size=batch_size, **kwargs)
     
     while True:
-        vols = next(gen)[0]
+        vols, name = next(gen)
+        vols = vols[0]
         # print(f"Mona-10: length vols {len(vols)} and vols shape {vols.shape}")
         
         slices = vols.shape[1]
@@ -150,9 +153,8 @@ def group_to_atlas(vol_names, in_order=True, bidir=False, batch_size=1, prob_sam
             invols = vols[0, ...]
         else:
             invols = [vols[0, shuffle_tmp[slice], :, :, :] for slice in range(slices)]
-        # print(f"Mona-11: scan1 shape {scan1.shape} and scan2 shape {scan2.shape}")
-        atlas = py.utils.create_atlas(invols, method)
-        yield (invols, atlas)
+
+        yield (invols, name)
 
 
 def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, segs=None, **kwargs):

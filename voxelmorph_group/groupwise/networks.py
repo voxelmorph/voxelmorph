@@ -394,7 +394,7 @@ class GroupVxmDenseBspline(LoadableModel):
             ndims, inshape, cps=cps, svf=svf, svf_steps=svf_steps, svf_scale=svf_scale)
     
     
-    def forward(self, source, registration=False):
+    def forward(self, source, registration=False, tvec=None):
         """
 
         Args:
@@ -423,7 +423,7 @@ class GroupVxmDenseBspline(LoadableModel):
         # warp image with flow field
         warp_img, pos_flow_svf = self.transformer(source.transpose(0, 1), pos_flow)
 
-        template = update_atlas(warp_img, self.method)
+        template = update_atlas(warp_img, self.method, tvec=tvec)
         # return non-integrated flow field if training
         if not registration:
             return (warp_img, template, pos_flow_svf)
