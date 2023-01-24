@@ -39,9 +39,7 @@ class MOLLIT1mapParallel:
         tx, ty = args
         dvec = np.squeeze(self.frames_sorted[tx, ty, :])
             # mask out the air and region outside the mask
-        if (max(dvec) <= 0) or (self.mask[tx, ty] == 0):
-            print(f"MSE fitting: (tx, ty) = ({tx}, {ty}), {max(dvec)} and {dvec}")
-
+        if (max(dvec) <= 0.001) or (self.mask[tx, ty] == 0):
             return None
         
         # mask out the air and region outside the mask
@@ -94,7 +92,6 @@ class MOLLIT1mapParallel:
         start = time.time()
         items = itertools.product(range(H), range(W))
         num_cores = multiprocessing.cpu_count()
-        hydralog.debug(f"Number of cores: {num_cores} and #items {len(list(items))}")
         processed_list = Parallel(n_jobs=int(num_cores/4), verbose=10)(delayed(self.helper)(i) for i in items)
         et = time.time()
         hydralog.debug(f"Time elapsed: {(et - start)/60} mins")
