@@ -1042,14 +1042,22 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features,
                              bidir=True, input_model=warp_input_model, **kwargs)
 
+        
+        
         # extract tensors from stacked model
         y_source = vxm_model.references.y_source
         pos_flow = vxm_model.references.pos_flow
         neg_flow = vxm_model.references.neg_flow
 
+        # set different attributes
+        self.references = ne.modelio.LoadableModel.ReferenceContainer()
+        self.references.vxm_model = vxm_model
+        
+
         if use_mean_stream:
             # get mean stream from negative flow
             mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
+            self.references.mean_stream = meanstream
             outputs = [y_source, mean_stream, pos_flow, pos_flow]
         else:
             outputs = [y_source, pos_flow, pos_flow]
