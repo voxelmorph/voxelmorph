@@ -4,7 +4,12 @@
 
 # Tutorial
 
-Visit the [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) to learn about VoxelMorph and Learning-based Registration. Here's an [additional small tutorial](https://colab.research.google.com/drive/1V0CutSIfmtgDJg1XIkEnGteJuw0u7qT-#scrollTo=h1KXYz-Nauwn) on warping annotations together with images, and another on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph.
+We have several voxelmorph tutorials
+ - the main [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) explains VoxelMorph and Learning-based Registration. 
+ - a [tutorial on training vxm](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) on [OASIS data](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md), which we processed and released for free for HyperMorph.
+ 
+  - an [additional small tutorial](https://colab.research.google.com/drive/1V0CutSIfmtgDJg1XIkEnGteJuw0u7qT-#scrollTo=h1KXYz-Nauwn) on warping annotations together with images
+  - another tutorial on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph.
 
 
 # Instructions
@@ -157,6 +162,8 @@ mri_robust_register --mov in.nii.gz --dst out.nii.gz --lta transform.lta --satit
 
 where we replace `--satit --iscale` with `--cost NMI` for registration across MRI contrasts.
 
+# Data:
+While we cannot release most of the data used in the voxelmorph papers as they prohibit redistribution, we thorough processed and [re-released OASIS1](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md) while developing [hypermorph](http://hypermorph.voxelmorph.net/). We now include a quick [vxm tutorial](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) to train voxelmorph on neurite-oasis data.
 
 # Contact:
 For any problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=voxelmorph) for code problems/questions or [start a discussion](https://github.com/voxelmorph/voxelmorph/discussions) for general registration/voxelmorph question/discussion.  

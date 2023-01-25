@@ -5,7 +5,7 @@ import pathlib
 import setuptools
 
 setuptools.dist.Distribution().fetch_build_eggs(['packaging'])
-import packaging.version
+from packaging.version import InvalidVersion, parse
 
 
 # base source directory
@@ -19,7 +19,9 @@ match = re.search(pattern, init_text, re.M)
 if not match:
     raise RuntimeError(f'Unable to find __version__ in {init_file}.')
 version = match.group(1)
-if isinstance(packaging.version.parse(version), packaging.version.LegacyVersion):
+try:
+    version_obj = parse(version)
+except InvalidVersion:
     raise RuntimeError(f'Invalid version string {version}.')
 
 # run setup

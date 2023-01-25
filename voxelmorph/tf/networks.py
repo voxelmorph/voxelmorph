@@ -590,6 +590,7 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  inshape,
                  nb_labels,
                  nb_unet_features=None,
+                 nb_unet_conv_per_level=1,
                  init_mu=None,
                  init_sigma=None,
                  warp_atlas=True,
@@ -597,12 +598,15 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                  stat_nb_feats=16,
                  network_stat_weight=0.001,
                  supervised_model=False,
+                 gaussian_likelihood=True,
                  **kwargs):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
             nb_labels: Number of labels in probabilistic atlas.
             nb_unet_features: Unet convolutional features. 
+                See VxmDense documentation for more information.
+            nb_unet_conv_per_level: Number of convolutions per unet level. Default is 1.
                 See VxmDense documentation for more information.
             init_mu: Optional initialization for gaussian means. Default is None.
             init_sigma: Optional initialization for gaussian sigmas. Default is None.
@@ -612,6 +616,9 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
                 Default is 0.001.
             supervised_model: Whether data loss layer should be for a supervised model.
                 Default is False.
+            gaussian_likelihood: Whether to use a Gaussian likelihood model. If not, then uses
+                a learned layer derived from the Unet component as the likelihood. Default is
+                True.
             kwargs: Forwarded to the internal VxmDense model.
         """
 
@@ -622,9 +629,16 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
+        # cannot use gaussian initializations with the Unet likelihood at this time
+        if init_mu and (not gaussian_likelihood):
+            warnings.warn('init_mu ignored if not using a gaussian likelihood model')
+        if init_sigma and (not gaussian_likelihood):
+            warnings.warn('init_sigma ignored if not using a gaussian likelihood model')
+
         # build warp network
         vxm_model = VxmDense(inshape,
                              nb_unet_features=nb_unet_features,
+                             nb_unet_conv_per_level=nb_unet_conv_per_level,
                              src_feats=nb_labels,
                              **kwargs)
 
@@ -648,43 +662,47 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         conv = _conv_block(combined, stat_nb_feats)
         conv = _conv_block(conv, nb_labels)
 
-        Conv = getattr(KL, 'Conv%dD' % ndims)
-        MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
-        weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
+        if gaussian_likelihood:
+            Conv = getattr(KL, 'Conv%dD' % ndims)
+            MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
+            weaknorm = KI.RandomNormal(mean=0.0, stddev=1e-5)
 
-        # convolve into mu and sigma volumes
-        stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol',
-                           kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
-        stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
+            # convolve into mu and sigma volumes
+            stat_mu_vol = Conv(nb_labels, kernel_size=3, name='mu_vol',
                                kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
+            stat_logssq_vol = Conv(nb_labels, kernel_size=3, name='logsigmasq_vol',
+                                   kernel_initializer=weaknorm, bias_initializer=weaknorm)(conv)
 
-        # global pool to get 'final' stat (without reducing dimensions)
-        max_pool = [i - 2 for i in inshape]
-        stat_mu = MaxPooling(pool_size=max_pool, name='mu_pooling')(stat_mu_vol)
-        stat_logssq = MaxPooling(pool_size=max_pool, name='logssq_pooling')(stat_logssq_vol)
+            # global pool to get 'final' stat (without reducing dimensions)
+            max_pool = [i - 2 for i in inshape]
+            stat_mu = MaxPooling(pool_size=max_pool, name='mu_pooling')(stat_mu_vol)
+            stat_logssq = MaxPooling(pool_size=max_pool, name='logssq_pooling')(stat_logssq_vol)
 
-        # combine mu with initialization
-        if init_mu is not None:
-            init_mu = np.array(init_mu)
-            stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu,
-                                name='comb_mu')(stat_mu)
+            # combine mu with initialization
+            if init_mu is not None:
+                init_mu = np.array(init_mu)
+                stat_mu = KL.Lambda(lambda x: network_stat_weight * x + init_mu,
+                                    name='comb_mu')(stat_mu)
 
-        # combine sigma with initialization
-        if init_sigma is not None:
-            init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
-            stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq,
-                                    name='comb_sigma')(stat_logssq)
+            # combine sigma with initialization
+            if init_sigma is not None:
+                init_logsigmasq = np.array([2 * np.log(f) for f in init_sigma])
+                stat_logssq = KL.Lambda(lambda x: network_stat_weight * x + init_logsigmasq,
+                                        name='comb_sigma')(stat_logssq)
 
-        # unnorm loglike
-        def unnorm_loglike(img, mu, logsigmasq, use_log=True):
-            P = tfp.distributions.Normal(mu, K.exp(logsigmasq / 2))
-            return P.log_prob(img) if use_log else P.prob(img)
-        uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
-                              name='unsup_likelihood')([image, stat_mu, stat_logssq])
+            # unnorm loglike
+            def unnorm_loglike(img, mu, logsigmasq, use_log=True):
+                P = tfp.distributions.Normal(mu, K.exp(logsigmasq / 2))
+                return P.log_prob(img) if use_log else P.prob(img)
+            uloglhood = KL.Lambda(lambda x: unnorm_loglike(*x),
+                                  name='unsup_likelihood')([image, stat_mu, stat_logssq])
+
+        else:
+            uloglhood = _conv_block(conv, nb_labels)
 
         # compute data loss as a layer, because it's a bit easier than outputting a ton of things
         def log_pdf(prob_ll, atl):
-            return prob_ll + K.log(atl + K.epsilon())
+            return prob_ll + K.log(K.clip(atl, 1e-36, 1.0))
         logpdf = KL.Lambda(lambda x: log_pdf(*x), name='log_pdf')([uloglhood, warped_atlas])
 
         def logsum(logpdf):
@@ -708,8 +726,10 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
         self.references = ne.modelio.LoadableModel.ReferenceContainer()
         self.references.vxm_model = vxm_model
         self.references.uloglhood = uloglhood
-        self.references.stat_mu = stat_mu
-        self.references.stat_logssq = stat_logssq
+        self.references.gaussian_likelihood = gaussian_likelihood
+        if gaussian_likelihood:
+            self.references.stat_mu = stat_mu
+            self.references.stat_logssq = stat_logssq
 
     def get_gaussian_warp_model(self):
         """
@@ -723,6 +743,20 @@ class ProbAtlasSegmentation(ne.modelio.LoadableModel):
             self.outputs[-1]
         ]
         return tf.keras.Model(self.inputs, outputs)
+
+    def get_likelihood_warp_model(self):
+        """
+        Extracts a predictor model from the ProbAtlasSegmentation model that directly
+        outputs the log likelihood model, the gaussian stats (if appropriate) and warp field.
+        """
+        if self.references.gaussian_likelihood:
+            return self.get_gaussian_warp_model()
+        else:
+            outputs = [
+                self.references.uloglhood,
+                self.outputs[-1]
+            ]
+            return tf.keras.Model(self.inputs, outputs)
 
 
 ###############################################################################
