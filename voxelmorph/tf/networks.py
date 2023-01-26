@@ -972,14 +972,12 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
             # get mean stream from negative flow
             mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
         
-        outputs = self.get_output(y_source, mean_stream, pos_flow, neg_flow)
+        outputs = self.get_output(y_source, pos_flow, neg_flow, mean_stream)
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=outputs)
 
     def get_output(self, y_source, pos_flow, neg_flow, mean_stream=None):
-        for i in range(1000):
-            print('BYE BYE')
 
         if mean_stream is not None:
             return [y_source, mean_stream, pos_flow, pos_flow]
