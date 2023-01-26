@@ -869,7 +869,7 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
                  pheno_input_shape,
                  nb_unet_features=None,
                  src_feats=1,
-                 atlas_feats=1,
+                 atlas_feats=None,
                  conv_image_shape=None,
                  conv_size=3,
                  conv_nb_levels=0,
@@ -886,7 +886,8 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
             pheno_input_shape: Pheno data input shape. e.g. (2)
             nb_unet_features: Unet convolutional features. See VxmDense documentation for 
                 more information.
-            src_feats: Number of source (atlas) features. Default is 1.
+            src_feats: Number of source features. Default is 1.
+            atlas_feats: Number of atlas features. If unspecified, set to src_feats.
             conv_image_shape: Intermediate phenotype image shape. Default is inshape 
                 with conv_nb_features.
             conv_size: Atlas generator convolutional kernel size. Default is 3.
@@ -900,6 +901,9 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
             templcondsi_init: Default is None.
             kwargs: Forwarded to the internal VxmDense model.
         """
+
+        if atlas_feats is None:
+            atlas_feats = src_feats
 
         if conv_image_shape is None:
             conv_image_shape = (*inshape, conv_nb_features)
