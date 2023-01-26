@@ -986,6 +986,7 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
                  pheno_input_shape,
                  nb_unet_features=None,
                  src_feats=1,
+                 atlas_feats=1,
                  conv_image_shape=None,
                  conv_size=3,
                  conv_nb_levels=0,
@@ -1042,12 +1043,12 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
                         padding='same', name='atlas_extra_conv_%d' % n)(last)
 
         # final convolution to get atlas features
-        atlas_gen = Conv(src_feats, kernel_size=3, padding='same', name='atlas_gen',
+        atlas_gen = Conv(atlas_feats, kernel_size=3, padding='same', name='atlas_gen',
                          kernel_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7),
                          bias_initializer=KI.RandomNormal(mean=0.0, stddev=1e-7))(last)
 
         # image input layers
-        atlas_input = tf.keras.Input((*inshape, src_feats), name='atlas_input')
+        atlas_input = tf.keras.Input((*inshape, atlas_feats), name='atlas_input')
         source_input = tf.keras.Input((*inshape, src_feats), name='source_input')
 
         if templcondsi:
@@ -1083,23 +1084,23 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
         pos_flow = vxm_model.references.pos_flow
         neg_flow = vxm_model.references.neg_flow
 
-        # set different attributes
-        self.references = ne.modelio.LoadableModel.ReferenceContainer()
-        self.references.vxm_model = vxm_model
-        
+        mean_stream = None
 
         if use_mean_stream:
             # get mean stream from negative flow
             mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
-            self.references.mean_stream = meanstream
-            outputs = [y_source, mean_stream, pos_flow, pos_flow]
-        else:
-            outputs = [y_source, pos_flow, pos_flow]
+        
+        outputs = self.get_output(use_mean_stream, y_source, mean_stream, pos_flow, neg_flow)
 
         # initialize the keras model
         super().__init__(inputs=inputs, outputs=outputs)
 
-
+    def get_output(self, use_mean_stream, y_source, mean_stream, pos_flow, neg_flow):
+        if use_mean_stream:
+            return [y_source, mean_stream, pos_flow, pos_flow]
+        else: 
+            return [y_source, pos_flow, pos_flow]
+        
 ###############################################################################
 # Utility/Core Networks
 ###############################################################################
