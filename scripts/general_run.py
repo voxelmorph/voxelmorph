@@ -12,9 +12,10 @@ from tqdm import tqdm
 from train import train
 from utils import *
 from wandbLogger import WandbLogger
+os.environ['VXM_BACKEND'] = 'pytorch'
+import voxelmorph_group as vxm  # nopep8
 
 hydralog = logging.getLogger(__name__)
-
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
@@ -50,9 +51,12 @@ def createdir(conf):
     conf.result = os.path.join(conf.inference, f"round{conf.round}", 'summary')
     conf.val = os.path.join(conf.inference, f"round{conf.round}", 'val')
 
+    conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
+
     os.makedirs(conf.moved, exist_ok=True)
     os.makedirs(conf.warp, exist_ok=True)
     os.makedirs(conf.result, exist_ok=True)
+    os.makedirs(conf.val, exist_ok=True)
     os.makedirs(conf.val, exist_ok=True)
 
 
@@ -108,11 +112,29 @@ def validate(conf, logger=None):
         import json
         with open(f"{conf.TI_json}") as json_file:
             TI_dict = json.load(json_file)
-        hydralog.debug(f"Loading TI from json {TI_dict}")
+
+
+    conf.model_path = os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)
+    if conf.transformation == 'Dense':
+        model = vxm.networks.VxmDense.load(conf.model_path, device)
+    elif conf.transformation == 'bspline':
+        
+        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+    else:
+        raise ValueError('transformation must be dense or bspline')
+    
+    if conf.gpu and (conf.gpu != '-1'):
+        device = 'cuda'
+    else:
+        device = 'cpu'
+        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+    
+    model.to(device)
+    model.eval()
 
     for subject in source_files:
         name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-            conf, subject, TI_dict[Path(subject).stem], logger)
+            conf, subject, model, TI_dict[Path(subject).stem], logger)
         df = pd.concat([df, pd.DataFrame(
             [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
     # convert the registered images to gif and compute the results

@@ -56,7 +56,7 @@ def train(conf, logger=None):
     hydralog.info(f"Inshape {shapes}")
 
     # prepare model folder
-    model_dir = conf.model_dir
+    model_dir = conf.model_dir_round
     os.makedirs(model_dir, exist_ok=True)
 
     # device handling

@@ -26,7 +26,7 @@ if __name__ == '__main__':
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
 
     print(f"{'---'*10} Start Testing {'---'*10}")
-    conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
+    conf.model_path = os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)
     conf.moved = os.path.join(conf.inference, 'moved')
     conf.warp = os.path.join(conf.inference, 'warp')
     conf.result = os.path.join(conf.inference, 'summary')

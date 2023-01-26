@@ -15,7 +15,7 @@ import voxelmorph_group as vxm  # nopep8
 
 
 hydralog = logging.getLogger(__name__)
-def register_single(conf, subject, tvec, logger=None):
+def register_single(conf, subject, tvec, model=None, logger=None):
     if conf.gpu and (conf.gpu != '-1'):
         device = 'cuda'
     else:
@@ -25,17 +25,19 @@ def register_single(conf, subject, tvec, logger=None):
     name = (subject).split(".")[0]
 
     # load and set up model
-    hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
-    if conf.transformation == 'Dense':
-        model = vxm.networks.VxmDense.load(conf.model_path, device)
-    elif conf.transformation == 'bspline':
-        
-        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
-    else:
-        raise ValueError('transformation must be dense or bspline')
+    if model is None:
+        hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
+        if conf.transformation == 'Dense':
+            model = vxm.networks.VxmDense.load(conf.model_path, device)
+        elif conf.transformation == 'bspline':
+            
+            model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+        else:
+            raise ValueError('transformation must be dense or bspline')
 
-    model.to(device)
-    model.eval()
+        model.to(device)
+        model.eval()
+
     add_feat_axis = not conf.multichannel
     vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
     normalized_vols = normalize(vols)
@@ -52,7 +54,6 @@ def register_single(conf, subject, tvec, logger=None):
         fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...].astype(np.int16)).float().to(device)
 
         resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
-        hydralog.debug(f"Type of resized_warp {resized_warp.get_device()} and type of fbMOLLI_vols {fbMOLLI_vols.get_device()}")
         # hydralog.debug(f"Type fbmolli {type(fbMOLLI_vols)} and warp {type(resized_warp.to(device))}")
         MOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols.to('cpu'), resized_warp.to('cpu'))
         orig_vols = fbMOLLI_vols
@@ -66,9 +67,11 @@ def register_single(conf, subject, tvec, logger=None):
         orig_vols = vols
         rigs_vols = predvols
         rigs_warp = warp
+    start = time.time()
     orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, 't1map', tvec=tvec)
     rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, 't1map', tvec=tvec)
-    hydralog.info(f"The T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
+    et = time.time()
+    hydralog.info(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
     # Save the results of original image
     orig_vols = np.squeeze(orig_vols.detach().cpu().numpy())
     rigs_vols = np.squeeze(rigs_vols.detach().cpu().numpy())
@@ -119,7 +122,7 @@ def saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None):
     warp = warp.transpose(3, 2, 0, 1)
 
     org_mse, rig_mse = 0, 0
-    hydralog.debug(f"Shape of orig {orig.shape} and moved {moved.shape}")
+    # hydralog.debug(f"Shape of orig {orig.shape} and moved {moved.shape}")
     for j in range(1, moved.shape[-1]):
         rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
         org_mse += mse(orig[:, :, j-1], orig[:, :, j])

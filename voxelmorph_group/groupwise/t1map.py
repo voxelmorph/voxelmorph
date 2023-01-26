@@ -89,13 +89,11 @@ class MOLLIT1mapParallel:
         self.frames_sorted = frames[:, :, tvec_index]
         self.inversion_recovery = np.zeros((H, W, L))
         # pixel-wise fitting
-        start = time.time()
         items = itertools.product(range(H), range(W))
         num_cores = multiprocessing.cpu_count()
         processed_list = Parallel(n_jobs=int(num_cores))(delayed(self.helper)(i) for i in items)
         # processed_list = Parallel(n_jobs=int(num_cores/4), verbose=10)(delayed(self.helper)(i) for i in items)
-        et = time.time()
-        hydralog.debug(f"Time elapsed: {(et - start)/60} mins")
+
         for result in processed_list:   
             if result is not None:
                 pred_mse, pres, SD, nl, tx, ty = result 
