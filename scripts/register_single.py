@@ -38,7 +38,8 @@ def register_single(conf, subject, tvec, logger=None):
     model.eval()
     add_feat_axis = not conf.multichannel
     vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
-    low_matrix, sparse_matrix = rpca(np.squeeze(vols).transpose(1, 2, 0), rank=conf.rank) # (H, W, N)
+    normalized_vols = normalize(vols)
+    low_matrix, sparse_matrix = rpca(np.squeeze(normalized_vols).transpose(1, 2, 0), rank=conf.rank) # (H, W, N)
 
     fixed = torch.from_numpy(low_matrix[None, ...]).float().permute(0, 3, 1, 2).to(device)
     predvols, warp = model(fixed, registration=True)
@@ -58,7 +59,11 @@ def register_single(conf, subject, tvec, logger=None):
         rigs_vols = MOLLI_vols_pred
         rigs_warp = resized_warp
     else:    
-        orig_vols = fixed
+        vol_size = vols.shape[1:-1]
+        vols = torch.from_numpy(vols).float().permute(0, 3, 1, 2).to(device)
+        # print(f"Mona: vols shape {vols.shape}")
+        predvols = vxm.layers.SpatialTransformer(size=vol_size)(vols.to('cpu'), warp.to('cpu'))
+        orig_vols = vols
         rigs_vols = predvols
         rigs_warp = warp
     orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, 't1map', tvec=tvec)
@@ -140,6 +145,6 @@ def saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None):
             logger.log_gifs(morph_field_path, label="Quiver Gif")
         plt.close('all')
     
-    hydralog.info(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
+    hydralog.debug(f"File {name}, original MSE - {org_mse:.5f} PCA - {org_dis:.5f}, registered MSE - {rig_mse:5f} PCA - {rig_dis:.5f}")
     return name, org_mse, org_dis, rig_mse, rig_dis
     

@@ -56,6 +56,8 @@ def volgen(
         imgs = [py.utils.load_volfile(vol_names[i], **load_params) for i in indices]
 
         vols = [np.concatenate(imgs, axis=0)]
+        vols = (vols - np.min(vols)) / (np.max(vols) - np.min(vols))
+
         # print(f"Mona-10: length imgs {len(imgs)} and shape {imgs[0].shape} and length vols {len(vols)} and vols shape {vols[0].shape}")
         # optionally load segmentations and concatenate
         if segs is True:

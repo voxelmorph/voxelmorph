@@ -31,6 +31,7 @@ def main(cfg: DictConfig):
 
     # save the config
     config_path = f"{conf['model_dir']}/config.yaml"
+    os.makedirs(conf['model_dir'], exist_ok=True)
     try:
         with open(config_path, 'w') as fp:
             OmegaConf.save(config=conf, f=fp.name)

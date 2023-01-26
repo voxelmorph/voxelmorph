@@ -32,6 +32,7 @@ class SpatialTransformer(nn.Module):
 
     def forward(self, src, flow):
         # new locations
+        # print(f"Mona: {self.grid.shape} and {flow.shape}")
         new_locs = self.grid + flow
         shape = flow.shape[2:]
 
