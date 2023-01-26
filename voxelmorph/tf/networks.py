@@ -857,6 +857,7 @@ class TemplateCreation(ne.modelio.LoadableModel):
         inputs = (*warp_model.inputs, img_input)
         return tf.keras.Model(inputs=inputs, outputs=y_img).predict([src, trg, img])
 
+
 class ConditionalTemplateCreation(ne.modelio.LoadableModel):
     """
     VoxelMorph network to generate an conditional template image.
@@ -959,8 +960,6 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
         vxm_model = VxmDense(inshape, nb_unet_features=nb_unet_features,
                              bidir=True, input_model=warp_input_model, **kwargs)
 
-        
-        
         # extract tensors from stacked model
         y_source = vxm_model.references.y_source
         pos_flow = vxm_model.references.pos_flow
@@ -971,7 +970,7 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
         if use_mean_stream:
             # get mean stream from negative flow
             mean_stream = ne.layers.MeanStream(name='mean_stream', cap=mean_cap)(neg_flow)
-        
+
         outputs = self.get_output(y_source, pos_flow, neg_flow, mean_stream)
 
         # initialize the keras model
@@ -983,7 +982,8 @@ class ConditionalTemplateCreation(ne.modelio.LoadableModel):
             return [y_source, mean_stream, pos_flow, pos_flow]
         else: 
             return [y_source, pos_flow, pos_flow]
-        
+
+
 ###############################################################################
 # Utility/Core Networks
 ###############################################################################
