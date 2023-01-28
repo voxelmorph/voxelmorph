@@ -91,7 +91,7 @@ def pipeline(conf, logger=None):
     conf.round = 2
     createdir(conf)
 
-    # train(conf, logger)
+    train(conf, logger)
     validate(conf, logger)
     conf = generate_input(conf)
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
@@ -137,11 +137,12 @@ def validate(conf, logger=None):
     model.eval()
 
     hydralog.info("Registering Samples:")
-    for subject in tqdm(source_files, desc="Registering Samples:"):
+    for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
         name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-            conf, subject, TI_dict[Path(subject).stem], device, model, logger)
-        df = pd.concat([df, pd.DataFrame(
-            [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
+            idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
+        if t1err_org is not None:
+            df = pd.concat([df, pd.DataFrame(
+                [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
     # convert the registered images to gif and compute the results
 
     df['MSE changes percentage'] = percentage_change(
