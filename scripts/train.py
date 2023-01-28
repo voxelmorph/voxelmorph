@@ -18,6 +18,12 @@ hydralog = logging.getLogger(__name__)
 
 def train(conf, logger=None):
 
+    conf.model_path = os.path.join(
+        conf.model_dir_round, '%04d.pt' % conf.epochs)
+    if os.path.exists(conf.model_path):
+        hydralog.info(f"Model {conf.model_path} already exists !!!")
+        return
+
     bidir = conf.bidir
 
     # load and prepare training data

@@ -71,34 +71,33 @@ def generate_input(conf):
         with open(f"{conf.moved}/MOLLI_post_input.txt", "w") as f:
             f.write(txt_string)
         conf.img_list = f"{conf.moved}/MOLLI_post_input.txt"
-    return conf
 
 
 def pipeline(conf, logger=None):
     # first train the model with rpca rank=5?
     conf.final = False
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
-    conf.rank = conf.rpca_rank[0]
+    conf.rank = conf.rpca_rank.rank1
     conf.round = 1
     createdir(conf)
     train(conf, logger)
     validate(conf, logger)
-    conf = generate_input(conf)
+    generate_input(conf)
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
 
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
-    conf.rank = conf.rpca_rank[1]
+    conf.rank = conf.rpca_rank.rank2
     conf.round = 2
     createdir(conf)
 
     train(conf, logger)
     validate(conf, logger)
-    conf = generate_input(conf)
+    generate_input(conf)
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
 
     hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
     conf.final = True
-    conf.rank = conf.rpca_rank[2]
+    conf.rank = conf.rpca_rank.rank3
     conf.round = 2
     createdir(conf)
 
@@ -121,8 +120,9 @@ def validate(conf, logger=None):
             TI_dict = json.load(json_file)
 
     device = 'cpu'
-    conf.num_cores = multiprocessing.cpu_count()
-    hydralog.info(f"Using {conf.num_cores} cores")
+    num_cores = multiprocessing.cpu_count()
+    conf.num_cores = num_cores if num_cores < 64 else 64
+    hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
     conf.model_path = os.path.join(
         conf.model_dir_round, '%04d.pt' % conf.epochs)
@@ -138,12 +138,14 @@ def validate(conf, logger=None):
 
     hydralog.info("Registering Samples:")
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
-        name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-            idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
-        if t1err_org is not None:
-            df = pd.concat([df, pd.DataFrame(
-                [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
-    # convert the registered images to gif and compute the results
+        if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
+            hydralog.debug(f"Already registered {Path(subject).stem}")
+        else:
+            name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
+                idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
+            if t1err_org is not None:
+                df = pd.concat([df, pd.DataFrame(
+                    [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])

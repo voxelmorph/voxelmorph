@@ -17,8 +17,7 @@ import voxelmorph_group as vxm  # nopep8
 hydralog = logging.getLogger(__name__)
 def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=None):
 
-    name = (subject).split(".")[0]
-
+    name = Path(subject).stem
     # load and set up model
     if model is None:
         hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')

@@ -7,8 +7,8 @@ hydra:
     params:
       weight: range(0.3, 1, 0.1)
   
-project_name: Group_${dataset}_rank_${rpca_rank}_${image_loss}_i${image_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
-path: ${dataset}/group/rank_${rpca_rank}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
+project_name: Group_${dataset}_rank_${rpca_rank.rlist}_${image_loss}_i${image_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
+path: ${dataset}/group/rank_${rpca_rank.rlist}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
 
 dataset: MOLLI_post
 orig_folder: data/MOLLI_post
@@ -23,15 +23,18 @@ atlas_methods: avg
 multichannel: False
 in_order: True
 
-rpca_rank: [10, 5, 5]
-
+rpca_rank: 
+  rank1: 5
+  rank2: 5
+  rank3: 5
+  rlist: ${rpca_rank.rank1}_${rpca_rank.rank2}_${rpca_rank.rank3}
+  
 # training parameters
 gpu: 1
 batch_size: 1
 epochs: 100
 steps_per_epoch: 10
 load_model: False
-model_path: model/${path}/100.pt
 initial_epoch: 0
 lr: 1e-4
 cudnn_nondet:
