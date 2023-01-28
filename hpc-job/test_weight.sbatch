@@ -10,7 +10,7 @@
 #SBATCH --qos=medium
 
 # The default run (wall-clock) time is 1 minute
-#SBATCH --time=20:00:00
+#SBATCH --time=24:00:00
 
 # The default number of parallel tasks per job is 1
 #SBATCH --ntasks=1
@@ -45,7 +45,7 @@ pip install packaging==21.3
 cd $HOME/script/voxelmorph-test
 python -m pip install --user -e .
 
-srun python scripts/general_run.py hydra.verbose=__main__ weight=0.3 rpca_rank.rank1=5
+srun python scripts/general_run.py hydra.verbose=__main__ weight=0.5 rpca_rank.rank1=5
 
 # Your job commands go above here
 

@@ -20,7 +20,7 @@ previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utili
 /usr/bin/nvidia-smi
 wandb offline
 
-srun python scripts/general_run.py hydra.verbose=__main__ weight=0.3 rpca_rank=\[10,5,5\]
+srun python scripts/general_run.py hydra.verbose=__main__ weight=0.3 rpca_rank.rank1=10
 
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' | /usr/bin/grep -v -F "$previous"
