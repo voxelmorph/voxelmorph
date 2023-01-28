@@ -15,7 +15,7 @@ os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
 hydralog = logging.getLogger(__name__)
-def register_single(conf, subject, tvec, device='cpu', model=None, logger=None):
+def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=None):
 
     name = (subject).split(".")[0]
 
@@ -63,18 +63,27 @@ def register_single(conf, subject, tvec, device='cpu', model=None, logger=None):
         rigs_vols = predvols
         rigs_warp = warp
     start = time.time()
-    orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec)
-    rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec)
-    et = time.time()
-    hydralog.debug(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
-    # Save the results of original image
+    # Evaluate
+    if conf.final or idx % 10 == 0:
+        orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec)
+        rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec)
+        et = time.time()
+        hydralog.debug(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
+        saveT1err(orig_T1err, rigs_T1err, conf, name, logger)
+        mean_orig_T1err = np.mean(orig_T1err)
+        mean_rigs_T1err = np.mean(rigs_T1err)
+        # Save the results of original image
+    else:
+        mean_orig_T1err = None
+        mean_rigs_T1err = None
     orig_vols = np.squeeze(orig_vols.detach().cpu().numpy())
     rigs_vols = np.squeeze(rigs_vols.detach().cpu().numpy())
     rigs_warp = rigs_warp.detach().cpu().numpy()
     
     name, org_mse, org_dis, rig_mse, rig_dis = saveEval(orig_vols, rigs_vols, rigs_warp, conf, name, fixed_affine, logger)
-    saveT1err(orig_T1err, rigs_T1err, conf, name, logger)
-    return name, org_mse, org_dis, np.mean(orig_T1err), rig_mse, rig_dis, np.mean(rigs_T1err)
+
+
+    return name, org_mse, org_dis, mean_orig_T1err, rig_mse, rig_dis, mean_rigs_T1err
 
 
 def saveT1err(orig, rigs, conf, name, logger=None, size=(4, 2), title_font_size=8, title_pad = 10):
