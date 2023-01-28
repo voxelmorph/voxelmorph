@@ -1,6 +1,8 @@
 import glob
 import logging
+import multiprocessing
 import os
+import time
 from pathlib import Path
 
 import hydra
@@ -12,16 +14,17 @@ from tqdm import tqdm
 from train import train
 from utils import *
 from wandbLogger import WandbLogger
+
 os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
 hydralog = logging.getLogger(__name__)
 
+
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
     hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
-
     conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
 
     if conf.log == 'wandb':
@@ -40,10 +43,11 @@ def main(cfg: DictConfig):
         hydralog.warning("Unable to copy the config")
 
     pipeline(conf, logger)
-
+    hydralog.info("Done")
 
     logger._wandb.finish()
     assert logger._wandb.run is None
+
 
 def createdir(conf):
     conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
@@ -65,15 +69,16 @@ def generate_input(conf):
         files = glob.glob(os.path.join(conf.moved, '*.npy'))
         txt_string = "\n".join(files)
         with open(f"{conf.moved}/MOLLI_post_input.txt", "w") as f:
-            f.write(txt_string) 
+            f.write(txt_string)
         conf.img_list = f"{conf.moved}/MOLLI_post_input.txt"
     return conf
+
 
 def pipeline(conf, logger=None):
     # first train the model with rpca rank=5?
     conf.final = False
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
-    conf.rank = 5
+    conf.rank = conf.rpca_rank[0]
     conf.round = 1
     createdir(conf)
     train(conf, logger)
@@ -82,59 +87,59 @@ def pipeline(conf, logger=None):
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
 
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
-    conf.rank = 5
+    conf.rank = conf.rpca_rank[1]
     conf.round = 2
     createdir(conf)
-    
-    train(conf, logger)
+
+    # train(conf, logger)
     validate(conf, logger)
     conf = generate_input(conf)
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
 
     hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
     conf.final = True
-    conf.rank = 5
+    conf.rank = conf.rpca_rank[2]
     conf.round = 2
     createdir(conf)
-    
+
     train(conf, logger)
     validate(conf, logger)
-    hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
+    hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
+
 
 def validate(conf, logger=None):
 
     source_files = os.listdir(conf.moving)
-    col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA', 'registered PCA', 'raw T1err', 'registered T1err']
+    col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
+           'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
 
-        # load the TI for all subjects
+    # load the TI for all subjects
     if conf.TI_json:
         import json
         with open(f"{conf.TI_json}") as json_file:
             TI_dict = json.load(json_file)
 
+    device = 'cpu'
+    conf.num_cores = multiprocessing.cpu_count()
+    hydralog.info(f"Using {conf.num_cores} cores")
 
-    conf.model_path = os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)
+    conf.model_path = os.path.join(
+        conf.model_dir_round, '%04d.pt' % conf.epochs)
     if conf.transformation == 'Dense':
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
-        
         model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
     else:
         raise ValueError('transformation must be dense or bspline')
-    
-    if conf.gpu and (conf.gpu != '-1'):
-        device = 'cuda'
-    else:
-        device = 'cpu'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    
+
     model.to(device)
     model.eval()
 
-    for subject in source_files:
+    hydralog.info("Registering Samples:")
+    for subject in tqdm(source_files, desc="Registering Samples:"):
         name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-            conf, subject, model, TI_dict[Path(subject).stem], logger)
+            conf, subject, TI_dict[Path(subject).stem], device, model, logger)
         df = pd.concat([df, pd.DataFrame(
             [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
     # convert the registered images to gif and compute the results

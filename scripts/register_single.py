@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 import logging
 import os
+import time
+from pathlib import Path
 
 import matplotlib.pyplot as plt
-from pathlib import Path
 import numpy as np
 import seaborn as sns
 import torch
@@ -13,14 +14,8 @@ from utils import *
 os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
-
 hydralog = logging.getLogger(__name__)
-def register_single(conf, subject, tvec, model=None, logger=None):
-    if conf.gpu and (conf.gpu != '-1'):
-        device = 'cuda'
-    else:
-        device = 'cpu'
-        os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+def register_single(conf, subject, tvec, device='cpu', model=None, logger=None):
 
     name = (subject).split(".")[0]
 
@@ -68,10 +63,10 @@ def register_single(conf, subject, tvec, model=None, logger=None):
         rigs_vols = predvols
         rigs_warp = warp
     start = time.time()
-    orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, 't1map', tvec=tvec)
-    rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, 't1map', tvec=tvec)
+    orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec)
+    rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec)
     et = time.time()
-    hydralog.info(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
+    hydralog.debug(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
     # Save the results of original image
     orig_vols = np.squeeze(orig_vols.detach().cpu().numpy())
     rigs_vols = np.squeeze(rigs_vols.detach().cpu().numpy())
