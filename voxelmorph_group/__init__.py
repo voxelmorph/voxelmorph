@@ -21,8 +21,6 @@ from . import generators
 from . import py
 from .py.utils import default_unet_features
 
-    # the pytorch backend can be enabled by setting the VXM_BACKEND
-    # environment var to "pytorch"
 try:
     import torch
 except ImportError:
