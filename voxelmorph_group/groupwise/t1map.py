@@ -86,7 +86,7 @@ class MOLLIT1mapParallel:
         self.inversion_recovery = np.zeros((H, W, L))
         # pixel-wise fitting
         items = itertools.product(range(H), range(W))
-        processed_list = Parallel(n_jobs=-2)(
+        processed_list = Parallel(n_jobs=-1, backend="multiprocessing")(
             delayed(self.helper)(i) for i in items)
         # processed_list = Parallel(n_jobs=int(num_cores/4), verbose=10)(delayed(self.helper)(i) for i in items)
 
