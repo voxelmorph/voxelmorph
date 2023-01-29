@@ -4,7 +4,7 @@
 #SBATCH --partition=compute
 #SBATCH --time=8:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=4G
 
 module load 2022r2 openmpi miniconda3

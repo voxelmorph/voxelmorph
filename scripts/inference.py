@@ -42,7 +42,7 @@ def main(cfg: DictConfig):
 
     device = 'cpu'
 
-    train_files = os.listdir(conf.moving)
+    train_files = glover(conf.moving, "*.npy")
     add_feat_axis = not conf.multichannel
 
     for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
@@ -50,9 +50,9 @@ def main(cfg: DictConfig):
         start = time.time()
         tvec = TI_dict[Path(subject).stem]
         orig_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
-            conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+            conf.moving, f"{name}.npy"), add_feat_axis=add_feat_axis, ret_affine=True)
         rigs_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
-            conf.moved, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+            conf.moved, f"{name}.npy"), add_feat_axis=add_feat_axis, ret_affine=True)
         orig_vols = torch.from_numpy(orig_vols).float().permute(0, 3, 1, 2).to(device)
         rigs_vols = torch.from_numpy(rigs_vols).float().permute(0, 3, 1, 2).to(device)
         orig_T1err = vxm.groupwise.utils.update_atlas(
