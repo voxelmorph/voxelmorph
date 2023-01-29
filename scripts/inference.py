@@ -1,6 +1,7 @@
 from pathlib import Path
 import time
 import os
+import glob
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
@@ -42,7 +43,8 @@ def main(cfg: DictConfig):
 
     device = 'cpu'
 
-    train_files = glover(conf.moving, "*.npy")
+    train_files = glob.glob(os.path.join(conf.moving, "*.npy"))
+    hydralog.info(f"Number of samples: {len(train_files)}")
     add_feat_axis = not conf.multichannel
 
     for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
