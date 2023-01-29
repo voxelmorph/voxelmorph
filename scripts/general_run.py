@@ -20,6 +20,7 @@ import voxelmorph_group as vxm  # nopep8
 
 hydralog = logging.getLogger(__name__)
 
+
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
@@ -85,7 +86,8 @@ def pipeline(conf, logger=None):
     validate(conf, logger)
     generate_input(conf)
     round_time = time.time() - st
-    hydralog.info(f"{'---'*10} Round 1 train_t {train_time/60} mins and total_t {round_time/60} mins")
+    hydralog.info(
+        f"{'---'*10} Round 1 train_t {train_time/60} mins and total_t {round_time/60} mins")
 
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
     conf.rank = conf.rpca_rank.rank2
@@ -96,7 +98,8 @@ def pipeline(conf, logger=None):
     validate(conf, logger)
     generate_input(conf)
     round_time = time.time() - st
-    hydralog.info(f"{'---'*10} Round 2 train_t {train_time/60} mins and total_t {round_time/60} mins")
+    hydralog.info(
+        f"{'---'*10} Round 2 train_t {train_time/60} mins and total_t {round_time/60} mins")
 
     hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
     conf.final = True
@@ -108,7 +111,8 @@ def pipeline(conf, logger=None):
     validate(conf, logger)
     generate_input(conf)
     round_time = time.time() - st
-    hydralog.info(f"{'---'*10} Round 3 train_t {train_time/60} mins and total_t {round_time/60} mins")
+    hydralog.info(
+        f"{'---'*10} Round 3 train_t {train_time/60} mins and total_t {round_time/60} mins")
 
 
 def validate(conf, logger=None):

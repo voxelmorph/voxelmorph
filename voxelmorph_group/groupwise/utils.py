@@ -270,7 +270,7 @@ def normalized_cross_correlation(x, y, return_map, reduction='mean', eps=1e-8):
     return ncc, ncc_map
 
 
-def update_atlas(invols, num_cores=8, method='avg', tvec=None, factor=10):
+def update_atlas(invols, num_cores=8, method='avg', tvec=None, factor=1):
     """
     Generate implicit template from input volumes.
 

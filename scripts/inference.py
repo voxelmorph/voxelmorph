@@ -1,4 +1,5 @@
-import argparse
+from pathlib import Path
+import time
 import os
 import pandas as pd
 from tqdm import tqdm
@@ -8,7 +9,7 @@ import warnings
 import hydra
 import logging
 from omegaconf import DictConfig, OmegaConf
-from register_single import register_single
+from register_single import *
 from utils import *
 
 import voxelmorph_group as vxm  # nopep8
@@ -18,18 +19,17 @@ warnings.filterwarnings("ignore")
 
 hydralog = logging.getLogger(__name__)
 
-
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    config_path = f"{conf['model_dir']}/config.yaml"
-    if os.path.exists(config_path):
-        conf = OmegaConf.load(config_path)
-        hydralog.info(f"Loaded config from {config_path}")
-    else:
-        hydralog.warning(f"The config file {config_path} does not exist. Using the current config")
-    
-    source_files = os.listdir(conf.moving)
+
+    conf.round = 3
+    conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
+    conf.result = os.path.join(conf.inference, "final_summary")
+    os.makedirs(conf.result, exist_ok=True)
+
+    hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
+
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -40,30 +40,56 @@ def main(cfg: DictConfig):
         with open(f"{conf.TI_json}") as json_file:
             TI_dict = json.load(json_file)
 
-    device = 'cuda' if conf.gpu > 0 else 'cpu'
+    device = 'cpu'
 
-    conf.model_path = os.path.join(
-        conf.model_dir_round, '%04d.pt' % conf.epochs)
-    if conf.transformation == 'Dense':
-        model = vxm.networks.VxmDense.load(conf.model_path, device)
-    elif conf.transformation == 'bspline':
-        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
-    else:
-        raise ValueError('transformation must be dense or bspline')
+    train_files = os.listdir(conf.moving)
+    add_feat_axis = not conf.multichannel
 
-    model.to(device)
-    model.eval()
+    for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
+        name = Path(subject).stem
+        start = time.time()
+        tvec = TI_dict[Path(subject).stem]
+        orig_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
+            conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+        rigs_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
+            conf.moved, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+        orig_vols = torch.from_numpy(orig_vols).float().permute(0, 3, 1, 2).to(device)
+        rigs_vols = torch.from_numpy(rigs_vols).float().permute(0, 3, 1, 2).to(device)
+        orig_T1err = vxm.groupwise.utils.update_atlas(
+            orig_vols, -1, 't1map', tvec=tvec)
+        rigs_T1err = vxm.groupwise.utils.update_atlas(
+            rigs_vols, -1, 't1map', tvec=tvec)
+        et = time.time()
+        mean_orig_T1err = np.mean(orig_T1err)
+        mean_rigs_T1err = np.mean(rigs_T1err)
+        saveT1err(orig_T1err, rigs_T1err, conf, name, None)
+        hydralog.info(
+            f"{name}, Time elapsed: {(et - start)/60} mins, T1 error orig {mean_orig_T1err} and rigs {mean_rigs_T1err}")
 
-    hydralog.info("Registering Samples:")
-    for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
-        if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
-            hydralog.debug(f"Already registered {Path(subject).stem}")
-        else:
-            name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-                idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
-            if t1err_org is not None:
-                df = pd.concat([df, pd.DataFrame(
-                    [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
+        orig = np.squeeze(orig_vols.detach().cpu().numpy()).transpose(1, 2, 0)
+        moved = np.squeeze(rigs_vols.detach().cpu().numpy()).transpose(1, 2, 0)
+
+        org_mse, rig_mse = 0, 0
+        for j in range(1, moved.shape[-1]):
+            rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
+            org_mse += mse(orig[:, :, j-1], orig[:, :, j])
+
+        eig_org, org_K, org_dis = pca(orig, topk=1)
+        eig_rig, rig_K, rig_dis = pca(moved, topk=1)
+
+        f, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 4), sharex=True)
+        sns.barplot(x=np.arange(len(eig_org)),
+                    y=np.around(eig_org, 2), palette="rocket", ax=ax1)
+        sns.barplot(x=np.arange(len(eig_rig)),
+                    y=np.around(eig_rig, 2), palette="rocket", ax=ax2)
+        ax1.bar_label(ax1.containers[0])
+        ax2.bar_label(ax2.containers[0])
+        ax1.set_title(f"Eigenvalues of original image {name}")
+        ax2.set_title(f"Eigenvalues of registered image {name}")
+        plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
+        plt.close()
+        df = pd.concat([df, pd.DataFrame(
+            [[name, org_mse, rig_mse, org_dis, rig_dis, mean_orig_T1err, mean_rigs_T1err]], columns=col)], ignore_index=True)
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])
@@ -72,10 +98,8 @@ def main(cfg: DictConfig):
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-    hydralog.info(f"The summary is \n {df.describe()}")
-
-    logger.log_dataframe(df, 'Results', path=os.path.join(
-        conf.result, 'results.csv'))
+    hydralog.info(
+        f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
 
 if __name__ == '__main__':
