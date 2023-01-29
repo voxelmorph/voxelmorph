@@ -14,7 +14,7 @@ module load 2022r2 openmpi miniconda3
 
 conda activate regist
 
-cd $HOME/bastion/xinqili/scripts/voxelmorph-test 
+cd $HOME/scripts/voxelmorph-test
 
 previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' | /usr/bin/tail -n '+2')
 

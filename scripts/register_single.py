@@ -18,6 +18,7 @@ hydralog = logging.getLogger(__name__)
 def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=None):
 
     name = Path(subject).stem
+    hydralog.info(f"Regist file {name}")
     # load and set up model
     if model is None:
         hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
@@ -40,7 +41,7 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
     fixed = torch.from_numpy(low_matrix[None, ...]).float().permute(0, 3, 1, 2).to(device)
     predvols, warp = model(fixed, registration=True)
 
-    if conf.final:
+    if conf.test:
     # Apply the warp to the original image
         original_name = os.path.join(conf.orig_folder, f"{name}.nii.gz")
         fbMOLLI_vols = sitk.GetArrayFromImage(sitk.ReadImage(original_name))
