@@ -18,6 +18,7 @@ hydralog = logging.getLogger(__name__)
 def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=None):
 
     name = Path(subject).stem
+    hydralog.info(f"Regist file {name}")
     # load and set up model
     if model is None:
         hydralog.debug(f'Loading bspline model - {conf.model_path} and {conf.transformation}')
