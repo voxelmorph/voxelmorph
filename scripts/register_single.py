@@ -40,30 +40,19 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
     fixed = torch.from_numpy(low_matrix[None, ...]).float().permute(0, 3, 1, 2).to(device)
     predvols, warp = model(fixed, registration=True)
 
-    if conf.final:
-    # Apply the warp to the original image
-        original_name = os.path.join(conf.orig_folder, f"{name}.nii.gz")
-        fbMOLLI_vols = sitk.GetArrayFromImage(sitk.ReadImage(original_name))
-        fbMOLLI_size = fbMOLLI_vols.shape[1:]
-        fbMOLLI_vols = torch.from_numpy(fbMOLLI_vols[:, None, ...].astype(np.int16)).float().to(device)
+ 
+    vol_size = vols.shape[1:-1]
+    vols = torch.from_numpy(vols).float().permute(0, 3, 1, 2).to(device)
+    # print(f"Mona: vols shape {vols.shape}")
+    predvols = vxm.layers.SpatialTransformer(size=vol_size)(vols.to('cpu'), warp.to('cpu'))
+    orig_vols = vols
+    rigs_vols = predvols
+    rigs_warp = warp
 
-        resized_warp = vxm.networks.interpolate_(warp, size=fbMOLLI_size, mode='bilinear')
-        # hydralog.debug(f"Type fbmolli {type(fbMOLLI_vols)} and warp {type(resized_warp.to(device))}")
-        MOLLI_vols_pred = vxm.layers.SpatialTransformer(size=fbMOLLI_size)(fbMOLLI_vols.to('cpu'), resized_warp.to('cpu'))
-        orig_vols = fbMOLLI_vols
-        rigs_vols = MOLLI_vols_pred
-        rigs_warp = resized_warp
-    else:    
-        vol_size = vols.shape[1:-1]
-        vols = torch.from_numpy(vols).float().permute(0, 3, 1, 2).to(device)
-        # print(f"Mona: vols shape {vols.shape}")
-        predvols = vxm.layers.SpatialTransformer(size=vol_size)(vols.to('cpu'), warp.to('cpu'))
-        orig_vols = vols
-        rigs_vols = predvols
-        rigs_warp = warp
-    start = time.time()
+    
     # Evaluate
     if conf.final or idx % 10 == 0:
+        start = time.time()
         orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec)
         rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec)
         et = time.time()
