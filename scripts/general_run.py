@@ -165,7 +165,7 @@ def validate(conf, logger=None):
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
     hydralog.info(f"The summary is \n {df.describe()}")
 
-    logger.log_dataframe(df, 'Results', path=os.path.join(
+    logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
         conf.result, 'results.csv'))
 
 

@@ -30,3 +30,4 @@ from . import groupwise
 from .groupwise import layers
 from .groupwise import networks
 from .groupwise import losses
+from .groupwise import t1map

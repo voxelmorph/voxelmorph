@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 import os
 import glob
+import pickle
 import pandas as pd
 from tqdm import tqdm
 from omegaconf import OmegaConf
@@ -43,33 +44,31 @@ def main(cfg: DictConfig):
 
     device = 'cpu'
 
-    train_files = glob.glob(os.path.join(conf.moving, "*.npy"))
+    train_files = vxm.py.utils.read_file_list(conf.img_list, prefix=conf.img_prefix,
+                                              suffix=conf.img_suffix)
     hydralog.info(f"Number of samples: {len(train_files)}")
-    add_feat_axis = not conf.multichannel
-
+    t1map = vxm.groupwise.t1map.MOLLIT1mapParallel()
+            
     for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
         name = Path(subject).stem
         start = time.time()
         tvec = TI_dict[Path(subject).stem]
-        orig_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
-            conf.moving, f"{name}.npy"), add_feat_axis=add_feat_axis, ret_affine=True)
-        rigs_vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
-            conf.moved, f"{name}.npy"), add_feat_axis=add_feat_axis, ret_affine=True)
-        orig_vols = torch.from_numpy(orig_vols).float().permute(0, 3, 1, 2).to(device)
-        rigs_vols = torch.from_numpy(rigs_vols).float().permute(0, 3, 1, 2).to(device)
-        orig_T1err = vxm.groupwise.utils.update_atlas(
-            orig_vols, -1, 't1map', tvec=tvec)
-        rigs_T1err = vxm.groupwise.utils.update_atlas(
-            rigs_vols, -1, 't1map', tvec=tvec)
+        orig_vols= vxm.py.utils.load_volfile(subject, add_feat_axis=False, ret_affine=False)
+        rigs_vols = vxm.py.utils.load_volfile(os.path.join(
+            conf.moved, f"{name}.npy"), add_feat_axis=False, ret_affine=False)
+        
+        orig_T1err = map(t1map, orig_vols.transpose(1, 2, 0), tvec=tvec, conf=conf, name=name)
+        rigs_T1err = map(t1map, rigs_vols.transpose(1, 2, 0), tvec=tvec, conf=conf, name=name)
         et = time.time()
+
         mean_orig_T1err = np.mean(orig_T1err)
         mean_rigs_T1err = np.mean(rigs_T1err)
         saveT1err(orig_T1err, rigs_T1err, conf, name, None)
         hydralog.info(
             f"{name}, Time elapsed: {(et - start)/60} mins, T1 error orig {mean_orig_T1err} and rigs {mean_rigs_T1err}")
 
-        orig = np.squeeze(orig_vols.detach().cpu().numpy()).transpose(1, 2, 0)
-        moved = np.squeeze(rigs_vols.detach().cpu().numpy()).transpose(1, 2, 0)
+        orig = orig_vols.transpose(1, 2, 0)
+        moved = rigs_vols.transpose(1, 2, 0)
 
         org_mse, rig_mse = 0, 0
         for j in range(1, moved.shape[-1]):
@@ -88,7 +87,7 @@ def main(cfg: DictConfig):
         ax2.bar_label(ax2.containers[0])
         ax1.set_title(f"Eigenvalues of original image {name}")
         ax2.set_title(f"Eigenvalues of registered image {name}")
-        plt.savefig(os.path.join(conf.result, f"{name[:-4]}_pca_barplot.png"))
+        plt.savefig(os.path.join(conf.result, f"{name}_pca_barplot.png"))
         plt.close()
         df = pd.concat([df, pd.DataFrame(
             [[name, org_mse, rig_mse, org_dis, rig_dis, mean_orig_T1err, mean_rigs_T1err]], columns=col)], ignore_index=True)
@@ -103,6 +102,28 @@ def main(cfg: DictConfig):
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
+
+def map(t1map, data, tvec, conf, name):
+    filename = os.path.join(conf.result, f"{name}_T1map.pickle")
+    if os.path.exists(filename):
+        with open(filename, 'rb') as handle:
+            re = pickle.load(handle)
+        pmap = re['pmap']
+        sdmap = re['sdmap']
+        null_index = re['null_index']
+        S = re['S']
+        orig_T1err = S[None, None, :, :]
+    else:
+        inversion_img, pmap, sdmap, null_index, S = t1map.mestimation_abs(-1, np.array(tvec), data)
+        re = {}
+        re['pmap'] = pmap
+        re['sdmap'] = sdmap
+        re['null_index'] = null_index
+        re['S'] = S
+        orig_T1err = S[None, None, :, :]
+        with open(filename, 'wb') as handle:
+            pickle.dump(re, handle)
+    return orig_T1err
 
 if __name__ == '__main__':
     main()

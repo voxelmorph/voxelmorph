@@ -10,17 +10,17 @@
 #SBATCH --qos=medium
 
 # The default run (wall-clock) time is 1 minute
-#SBATCH --time=8:00:00
+#SBATCH --time=10:00:00
 
 # The default number of parallel tasks per job is 1
 #SBATCH --ntasks=1
 
 # The default number of CPUs per task is 1 (note: CPUs are always allocated to jobs per 2)
 # Request 1 CPU per active thread of your program (assume 1 unless you specifically set this)
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=48
 
 # The default memory per node is 1024 megabytes (1GB) (for multiple tasks, specify --mem-per-cpu instead)
-#SBATCH --mem=4G
+#SBATCH --mem=2G
 
 # Set mail type to 'END' to receive a mail when the job finishes
 # Do not enable mails when submitting large numbers (>20) of jobs at once
@@ -38,5 +38,5 @@ pip install packaging==21.3
 cd $HOME/script/voxelmorph-test
 python -m pip install --user -e .
 
-srun python scripts/inference.py hydra.verbose=__main__ weight=0.3 rpca_rank.rank1=5
+srun python scripts/inference.py hydra.verbose=__main__ weight=0.5 rpca_rank.rank1=10
 

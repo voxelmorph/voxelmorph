@@ -2,11 +2,11 @@
 #
 #SBATCH --job-name="voxelmorph-group"
 #SBATCH --partition=gpu
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=4
 #SBATCH --gpus-per-task=1
-#SBATCH --mem-per-cpu=16G
+#SBATCH --mem-per-cpu=4G
 
 /usr/bin/nvidia-smi
 
@@ -23,7 +23,7 @@ previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utili
 
 wandb offline
 
-srun python scripts/general_run.py hydra.verbose=__main__ weight=0.5 rpca_rank.rank1=10
+srun python scripts/general_run.py hydra.verbose=__main__ weight=0.1 rpca_rank.rank1=20 rpca_rank.rank2=10 rpca_rank.rank3=5
 
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' | /usr/bin/grep -v -F "$previous"

@@ -52,10 +52,10 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
 
     
     # Evaluate
-    if conf.final or idx % 10 == 0:
+    if idx % 10 == 0:
         start = time.time()
-        orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec)
-        rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec)
+        orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
+        rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
         et = time.time()
         hydralog.debug(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
         saveT1err(orig_T1err, rigs_T1err, conf, name, logger)
@@ -78,11 +78,11 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
 def saveT1err(orig, rigs, conf, name, logger=None, size=(6, 3), title_font_size=8, title_pad = 10):
     fig = plt.figure(figsize=size)
     ax1 = fig.add_subplot(1, 2, 1)
-    plt.imshow(np.squeeze(orig), cmap='gray')
+    plt.imshow(np.squeeze(orig))
     plt.axis('off')
     ax1.set_title(f"T1err_orig {np.mean(orig):.4f}", fontsize=title_font_size, pad=title_pad)
     ax2 = fig.add_subplot(1, 2, 2)
-    plt.imshow(np.squeeze(rigs), cmap='gray')
+    plt.imshow(np.squeeze(rigs))
     plt.axis('off')
     ax2.set_title(f"T1err_rigs {np.mean(rigs):.4f}", fontsize=title_font_size, pad=title_pad)
     plt.subplots_adjust(left=0.0001, right=0.99, top=0.8,
@@ -99,6 +99,7 @@ def saveT1err(orig, rigs, conf, name, logger=None, size=(6, 3), title_font_size=
     ax.legend()
     plt.savefig(os.path.join(conf.result, f"{name}_T1err_distribution.png"))
     plt.close()
+
 
 def saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None):
     orig = invols.transpose(1, 2, 0)
