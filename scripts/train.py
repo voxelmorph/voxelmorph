@@ -20,7 +20,7 @@ def train(conf, logger=None):
 
     conf.model_path = os.path.join(
         conf.model_dir_round, '%04d.pt' % conf.epochs)
-    if os.file.exists(conf.model_path):
+    if os.path.exists(conf.model_path):
         hydralog.info(f"Model {conf.model_path} already exists !!!")
         return
 
@@ -176,12 +176,8 @@ def train(conf, logger=None):
 
     if logger._wandb.run.resumed:
         CHECKPOINT_PATH = os.path.join(model_dir, '%04d.pt' % conf.initial_epoch)
-        checkpoint = torch.load(logger._wandb.restore(CHECKPOINT_PATH))
-        model.load_state_dict(checkpoint['model_state_dict']).to(device)
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        epoch = checkpoint['epoch']
-    
-        conf.initial_epoch = epoch
+        model.load(CHECKPOINT_PATH, device)
+        hydralog.info("Wandb resumed, load the model from the checkpoint")
 
     for epoch in range(conf.initial_epoch, conf.epochs):
         

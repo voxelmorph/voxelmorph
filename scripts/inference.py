@@ -32,6 +32,9 @@ def main(cfg: DictConfig):
 
     hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
 
+    if conf.log == 'wandb':
+        logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -50,6 +53,8 @@ def main(cfg: DictConfig):
     t1map = vxm.groupwise.t1map.MOLLIT1mapParallel()
             
     for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
+        if idx % 10 != 0:
+            continue
         name = Path(subject).stem
         start = time.time()
         tvec = TI_dict[Path(subject).stem]
