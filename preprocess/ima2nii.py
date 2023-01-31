@@ -25,25 +25,22 @@ for subject in subjects:
     for idx, ima in enumerate(imas):
         img = pydicom.read_file(ima)
         vols.append(img.pixel_array)
-        try:
-            T1.append(img.InversionTime)
-            print(img.InversionTime)
-        except:
-            T1.append(idx)
+
+        T1.append(img.InversionTime)
+        print(img.InversionTime)
 
         if PixelSpacing is None:
             pix = np.array(img.PixelSpacing).astype(np.float32) 
             sli = np.array(img.SliceThickness).astype(np.float32)
             PixelSpacing = np.array([pix[0], pix[1], sli])
-    sortidx = np.argsort(T1)
-    sorted_vols = [vols[i] for i in sortidx]
-    sorted_vols = np.stack(sorted_vols, axis=-1)
+
+    vols = np.stack(vols, axis=-1)
     affine = np.diag(np.concatenate([PixelSpacing, [1]]))
-    ni_img = nib.Nifti1Image(sorted_vols, affine)
+    ni_img = nib.Nifti1Image(vols, affine)
     name = subject.split("/")[-1]
     nib.save(ni_img, os.path.join(output, f"{name}_T1w.nii"))
 
-    img_array = np.stack(sorted_vols, axis=-1)
-    tvec = np.array(T1)[sortidx]
+    
+    tvec = np.array(T1)
     scipy.io.savemat(os.path.join(output+'_mat', f"{name}_T1w.mat"), 
-                    {'img': img_array, 'tvec': tvec})
+                    {'img': vols, 'tvec': tvec})

@@ -5,7 +5,7 @@ import wandb
 
 
 class WandbLogger(object):
-    def __init__(self, project_name=None, cfg=None, sweep=False) -> None:
+    def __init__(self, project_name=None, cfg=None, sweep=False, run_id=None) -> None:
 
         try:
             self._wandb = wandb
@@ -21,15 +21,26 @@ class WandbLogger(object):
                 self._wandb.init(
                     project='Group Registration',
                     name=project_name,
-                    config=OmegaConf.to_container(cfg, resolve=True)
+                    config=OmegaConf.to_container(cfg, resolve=True),
+                    resume=True
                 )
                 return
         if not sweep and self._wandb.run is None:
-            self._wandb.init(
-                project='Group Registration',
-                name=project_name,
-                config=OmegaConf.to_container(cfg, resolve=True)
-            )
+            if run_id is not None:
+                self._wandb.init(
+                    project='Group Registration',
+                    name=project_name,
+                    config=OmegaConf.to_container(cfg, resolve=True),
+                    id=run_id,
+                    resume="must"
+                )
+            else:
+                self._wandb.init(
+                    project='Group Registration',
+                    name=project_name,
+                    config=OmegaConf.to_container(cfg, resolve=True),
+                    resume=True
+                )
         elif sweep:
             self._wandb.init(allow_val_change=True)
 

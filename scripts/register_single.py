@@ -52,7 +52,7 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
 
     
     # Evaluate
-    if idx % 10 == 0:
+    if False:
         start = time.time()
         orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
         rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
@@ -61,6 +61,7 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
         saveT1err(orig_T1err, rigs_T1err, conf, name, logger)
         mean_orig_T1err = np.mean(orig_T1err)
         mean_rigs_T1err = np.mean(rigs_T1err)
+
         # Save the results of original image
     else:
         mean_orig_T1err = None

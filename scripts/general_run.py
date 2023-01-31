@@ -116,7 +116,8 @@ def pipeline(conf, logger=None):
 
 
 def validate(conf, logger=None):
-
+    if os.file.exists(os.path.join(conf.result, 'results.csv')):
+        return
     source_files = os.listdir(conf.moving)
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
@@ -147,7 +148,7 @@ def validate(conf, logger=None):
 
     hydralog.info("Registering Samples:")
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
-        if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
+        if os.file.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
             hydralog.debug(f"Already registered {Path(subject).stem}")
         else:
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
@@ -167,6 +168,7 @@ def validate(conf, logger=None):
 
     logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
         conf.result, 'results.csv'))
+    return
 
 
 def save2mat(conf):
