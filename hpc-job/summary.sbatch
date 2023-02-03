@@ -38,5 +38,6 @@ pip install packaging==21.3
 cd $HOME/script/voxelmorph-test
 python -m pip install --user -e .
 
-srun python scripts/inference.py hydra.verbose=__main__ weight=0.5 rpca_rank.rank1=10
+srun python scripts/inference.py hydra.verbose=__main__ \
+            weight=0.5 rpca_rank.rank1=20 rpca_rank.rank2=10 rpca_rank.rank3=5
 

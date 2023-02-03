@@ -1,39 +1,70 @@
-from pathlib import Path
-import time
-import os
 import glob
-import pickle
-import pandas as pd
-from tqdm import tqdm
-from omegaconf import OmegaConf
-import warnings
+import logging
+import multiprocessing
+import os
+import time
+from pathlib import Path
 
 import hydra
-import logging
+import pandas as pd
+import scipy.io
 from omegaconf import DictConfig, OmegaConf
-from register_single import *
+from register_single import register_single
+from tqdm import tqdm
+from train import train
 from utils import *
+from wandbLogger import WandbLogger
 
+os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
-warnings.filterwarnings("ignore")
-
-
 hydralog = logging.getLogger(__name__)
+
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-
-    conf.round = 3
-    conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
-    conf.result = os.path.join(conf.inference, "final_summary")
-    os.makedirs(conf.result, exist_ok=True)
-
     hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
+    # conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
+    conf.model_path = '/Users/mona/Documents/repo/voxelmorph-test/model/MOLLI_post/group/rank_5_5_5/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e100/round1/0100.pt'
+    
+    logger = None
 
-    if conf.log == 'wandb':
-        logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
+    # save the config
+    config_path = f"{conf['model_dir']}/config.yaml"
+    os.makedirs(conf['model_dir'], exist_ok=True)
+    try:
+        with open(config_path, 'w') as fp:
+            OmegaConf.save(config=conf, f=fp.name)
+    except:
+        hydralog.warning("Unable to copy the config")
+
+    # createdir(conf)
+    validate(conf, logger)
+    hydralog.info("Done")
+
+    logger._wandb.finish()
+    assert logger._wandb.run is None
+
+
+def createdir(conf):
+    conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
+    conf.warp = os.path.join(conf.inference, f"round{conf.round}", 'warp')
+    conf.result = os.path.join(conf.inference, f"round{conf.round}", 'summary')
+    conf.val = os.path.join(conf.inference, f"round{conf.round}", 'val')
+
+    conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
+
+    os.makedirs(conf.moved, exist_ok=True)
+    os.makedirs(conf.warp, exist_ok=True)
+    os.makedirs(conf.result, exist_ok=True)
+    os.makedirs(conf.val, exist_ok=True)
+    os.makedirs(conf.val, exist_ok=True)
+
+
+def validate(conf, logger=None):
+    # if os.path.exists(os.path.join(conf.result, 'results.csv')):
+        # return
 
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
@@ -46,56 +77,33 @@ def main(cfg: DictConfig):
             TI_dict = json.load(json_file)
 
     device = 'cpu'
+    num_cores = multiprocessing.cpu_count()
+    conf.num_cores = num_cores if num_cores < 64 else 64
+    hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
-    train_files = vxm.py.utils.read_file_list(conf.img_list, prefix=conf.img_prefix,
-                                              suffix=conf.img_suffix)
-    hydralog.info(f"Number of samples: {len(train_files)}")
-    t1map = vxm.groupwise.t1map.MOLLIT1mapParallel()
-            
-    for idx, subject in enumerate(tqdm(train_files, desc="Registering Samples:")):
-        if idx % 10 != 0:
-            continue
-        name = Path(subject).stem
-        start = time.time()
-        tvec = TI_dict[Path(subject).stem]
-        orig_vols= vxm.py.utils.load_volfile(subject, add_feat_axis=False, ret_affine=False)
-        rigs_vols = vxm.py.utils.load_volfile(os.path.join(
-            conf.moved, f"{name}.npy"), add_feat_axis=False, ret_affine=False)
-        
-        orig_T1err = map(t1map, orig_vols.transpose(1, 2, 0), tvec=tvec, conf=conf, name=name)
-        rigs_T1err = map(t1map, rigs_vols.transpose(1, 2, 0), tvec=tvec, conf=conf, name=name)
-        et = time.time()
+    # conf.model_path = os.path.join(
+    #     conf.model_dir_round, '%04d.pt' % conf.epochs)
+    if conf.transformation == 'Dense':
+        model = vxm.networks.VxmDense.load(conf.model_path, device)
+    elif conf.transformation == 'bspline':
+        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+    else:
+        raise ValueError('transformation must be dense or bspline')
 
-        mean_orig_T1err = np.mean(orig_T1err)
-        mean_rigs_T1err = np.mean(rigs_T1err)
-        saveT1err(orig_T1err, rigs_T1err, conf, name, None)
-        hydralog.info(
-            f"{name}, Time elapsed: {(et - start)/60} mins, T1 error orig {mean_orig_T1err} and rigs {mean_rigs_T1err}")
+    model.to(device)
+    model.eval()
 
-        orig = orig_vols.transpose(1, 2, 0)
-        moved = rigs_vols.transpose(1, 2, 0)
-
-        org_mse, rig_mse = 0, 0
-        for j in range(1, moved.shape[-1]):
-            rig_mse += mse(moved[:, :, j-1], moved[:, :, j])
-            org_mse += mse(orig[:, :, j-1], orig[:, :, j])
-
-        eig_org, org_K, org_dis = pca(orig, topk=1)
-        eig_rig, rig_K, rig_dis = pca(moved, topk=1)
-
-        f, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 4), sharex=True)
-        sns.barplot(x=np.arange(len(eig_org)),
-                    y=np.around(eig_org, 2), palette="rocket", ax=ax1)
-        sns.barplot(x=np.arange(len(eig_rig)),
-                    y=np.around(eig_rig, 2), palette="rocket", ax=ax2)
-        ax1.bar_label(ax1.containers[0])
-        ax2.bar_label(ax2.containers[0])
-        ax1.set_title(f"Eigenvalues of original image {name}")
-        ax2.set_title(f"Eigenvalues of registered image {name}")
-        plt.savefig(os.path.join(conf.result, f"{name}_pca_barplot.png"))
-        plt.close()
-        df = pd.concat([df, pd.DataFrame(
-            [[name, org_mse, rig_mse, org_dis, rig_dis, mean_orig_T1err, mean_rigs_T1err]], columns=col)], ignore_index=True)
+    hydralog.info("Registering Samples:")
+    
+    idx = 0
+    if os.path.exists(os.path.join(conf.moved, f"{Path(conf.subject).stem}.nii")):
+        hydralog.debug(f"Already registered {Path(conf.subject).stem}")
+    else:
+        name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
+            idx, conf, conf.subject, TI_dict[Path(conf.subject).stem], device, model, logger)
+        if t1err_org is not None:
+            df = pd.concat([df, pd.DataFrame(
+                [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])
@@ -104,31 +112,11 @@ def main(cfg: DictConfig):
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-    hydralog.info(
-        f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
+    hydralog.info(f"The summary is \n {df.describe()}")
 
-
-def map(t1map, data, tvec, conf, name):
-    filename = os.path.join(conf.result, f"{name}_T1map.pickle")
-    if os.path.exists(filename):
-        with open(filename, 'rb') as handle:
-            re = pickle.load(handle)
-        pmap = re['pmap']
-        sdmap = re['sdmap']
-        null_index = re['null_index']
-        S = re['S']
-        orig_T1err = S[None, None, :, :]
-    else:
-        inversion_img, pmap, sdmap, null_index, S = t1map.mestimation_abs(-1, np.array(tvec), data)
-        re = {}
-        re['pmap'] = pmap
-        re['sdmap'] = sdmap
-        re['null_index'] = null_index
-        re['S'] = S
-        orig_T1err = S[None, None, :, :]
-        with open(filename, 'wb') as handle:
-            pickle.dump(re, handle)
-    return orig_T1err
+    logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
+        conf.result, 'results.csv'))
+    return
 
 if __name__ == '__main__':
     main()
