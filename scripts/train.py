@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import argparse
 import logging
 import os
 import time
@@ -8,7 +7,6 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from omegaconf import OmegaConf
 from utils import *
 
 import voxelmorph_group as vxm  # nopep8
@@ -36,10 +34,8 @@ def train(conf, logger=None):
     add_feat_axis = not conf.multichannel
 
     # load the TI for all subjects
-    if conf.TI_json:
-        import json
-        with open(f"{conf.TI_json}") as json_file:
-            TI_dict = json.load(json_file)
+    if conf.TI_csv:
+        TI_dict = csv_to_dict(conf.TI_csv)
 
     if conf.atlas:
         # group-to-atlas generator
@@ -175,12 +171,13 @@ def train(conf, logger=None):
     # training loops
 
     if logger._wandb.run.resumed:
-        CHECKPOINT_PATH = os.path.join(model_dir, '%04d.pt' % conf.initial_epoch)
+        CHECKPOINT_PATH = os.path.join(
+            model_dir, '%04d.pt' % conf.initial_epoch)
         model.load(CHECKPOINT_PATH, device)
         hydralog.info("Wandb resumed, load the model from the checkpoint")
 
     for epoch in range(conf.initial_epoch, conf.epochs):
-        
+
         model.train()
 
         epoch_loss = []
@@ -193,17 +190,21 @@ def train(conf, logger=None):
 
             # generate inputs (and true outputs) and convert them to tensors
             inputs, name = next(generator)
-            hydralog.debug(f"The subject name is {name}, TI is {TI_dict[name]}")
-            low_matrix, sparse_matrix = rpca(np.squeeze(inputs).transpose(1, 2, 0), rank=conf.rank) # (H, W, N)
+            hydralog.debug(
+                f"The subject name is {name}, TI is {TI_dict[name]}")
+            low_matrix, sparse_matrix = rpca(np.squeeze(
+                inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
             inputs = [torch.from_numpy(low_matrix[None, ...]).to(
                 device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)
 
-            atlas = vxm.groupwise.utils.update_atlas(inputs[0].permute(1, 0, 2, 3), conf.atlas_methods, tvec=TI_dict[name])
+            atlas = vxm.groupwise.utils.update_atlas(inputs[0].permute(
+                1, 0, 2, 3), conf.atlas_methods, tvec=TI_dict[name])
             # run inputs through the model to produce a warped image and flow field
             # y_pred: (n, C, H, W), new_atlas: (1, 1, H, W), flow: (n, 2, H, W)
             # hydralog.debug(f"Mona atlas {np.sum(atlas)}")
             y_pred, new_atlas, flow = model(*inputs, tvec=TI_dict[name])
-            hydralog.debug(f"The atlas shape {atlas.shape} and new atlas shape {new_atlas.shape}, type {type(new_atlas)}")
+            hydralog.debug(
+                f"The atlas shape {atlas.shape} and new atlas shape {new_atlas.shape}, type {type(new_atlas)}")
             # calculate total loss
             loss_list = []
             sim_loss = 0
@@ -290,51 +291,5 @@ def train(conf, logger=None):
             conf.val, 'valimg_%04d.png' % epoch))
         plt.close(fig)
 
-        validation(conf, model, global_step, device, logger)
     # final model save
     model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
-
-
-def validation(conf, model, global_step, device, logger=None):
-    model.eval()
-    source_files = os.listdir(conf.moving)
-    add_feat_axis = not conf.multichannel
-    rig_dis_list = []
-    for subject in source_files:
-        vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(
-            conf.moving, subject), add_batch_axis=True, add_feat_axis=add_feat_axis, ret_affine=True)
-        fixed = torch.from_numpy(vols[0, :, :, :, :]).float().permute(
-            3, 0, 1, 2).to(device)
-        predvols, warp = model(fixed, registration=True)
-        eig_rig, rig_K, rig_dis = pca(np.squeeze(
-            predvols.detach().cpu().numpy()).transpose(1, 2, 0), topk=1)
-        rig_dis_list.append(rig_dis)
-
-    logger.log_metric(global_step, "Epoch/PCA_Dist", np.mean(rig_dis))
-
-
-if __name__ == '__main__':
-
-    hydralog = logging.getLogger('Group Registration')
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', type=str,
-                        default='conf/config.yaml', help='config file')
-    args = parser.parse_args()
-
-    # load the config file
-    cfg = OmegaConf.load(args.config)
-    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    conf.val = os.path.join(conf.inference, 'val')
-    os.makedirs(conf.val, exist_ok=True)
-    hydralog.info(f"Mona debug - conf: {conf} and type: {type(conf)}")
-
-    if conf.log == 'wandb':
-        from wandbLogger import WandbLogger
-        logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
-    elif conf.log == 'neptune':
-        from NeptuneLogger import NeptuneLogger
-        logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
-
-    # run the training
-    train(conf, logger)

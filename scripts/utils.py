@@ -1,14 +1,24 @@
 import os
-
+import csv
 import gif
+import scipy.io
 import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
 from hyperspy.learn.rpca import rpca_godec, orpca
 
 
-def resize_img(img, new_size, interpolator):
-    # img = sitk.ReadImage(img)
+def resizeSitkImg(img, new_size, interpolator):
+    """Resize the SimpleITK image to the new size using the interpolator.
+
+    Args:
+        img (_type_): SimpleITK image
+        new_size (_type_): target image size
+        interpolator (_type_): SimpleITK interpolator
+
+    Returns:
+        _type_: Resized SimpleITK image
+    """
     dimension = img.GetDimension()
 
     # Physical image size corresponds to the largest physical size in the training set, or any other arbitrary size.
@@ -116,34 +126,6 @@ def save_gif(data, name, output_dir, label, duration=100):
     gif.save(frames, path, duration=duration)
     # write_gif(frames, path)
     return path
-
-
-# def save_quiver(data, name, output_dir):
-#     os.makedirs(f"{output_dir}/quiver", exist_ok=True)
-#     _, slices, rows, cols = data.shape
-#     x, y = np.meshgrid(np.arange(0, rows, 1), np.arange(0, cols, 1))
-#     quiver_list = []
-#     for slice in range(slices):
-#         u, v = data[0, slice, :, :], data[1, slice, :, :]
-
-#         fig, ax = plt.subplots(figsize=(5,5))
-#         ax.quiver(x, y, u, v, units='width')
-#         ax.xaxis.set_ticks([])
-#         ax.yaxis.set_ticks([])
-#         ax.set_aspect('equal')
-#         fig.canvas.draw()
-
-# # grab the pixel buffer and dump it into a numpy array
-#         X = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-#         image = X.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-#         # print(image.shape)
-#         quiver_list.append(image)
-
-#         # plt.savefig(f"{output_dir}/quiver/{name}_{slice}.png")
-#         plt.close()
-#     path = f"{output_dir}/quiver/{name}.gif"
-#     write_gif(quiver_list, path)
-#     return path
 
 
 @gif.frame
@@ -269,7 +251,7 @@ def plot_warped_grid(ax, disp, bg_img=None, interval=3, title="$\mathcal{T}_\phi
 
 
 def rpca(vols, rank=2):
-    """Robust OCA with missing or corrupted data
+    """Robust PCA with missing or corrupted data
     Ref: https://hyperspy.readthedocs.io/en/stable/api/hyperspy.learn.rpca.html#zhou2011
 
     Args:
@@ -285,3 +267,40 @@ def rpca(vols, rank=2):
     low_matrix = low.reshape((x, y, z))
     sparse_matrix = sparse.reshape((x, y, z))
     return low_matrix, sparse_matrix
+
+
+def csv_to_dict(csv_file_path, key_column):
+    
+    #create a dictionary
+    data_dict = {}
+ 
+    #Step 2
+    #open a csv file handler
+    with open(csv_file_path, encoding = 'utf-8') as csv_file_handler:
+        csv_reader = csv.DictReader(csv_file_handler)
+ 
+        #convert each row into a dictionary
+        #and add the converted data to the data_variable
+ 
+        for rows in csv_reader:
+ 
+            #assuming a column named 'No'
+            #to be the primary key
+            key = rows[key_column]
+            data_dict[key] = rows
+ 
+    return data_dict
+
+
+def nii2mat(nii_path, mat_path):
+    img = sitk.ReadImage(nii_path)
+    img_array = sitk.GetArrayFromImage(img)
+    img_array = img_array.transpose(1, 2, 0)
+    scipy.io.savemat(mat_path, {'img': img_array})
+
+
+def npy2mat(npy_path, mat_path):
+    img_array = np.load(npy_path)
+    img_array = img_array.transpose(1, 2, 0)
+    print(img_array.shape)
+    scipy.io.savemat(mat_path, {'img': img_array})

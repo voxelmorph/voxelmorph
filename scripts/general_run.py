@@ -29,9 +29,6 @@ def main(cfg: DictConfig):
 
     if conf.log == 'wandb':
         logger = WandbLogger(project_name=conf.wandb_project, cfg=conf)
-    elif conf.log == 'neptune':
-        from NeptuneLogger import NeptuneLogger
-        logger = NeptuneLogger(project_name=conf.wandb_project, cfg=conf)
 
     # save the config
     config_path = f"{conf['model_dir']}/config.yaml"
@@ -124,12 +121,10 @@ def validate(conf, logger=None):
     df = pd.DataFrame(columns=col)
 
     # load the TI for all subjects
-    if conf.TI_json:
-        import json
-        with open(f"{conf.TI_json}") as json_file:
-            TI_dict = json.load(json_file)
+    if conf.TI_csv:
+        TI_dict = csv_to_dict(conf.TI_csv)
 
-    device = 'cpu'
+    device = 'cuda' if conf.gpu > 0 else 'cpu'
     num_cores = multiprocessing.cpu_count()
     conf.num_cores = num_cores if num_cores < 64 else 64
     hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
@@ -153,9 +148,8 @@ def validate(conf, logger=None):
         else:
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
                 idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
-            if t1err_org is not None:
-                df = pd.concat([df, pd.DataFrame(
-                    [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame(
+                [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
     df['MSE changes percentage'] = percentage_change(
         df['raw MSE'], df['registered MSE'])
@@ -164,28 +158,12 @@ def validate(conf, logger=None):
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-    hydralog.info(f"The summary is \n {df.describe()}")
+    hydralog.info(
+        f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
     logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
-        conf.result, 'results.csv'))
+        conf.result, f"{conf.round}_summary"))
     return
-
-
-def save2mat(conf):
-
-    def nii2mat(nii_path, mat_path):
-        img = sitk.ReadImage(nii_path)
-        img_array = sitk.GetArrayFromImage(img)
-        scipy.io.savemat(mat_path, {'img': img_array})
-
-    folder = conf.inference
-    output_folder = os.path.join(folder, 'moved_mat')
-    os.makedirs(output_folder, exist_ok=True)
-    registed_subjects = glob.glob(os.path.join(conf.moved, '*.nii'))
-    for file in registed_subjects:
-        name = Path(file).stem + '.mat'
-        hydralog.debug(f"The file name is {name}")
-        nii2mat(file, os.path.join(output_folder, name))
 
 
 if __name__ == '__main__':

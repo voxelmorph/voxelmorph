@@ -64,8 +64,8 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
 
         # Save the results of original image
     else:
-        mean_orig_T1err = None
-        mean_rigs_T1err = None
+        mean_orig_T1err = 0
+        mean_rigs_T1err = 0
     orig_vols = np.squeeze(orig_vols.detach().cpu().numpy())
     rigs_vols = np.squeeze(rigs_vols.detach().cpu().numpy())
     rigs_warp = rigs_warp.detach().cpu().numpy()
