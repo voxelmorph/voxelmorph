@@ -235,6 +235,13 @@ class Grad:
 
         return grad
 
+    def mean_loss(self, y_true, y_pred):
+        """
+        returns Tensor of size ()
+        """
+
+        return K.mean(self.loss(y_true, y_pred))
+
 
 class KL:
     """
