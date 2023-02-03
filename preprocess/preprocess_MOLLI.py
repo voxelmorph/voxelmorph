@@ -5,10 +5,19 @@ import SimpleITK as sitk
 import numpy as np
 import argparse
 
-np.random.seed(0)
+np.random.seed(821)
 
 def resize(img, new_size, interpolator):
-    # img = sitk.ReadImage(img)
+    """Resize the image to the new size using the interpolator with SimpleITK
+
+    Args:
+        img (_type_): input SimpleITK image
+        new_size (_type_): target size
+        interpolator (_type_): Interpolator type
+
+    Returns:
+        _type_: Resized SimpleITK image
+    """
     dimension = img.GetDimension()
 
     # Physical image size corresponds to the largest physical size in the training set, or any other arbitrary size.
@@ -57,23 +66,11 @@ def resize(img, new_size, interpolator):
     return sitk.Resample(img, reference_image, centered_transform, interpolator, 0.0)
 
 
-def normalize(img):
-    img = (img - np.min(img)) / (np.max(img) - np.min(img))
-    return img
-
-
-def normalize_slice(img):
-    img = normalize(img)
-    norm_img = np.zeros(img.shape)
-    for i in range(img.shape[0]):
-        norm_img[i, :, :] = np.linalg.norm(img[i, :, :])
-    return norm_img
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', required=True, help='dataset name')
+    parser.add_argument('--test_ratio', default=0.1, type=float, help='test_ratio')
     args = parser.parse_args()
 
     basepath = f"data/{args.dataset}"
@@ -107,7 +104,7 @@ if __name__ == '__main__':
     print(f"Total file number {len(input_file_paths)}")
     print(f"The max shape is {max_shape}, median shape is {median_shape}, min_shape is {min_shape}")
 
-    test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*0.1), )
+    test_idx = np.random.choice(len(input_file_paths), int(len(input_file_paths)*args.test_ratio))
 
     min_idx = np.argmin(np.vstack(image_shapes), 0)
     min_dim_0 = image_shapes[min_idx[0]][0]
@@ -125,8 +122,6 @@ if __name__ == '__main__':
         
         resize_img_array = sitk.GetArrayFromImage(resize_img)
         tmp = (output_file_paths[idx]).split("/")[-1]
-        
-        resize_img_array = normalize(resize_img_array)
         
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"
