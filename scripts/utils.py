@@ -269,7 +269,7 @@ def rpca(vols, rank=2):
     return low_matrix, sparse_matrix
 
 
-def csv_to_dict(csv_file_path, key_column):
+def csv_to_dict(csv_file_path, key_column='filename'):
     
     #create a dictionary
     data_dict = {}

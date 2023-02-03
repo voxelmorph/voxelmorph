@@ -173,8 +173,9 @@ def train(conf, logger=None):
     if logger._wandb.run.resumed:
         CHECKPOINT_PATH = os.path.join(
             model_dir, '%04d.pt' % conf.initial_epoch)
-        model.load(CHECKPOINT_PATH, device)
-        hydralog.info("Wandb resumed, load the model from the checkpoint")
+        if os.path.exists(CHECKPOINT_PATH):
+            model.load(CHECKPOINT_PATH, device)
+            hydralog.info("Wandb resumed, load the model from the checkpoint")
 
     for epoch in range(conf.initial_epoch, conf.epochs):
 
