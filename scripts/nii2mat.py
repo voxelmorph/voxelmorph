@@ -1,3 +1,5 @@
+import os
+import glob
 import argparse
 import scipy.io
 import numpy as np
@@ -23,11 +25,16 @@ if __name__ == '__main__':
     parser.add_argument('--mat', help='Mat path')
     args = parser.parse_args()
     input = args.source
-    format = Path(input).suffix
-    print(format)
-    if format == ".nii":
-        print("nii")
-        nii2mat(input, args.mat)
-    elif format == ".npy":
-        npy2mat(input, args.mat)
+    os.makedirs(args.mat, exist_ok=True)
+    if os.path.isdir(input):
+        files = glob.glob(os.path.join(input, '*.npy'))
+        print(files)
+        for file in files:
+            format = Path(file).suffix
+            name = Path(file).stem
+            if format == ".nii":
+                print("nii")
+                nii2mat(file, f"{args.mat}/{name}.mat")
+            elif format == ".npy":
+                npy2mat(file, f"{args.mat}/{name}.mat")
 

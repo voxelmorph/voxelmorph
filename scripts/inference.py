@@ -23,30 +23,34 @@ hydralog = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
-    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-    hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
-    # conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
-    conf.model_path = '/Users/mona/Documents/repo/voxelmorph-test/model/MOLLI_post/group/rank_5_5_5/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e100/round1/0100.pt'
-    
-    logger = None
+    rounds = 3
+    for round in rounds:
+        conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
+        hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
+        # conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
 
-    # save the config
-    config_path = f"{conf['model_dir']}/config.yaml"
-    os.makedirs(conf['model_dir'], exist_ok=True)
-    try:
-        with open(config_path, 'w') as fp:
-            OmegaConf.save(config=conf, f=fp.name)
-    except:
-        hydralog.warning("Unable to copy the config")
+        logger = None
 
-    # createdir(conf)
-    validate(conf, logger)
-    hydralog.info("Done")
+        # save the config
+        config_path = f"{conf['model_dir']}/config.yaml"
+        os.makedirs(conf['model_dir'], exist_ok=True)
+        try:
+            with open(config_path, 'w') as fp:
+                OmegaConf.save(config=conf, f=fp.name)
+        except:
+            hydralog.warning("Unable to copy the config")
 
-    logger._wandb.finish()
-    assert logger._wandb.run is None
+        if conf.TI_csv:
+            TI_dict = csv_to_dict(conf.TI_csv)
 
+        conf.round = round
+        conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
+        conf.inference = f"{conf.inference}/test_{conf.dataset}"
+        
+        createdir(conf)
 
+        validate(conf, TI_dict, logger)
+        
 def createdir(conf):
     conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
     conf.warp = os.path.join(conf.inference, f"round{conf.round}", 'warp')
@@ -59,30 +63,21 @@ def createdir(conf):
     os.makedirs(conf.warp, exist_ok=True)
     os.makedirs(conf.result, exist_ok=True)
     os.makedirs(conf.val, exist_ok=True)
-    os.makedirs(conf.val, exist_ok=True)
+    os.makedirs(conf.model_dir_round, exist_ok=True)
 
 
-def validate(conf, logger=None):
-    # if os.path.exists(os.path.join(conf.result, 'results.csv')):
-        # return
+def validate(conf, TI_dict, logger):
 
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
 
-    # load the TI for all subjects
-    if conf.TI_json:
-        import json
-        with open(f"{conf.TI_json}") as json_file:
-            TI_dict = json.load(json_file)
+    device = 'cuda' if conf.gpu > 0 else 'cpu'
 
-    device = 'cpu'
     num_cores = multiprocessing.cpu_count()
     conf.num_cores = num_cores if num_cores < 64 else 64
     hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
-    # conf.model_path = os.path.join(
-    #     conf.model_dir_round, '%04d.pt' % conf.epochs)
     if conf.transformation == 'Dense':
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
@@ -95,13 +90,13 @@ def validate(conf, logger=None):
 
     hydralog.info("Registering Samples:")
     
-    idx = 0
-    if os.path.exists(os.path.join(conf.moved, f"{Path(conf.subject).stem}.nii")):
-        hydralog.debug(f"Already registered {Path(conf.subject).stem}")
-    else:
-        name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-            idx, conf, conf.subject, TI_dict[Path(conf.subject).stem], device, model, logger)
-        if t1err_org is not None:
+    source_files = os.listdir(conf.moving)
+    for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
+        if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
+            hydralog.debug(f"Already registered {Path(subject).stem}")
+        else:
+            name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
+                idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
             df = pd.concat([df, pd.DataFrame(
                 [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
@@ -112,10 +107,10 @@ def validate(conf, logger=None):
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
     df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
-    hydralog.info(f"The summary is \n {df.describe()}")
+    hydralog.info(
+        f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
-    logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
-        conf.result, 'results.csv'))
+
     return
 
 if __name__ == '__main__':
