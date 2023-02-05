@@ -34,7 +34,7 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
         model.eval()
 
     add_feat_axis = not conf.multichannel
-    vols, fixed_affine = vxm.py.utils.load_volfile(os.path.join(conf.moving, subject), add_feat_axis=add_feat_axis, ret_affine=True)
+    vols, fixed_affine = vxm.py.utils.load_volfile(subject, add_feat_axis=add_feat_axis, ret_affine=True)
     normalized_vols = normalize(vols)
     low_matrix, sparse_matrix = rpca(np.squeeze(normalized_vols).transpose(1, 2, 0), rank=conf.rank) # (H, W, N)
 
