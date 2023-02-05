@@ -99,7 +99,7 @@ def pca(array, topk=1):
 
 
 def percentage_change(col1, col2):
-    return ((col2 - col1) / col1) * 100
+    return ((col2 - col1) / (col1 + 1e-3)) * 100
 
 
 @gif.frame

@@ -39,8 +39,7 @@ class WandbLogger(object):
                 self._wandb.init(
                     project='Group Registration',
                     name=project_name,
-                    config=OmegaConf.to_container(cfg, resolve=True),
-                    resume=True
+                    config=OmegaConf.to_container(cfg, resolve=True)
                 )
         elif sweep:
             self._wandb.init(allow_val_change=True)
