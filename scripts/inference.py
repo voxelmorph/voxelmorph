@@ -23,10 +23,9 @@ hydralog = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
-    rounds = 3
+    rounds = [1, 2, 3]
     for round in rounds:
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-        hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
         # conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
 
         logger = None
@@ -48,7 +47,9 @@ def main(cfg: DictConfig):
         conf.inference = f"{conf.inference}/test_{conf.dataset}"
         
         createdir(conf)
-
+        if conf.round > 1:
+            conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
+        hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
         validate(conf, TI_dict, logger)
         
 def createdir(conf):

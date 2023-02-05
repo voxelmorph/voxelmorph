@@ -7,7 +7,6 @@ from pathlib import Path
 
 import hydra
 import pandas as pd
-import scipy.io
 from omegaconf import DictConfig, OmegaConf
 from register_single import register_single
 from tqdm import tqdm
