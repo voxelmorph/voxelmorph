@@ -30,26 +30,27 @@ def main(cfg: DictConfig):
 
         logger = None
 
-        # save the config
-        config_path = f"{conf['model_dir']}/config.yaml"
-        os.makedirs(conf['model_dir'], exist_ok=True)
-        try:
-            with open(config_path, 'w') as fp:
-                OmegaConf.save(config=conf, f=fp.name)
-        except:
-            hydralog.warning("Unable to copy the config")
+        # # save the config
+        # config_path = f"{conf['model_dir']}/config.yaml"
+        # os.makedirs(conf['model_dir'], exist_ok=True)
+        # try:
+        #     conf = OmegaConf.load(config_path)
+        # except:
+        #     hydralog.warning("Unable to copy the config")
 
         if conf.TI_csv:
             TI_dict = csv_to_dict(conf.TI_csv)
 
         conf.round = round
+        conf.rank = conf.rpca_rank[f"rank{conf.round}"]
         conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
         conf.inference = f"{conf.inference}/test_{conf.dataset}"
-        
+        conf.final = True
+
         createdir(conf)
         if conf.round > 1:
             conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
-        hydralog.debug(f"Conf: {conf} and type: {type(conf)}")
+        hydralog.debug(f"Round {round} - Conf: {conf}")
         validate(conf, TI_dict, logger)
         
 def createdir(conf):
@@ -79,6 +80,8 @@ def validate(conf, TI_dict, logger):
     conf.num_cores = num_cores if num_cores < 64 else 64
     hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
+    conf.model_path = os.path.join(
+        conf.model_dir_round, '%04d.pt' % conf.epochs)
     if conf.transformation == 'Dense':
         model = vxm.networks.VxmDense.load(conf.model_path, device)
     elif conf.transformation == 'bspline':
@@ -91,7 +94,7 @@ def validate(conf, TI_dict, logger):
 
     hydralog.info("Registering Samples:")
     
-    source_files = os.listdir(conf.moving)
+    source_files = glob.glob(os.path.join(conf.moving, "*.npy"))
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
         if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
             hydralog.debug(f"Already registered {Path(subject).stem}")
