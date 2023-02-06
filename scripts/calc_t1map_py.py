@@ -111,6 +111,7 @@ def calculate_T1map(ir_img, inversiontime):
 
 
 if __name__ == '__main__':
+    print("Start")
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', help='Nifti path')
     parser.add_argument('--output', help='Mat path')
@@ -118,6 +119,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     input = args.input
     os.makedirs(args.output, exist_ok=True)
+    print(f"Input: {input} and output: {args.output}")
     TI_dict = csv_to_dict(args.inversiontime)
     if os.path.isdir(input):
         files = glob.glob(os.path.join(input, '*.npy'))
@@ -138,3 +140,4 @@ if __name__ == '__main__':
             plt.axis('off')
             plt.savefig(os.path.join(args.output, f"{name}.png"))
             plt.close()
+            np.save(os.path.join(args.output, f"{name}.npy"), t1_params_pre)
