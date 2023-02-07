@@ -27,7 +27,7 @@ rpca_rank:
 # training parameters
 gpu: 1
 batch_size: 1
-epochs: 100
+epochs: 80
 steps_per_epoch: 10
 load_model: False
 initial_epoch: 0

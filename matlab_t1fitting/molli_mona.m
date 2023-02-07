@@ -1,12 +1,16 @@
 %% add path
 addpath("functions");
-
+warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
-MOLLI_REGISTER_FILES = dir('../results/MOLLI_pre/group/rank_10_10_10/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e100/test_MOLLI_pre/round3/moved_mat/*.mat');
+MOLLI_REGISTER_FILES = dir('../data/MOLLI_pre_dataset/test_mat/*.mat');
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = '../results/MOLLI_pre/group/rank_10_10_10/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e100/test_MOLLI_pre/round3/t1SDerr';
+label = '../data/MOLLI_pre_dataset/test_t1SDerr';
 mkdir(label)
+
+nworker = 10
+myCluster = parcluster('local');
+parpool(myCluster, nworker)
 parfor j = 1:length(MOLLI_REGISTER_FILES)
     name = MOLLI_REGISTER_FILES(j).name;
     subjectid = extractBefore(name, '_MOLLI'); 
@@ -38,14 +42,18 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     
     % Least square fitting
     configs.type = 'Gaussian';
+    % if exist(sprintf("%s/MOLLI_%s_%d.mat", label, subjectid, slice), 'file') == 2
+    %     fprintf("Subject %s Slice %d exist. \n", subjectid, slice);
+    %     continue
+    % end
     [pmap, sd, null_index, S, areamask] = mestimation_abs(data, configs);
 
-    fd = {data, pmap, sd, contour, null_index, S};
-    save(sprintf("%s/MOLLI_test_%s_%d.mat", label, subjectid, slice), 'fd');
+    fd = {data, pmap, sd, contour, null_index, S, areamask};
+    parsave(sprintf("%s/MOLLI_%s_%d.mat", label, subjectid, slice), fd);
     fprintf("Subject %s Slice %d. \n", subjectid, slice); 
-    figure, imagesc(S')
-    saveas(gcf, sprintf("%s/MOLLI_test_%s_%d.png", label, subjectid, slice))
-    close gcf
+    % figure, imagesc(S')
+    % saveas(gcf, sprintf("%s/MOLLI_test_%s_%d.png", label, subjectid, slice))
+    % close gcf
 
 end
 

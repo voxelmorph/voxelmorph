@@ -459,7 +459,10 @@ class Jacobian:
         pass
     
     def loss(self, displacement):
-        dis = displacement.detach().cpu().numpy()
+        try:
+            dis = displacement.detach().cpu().numpy()
+        except:
+            dis = displacement
         folding_ratio, mag_det_jac_det = self.calculate_jacobian_metrics(dis)
         return folding_ratio, mag_det_jac_det
     

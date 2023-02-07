@@ -30,14 +30,6 @@ def main(cfg: DictConfig):
 
         logger = None
 
-        # # save the config
-        # config_path = f"{conf['model_dir']}/config.yaml"
-        # os.makedirs(conf['model_dir'], exist_ok=True)
-        # try:
-        #     conf = OmegaConf.load(config_path)
-        # except:
-        #     hydralog.warning("Unable to copy the config")
-
         if conf.TI_csv:
             TI_dict = csv_to_dict(conf.TI_csv)
 

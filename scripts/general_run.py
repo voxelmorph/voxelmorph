@@ -4,7 +4,6 @@ import multiprocessing
 import os
 import time
 from pathlib import Path
-
 import hydra
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
@@ -64,9 +63,9 @@ def generate_input(conf):
     if not conf.final:
         files = glob.glob(os.path.join(conf.moved, '*.npy'))
         txt_string = "\n".join(files)
-        with open(f"{conf.moved}/MOLLI_post_input.txt", "w") as f:
+        with open(f"{conf.moved}/{conf.dataset}_input.txt", "w") as f:
             f.write(txt_string)
-        conf.img_list = f"{conf.moved}/MOLLI_post_input.txt"
+        conf.img_list = f"{conf.moved}/{conf.dataset}_input.txt"
 
 
 def pipeline(conf, logger=None):
@@ -76,6 +75,7 @@ def pipeline(conf, logger=None):
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
     conf.rank = conf.rpca_rank.rank1
     conf.round = 1
+    conf.moving = f"data/{conf.dataset}/train"
     createdir(conf)
     train(conf, logger)
     train_time = time.time() - st
@@ -88,6 +88,7 @@ def pipeline(conf, logger=None):
     hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
     conf.rank = conf.rpca_rank.rank2
     conf.round = 2
+    conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
     createdir(conf)
     train(conf, logger)
     train_time = time.time() - st
@@ -101,6 +102,7 @@ def pipeline(conf, logger=None):
     conf.final = True
     conf.rank = conf.rpca_rank.rank3
     conf.round = 3
+    conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
     createdir(conf)
     train(conf, logger)
     train_time = time.time() - st
@@ -112,9 +114,9 @@ def pipeline(conf, logger=None):
 
 
 def validate(conf, logger=None):
-    if os.path.exists(os.path.join(conf.result, 'results.csv')):
+    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary")):
         return
-    source_files = os.listdir(conf.moving)
+    
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -140,6 +142,7 @@ def validate(conf, logger=None):
     model.to(device)
     model.eval()
 
+    source_files = glob.glob(os.path.join(conf.moving, "*.npy"))
     hydralog.info("Registering Samples:")
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
         if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
