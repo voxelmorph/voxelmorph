@@ -114,7 +114,7 @@ def pipeline(conf, logger=None):
 
 
 def validate(conf, logger=None):
-    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary")):
+    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary.csv")):
         return
     
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
@@ -159,7 +159,7 @@ def validate(conf, logger=None):
         df['raw PCA'], df['registered PCA'])
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
-    df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
+    df.to_csv(os.path.join(conf.result, f"{conf.round}_summary.csv"), index=False)
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 

@@ -4,16 +4,17 @@ warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
 rank="10_5_3"
-round=3
+round=1
 path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
 MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
 label = sprintf('../%s/T1_SDerr', path);
+% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
+% MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
+% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
 mkdir(label)
 
-nworker = 10
-myCluster = parcluster('local');
-parpool(myCluster, nworker)
+
 parfor j = 1:length(MOLLI_REGISTER_FILES)
     name = MOLLI_REGISTER_FILES(j).name;
     subjectid = extractBefore(name, '_MOLLI'); 
@@ -30,8 +31,36 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     % build data structure
     data = struct;
     orig_vols = squeeze(x.volume_pre(:, :, slice, :));
-    regi_vols = register_x.img';
-%     compute the registration volume
+    regi_vols = permute(register_x.img, [2, 1, 3]);
+    
+    [x_1, y_1, z_1] = size(orig_vols);
+    [x_2, y_2, z_2] = size(regi_vols);
+    epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
+    epi_BW = imresize(epi_BW, [x_2, y_2]);
+    boundary_epi = boundarymask(epi_BW);
+
+    endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
+    endo_BW = imresize(endo_BW, [x_2, y_2]);
+    boundary_endo = boundarymask(endo_BW);
+    boundary = boundary_endo + boundary_epi;
+    figure('Position', [1, 1, 1100, 100])
+    t = tiledlayout(1,z_1);
+    for i=1:z_1
+        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+    end
+    t.TileSpacing = 'tight';
+    t.Padding = 'tight';
+    saveas(gcf,sprintf("%s/MOLLI_%s_%d_orig_vols.png", label, subjectid, slice));
+    
+    figure('Position', [1, 1, 1100, 100])
+    t = tiledlayout(1,z_1);
+    for i=1:z_1
+        ax1 = nexttile; axis off,imshow(labeloverlay(regi_vols(:,:,i)/255,boundary,'Transparency',0))
+    end
+    t.TileSpacing = 'tight';
+    t.Padding = 'tight';
+    saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
+    
     data.frames = regi_vols;
     data.tvec = squeeze(x.tvec_post(slice, :));
     
@@ -47,12 +76,9 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     configs.type = 'Gaussian';
     [pmap, sd, null_index, S, areamask] = mestimation_abs(data, configs);
 
-    fd = {data, pmap, sd, contour, null_index, S, areamask};
+    fd = {data, pmap, sd, contour, null_index, S, areamask, epi_BW, endo_BW};
     parsave(sprintf("%s/MOLLI_%s_%d.mat", label, subjectid, slice), fd);
     fprintf("Subject %s Slice %d. \n", subjectid, slice); 
-    % figure, imagesc(S')
-    % saveas(gcf, sprintf("%s/MOLLI_test_%s_%d.png", label, subjectid, slice))
-    % close gcf
-
+    close all
 end
 
