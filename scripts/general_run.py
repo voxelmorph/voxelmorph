@@ -75,7 +75,7 @@ def pipeline(conf, logger=None):
     hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
     conf.rank = conf.rpca_rank.rank1
     conf.round = 1
-    conf.moving = f"data/{conf.dataset}/train"
+    conf.moving = f"data/{conf.dataset}_dataset/train"
     createdir(conf)
     train(conf, logger)
     train_time = time.time() - st
@@ -114,9 +114,7 @@ def pipeline(conf, logger=None):
 
 
 def validate(conf, logger=None):
-    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary")):
-        return
-    
+
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -159,7 +157,7 @@ def validate(conf, logger=None):
         df['raw PCA'], df['registered PCA'])
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
-    df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
+    df.to_csv(os.path.join(conf.result, f"{conf.round}_summary.csv"), index=False)
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 

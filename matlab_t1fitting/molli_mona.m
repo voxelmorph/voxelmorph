@@ -3,9 +3,12 @@ addpath("functions");
 warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
-MOLLI_REGISTER_FILES = dir('../data/MOLLI_pre_dataset/test_mat/*.mat');
+rank="10_5_3"
+round=3
+path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
+MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = '../data/MOLLI_pre_dataset/test_t1SDerr';
+label = sprintf('../%s/T1_SDerr', path);
 mkdir(label)
 
 nworker = 10
@@ -27,7 +30,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     % build data structure
     data = struct;
     orig_vols = squeeze(x.volume_pre(:, :, slice, :));
-    regi_vols = register_x.img;
+    regi_vols = register_x.img';
 %     compute the registration volume
     data.frames = regi_vols;
     data.tvec = squeeze(x.tvec_post(slice, :));
@@ -42,10 +45,6 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     
     % Least square fitting
     configs.type = 'Gaussian';
-    % if exist(sprintf("%s/MOLLI_%s_%d.mat", label, subjectid, slice), 'file') == 2
-    %     fprintf("Subject %s Slice %d exist. \n", subjectid, slice);
-    %     continue
-    % end
     [pmap, sd, null_index, S, areamask] = mestimation_abs(data, configs);
 
     fd = {data, pmap, sd, contour, null_index, S, areamask};

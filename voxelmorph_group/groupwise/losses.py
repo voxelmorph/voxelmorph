@@ -722,3 +722,43 @@ class JointCorrelation(nn.Module):
         eigenvalues = torch.real(torch.linalg.eigvals(K))
         dissimilarity = 0.5 * torch.nansum(torch.log(eigenvalues + self.eps))
         return dissimilarity
+    
+
+def smooth_loss(disp, image):
+    '''
+    Calculate the smooth loss. Return mean of absolute or squared of the forward difference of  flow field. 
+    
+    Parameters
+    ----------
+    disp : (n, 2, h, w) or (n, 3, d, h, w)
+        displacement field
+        
+    image : (n, 1, d, h, w) or (1, 1, d, h, w)
+
+    '''
+
+    image_shape = disp.shape
+    dim = len(image_shape[2:])
+    
+    d_disp = torch.zeros((image_shape[0], dim) + tuple(image_shape[1:]), dtype = disp.dtype, device = disp.device)
+    d_image = torch.zeros((image_shape[0], dim) + tuple(image_shape[1:]), dtype = disp.dtype, device = disp.device)
+    
+    # forward difference
+    if dim == 2:
+        d_disp[:, 1, :, :-1, :] = (disp[:, :, 1:, :] - disp[:, :, :-1, :])
+        d_disp[:, 0, :, :, :-1] = (disp[:, :, :, 1:] - disp[:, :, :, :-1])
+        d_image[:, 1, :, :-1, :] = (image[:, :, 1:, :] - image[:, :, :-1, :])
+        d_image[:, 0, :, :, :-1] = (image[:, :, :, 1:] - image[:, :, :, :-1])
+        
+    elif dim == 3:
+        d_disp[:, 2, :, :-1, :, :] = (disp[:, :, 1:, :, :] - disp[:, :, :-1, :, :])
+        d_disp[:, 1, :, :, :-1, :] = (disp[:, :, :, 1:, :] - disp[:, :, :, :-1, :])
+        d_disp[:, 0, :, :, :, :-1] = (disp[:, :, :, :, 1:] - disp[:, :, :, :, :-1])
+        
+        d_image[:, 2, :, :-1, :, :] = (image[:, :, 1:, :, :] - image[:, :, :-1, :, :])
+        d_image[:, 1, :, :, :-1, :] = (image[:, :, :, 1:, :] - image[:, :, :, :-1, :])
+        d_image[:, 0, :, :, :, :-1] = (image[:, :, :, :, 1:] - image[:, :, :, :, :-1])
+
+    loss = torch.mean(torch.sum(torch.abs(d_disp), dim = 2, keepdims = True)*torch.exp(-torch.abs(d_image)))
+    
+    return loss  

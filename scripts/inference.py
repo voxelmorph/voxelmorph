@@ -2,7 +2,6 @@ import glob
 import logging
 import multiprocessing
 import os
-import time
 from pathlib import Path
 
 import hydra
@@ -61,7 +60,8 @@ def createdir(conf):
 
 
 def validate(conf, TI_dict, logger):
-
+    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary.csv")):
+        return
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -88,11 +88,13 @@ def validate(conf, TI_dict, logger):
     
     source_files = glob.glob(os.path.join(conf.moving, "*.npy"))
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
-        if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
-            hydralog.debug(f"Already registered {Path(subject).stem}")
+        name = Path(subject).stem
+        if os.path.exists(os.path.join(conf.moved, f"{name}.nii")):
+            hydralog.debug(f"Already registered {name}")
         else:
+            tvec = np.array(list(TI_dict[name].values())[1:], dtype=np.float32)
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-                idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
+                idx, conf, subject, tvec, device, model, logger)
             df = pd.concat([df, pd.DataFrame(
                 [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
@@ -102,7 +104,7 @@ def validate(conf, TI_dict, logger):
         df['raw PCA'], df['registered PCA'])
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
-    df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
+    df.to_csv(os.path.join(conf.result, f"{conf.round}_summary.csv"), index=False)
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
