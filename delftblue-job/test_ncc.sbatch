@@ -25,8 +25,8 @@ wandb online
 
 srun python scripts/general_run.py hydra.verbose=__main__ \
             rpca_rank.rank1=5 rpca_rank.rank2=5 rpca_rank.rank3=3 \
-            weight=0.001 image_loss=tc norm=smooth \
-            +run_id=24gek2gp
+            weight=0.001 image_loss=ncc norm=smooth \
+            +run_id=1cu56kst
 
 # Measure GPU usage of your job (result)
 /usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utilization,max_memory_usage,time' --format='csv' | /usr/bin/grep -v -F "$previous"

@@ -19,10 +19,13 @@ multichannel: False
 in_order: True
 
 rpca_rank: 
+  n_ranks: 5
   rank1: 5
   rank2: 5
   rank3: 5
-  rlist: ${rpca_rank.rank1}_${rpca_rank.rank2}_${rpca_rank.rank3}
+  rank4: 5
+  rank5: 5
+  rlist: ${rpca_rank.rank1}_${rpca_rank.rank2}_${rpca_rank.rank3}_${rpca_rank.rank4}_${rpca_rank.rank5}
   
 # training parameters
 gpu: 0
