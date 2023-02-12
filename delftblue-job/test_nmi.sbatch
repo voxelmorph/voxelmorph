@@ -2,7 +2,7 @@
 #
 #SBATCH --job-name="voxelmorph-group"
 #SBATCH --partition=gpu
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --gpus-per-task=1
@@ -24,7 +24,6 @@ previous=$(/usr/bin/nvidia-smi --query-accounted-apps='gpu_utilization,mem_utili
 wandb online
 
 srun python scripts/general_run.py hydra.verbose=__main__ \
-            rpca_rank.rank1=10 rpca_rank.rank2=5 rpca_rank.rank3=3 \
             weight=0.001 image_loss=nmi norm=smooth 
 
 # Measure GPU usage of your job (result)
