@@ -4,10 +4,8 @@ import multiprocessing
 import os
 import time
 from pathlib import Path
-
 import hydra
 import pandas as pd
-import scipy.io
 from omegaconf import DictConfig, OmegaConf
 from register_single import register_single
 from tqdm import tqdm
@@ -65,57 +63,38 @@ def generate_input(conf):
     if not conf.final:
         files = glob.glob(os.path.join(conf.moved, '*.npy'))
         txt_string = "\n".join(files)
-        with open(f"{conf.moved}/MOLLI_post_input.txt", "w") as f:
+        with open(f"{conf.moved}/{conf.dataset}_input.txt", "w") as f:
             f.write(txt_string)
-        conf.img_list = f"{conf.moved}/MOLLI_post_input.txt"
+        conf.img_list = f"{conf.moved}/{conf.dataset}_input.txt"
 
 
 def pipeline(conf, logger=None):
     # first train the model with rpca rank=5?
+    rounds = conf.rpca_rank.n_ranks
+    real_rounds = len(list(conf.rpca_rank.keys())) - 2
+    assert rounds == real_rounds, f"Desired rounds {rounds} didn't match actual rounds {real_rounds}"
     conf.final = False
-    st = time.time()
-    hydralog.info(f"{'---'*10} Round 1 {'---'*10}")
-    conf.rank = conf.rpca_rank.rank1
-    conf.round = 1
-    createdir(conf)
-    train(conf, logger)
-    train_time = time.time() - st
-    validate(conf, logger)
-    generate_input(conf)
-    round_time = time.time() - st
-    hydralog.info(
-        f"{'---'*10} Round 1 train_t {train_time/60} mins and total_t {round_time/60} mins")
-
-    hydralog.info(f"{'---'*10} Round 2 {'---'*10}")
-    conf.rank = conf.rpca_rank.rank2
-    conf.round = 2
-    createdir(conf)
-    train(conf, logger)
-    train_time = time.time() - st
-    validate(conf, logger)
-    generate_input(conf)
-    round_time = time.time() - st
-    hydralog.info(
-        f"{'---'*10} Round 2 train_t {train_time/60} mins and total_t {round_time/60} mins")
-
-    hydralog.info(f"{'---'*10} Round 3 {'---'*10}")
-    conf.final = True
-    conf.rank = conf.rpca_rank.rank3
-    conf.round = 3
-    createdir(conf)
-    train(conf, logger)
-    train_time = time.time() - st
-    validate(conf, logger)
-    generate_input(conf)
-    round_time = time.time() - st
-    hydralog.info(
-        f"{'---'*10} Round 3 train_t {train_time/60} mins and total_t {round_time/60} mins")
+    for i in range(rounds):
+        st = time.time()
+        hydralog.info(f"{'---'*10} Round {i+1} {'---'*10}")
+        conf.rank = conf.rpca_rank[f"rank{i+1}"]
+        conf.round = i+1
+        if i == 0:
+            conf.moving = f"data/{conf.dataset}_dataset/train"
+        else:
+            conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
+        createdir(conf)
+        train(conf, logger)
+        train_time = time.time() - st
+        validate(conf, logger)
+        generate_input(conf)
+        round_time = time.time() - st
+        hydralog.info(
+            f"{'---'*10} Round {i+1} train_t {train_time/60} mins and total_t {round_time/60} mins")
 
 
 def validate(conf, logger=None):
-    if os.path.exists(os.path.join(conf.result, 'results.csv')):
-        return
-    source_files = os.listdir(conf.moving)
+
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -141,6 +120,7 @@ def validate(conf, logger=None):
     model.to(device)
     model.eval()
 
+    source_files = glob.glob(os.path.join(conf.moving, "*.npy"))
     hydralog.info("Registering Samples:")
     for idx, subject in enumerate(tqdm(source_files, desc="Registering Samples:")):
         if os.path.exists(os.path.join(conf.moved, f"{Path(subject).stem}.nii")):
@@ -157,7 +137,7 @@ def validate(conf, logger=None):
         df['raw PCA'], df['registered PCA'])
     df['T1err changes percentage'] = percentage_change(
         df['raw T1err'], df['registered T1err'])
-    df.to_csv(os.path.join(conf.result, 'results.csv'), index=False)
+    df.to_csv(os.path.join(conf.result, f"{conf.round}_summary.csv"), index=False)
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 

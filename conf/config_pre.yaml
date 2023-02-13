@@ -1,0 +1,77 @@
+defaults:
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+  
+project_name: Group_${dataset}_rank_${rpca_rank.rlist}_${image_loss}_i${image_loss_weight}_c${cycle_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
+path: ${dataset}/group/rank_${rpca_rank.rlist}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/cycle_loss_weight${cycle_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
+
+dataset: MOLLI_pre
+orig_folder: data/${dataset}
+TI_csv: data/${dataset}_TI.csv
+# data organization parameters
+img_list: data/${dataset}_input.txt
+model_dir: model/${path}
+img_prefix:
+img_suffix:
+atlas: True
+atlas_methods: avg
+multichannel: False
+in_order: True
+
+rpca_rank: 
+  n_ranks: 7
+  rank1: 5
+  rank2: 5
+  rank3: 5
+  rank4: 5
+  rank5: 5
+  rank6: 5
+  rank7: 5
+  rlist: ${rpca_rank.rank1}_${rpca_rank.rank2}_${rpca_rank.rank3}_${rpca_rank.rank4}_${rpca_rank.rank5}_${rpca_rank.rank6}_${rpca_rank.rank7}
+   
+# training parameters
+gpu: 1
+batch_size: 1
+epochs: 80
+steps_per_epoch: 10
+load_model: False
+initial_epoch: 0
+lr: 1e-4
+cudnn_nondet:
+
+# network architecture parameters
+enc: [32, 64, 64, 64]
+dec: [64, 64, 64, 64, 32, 32, 16, 16]
+int_steps: 7
+int_downsize: 2
+bidir: False
+
+# loss parameters
+image_loss: nmi
+weight: 0.001
+image_loss_weight: 1
+cycle_loss_weight: 0.01
+norm: l2
+
+mi_config:
+  vmin: 0.0
+  vmax: 1.0
+  num_bins: 128
+  sample_ratio: 0.7
+  normalised: True
+
+# transform parameters
+transformation: bspline
+bspline_config:
+  cps: 4
+  svf: True
+  svf_steps: 7
+  svf_scale: 1
+  resize_channels: [64, 32]
+
+log: wandb
+wandb_project: ${project_name}
+
+# register folder
+moving: data/${dataset}_dataset/test
+inference: results/${path}

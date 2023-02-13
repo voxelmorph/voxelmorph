@@ -135,7 +135,7 @@ def train(conf, logger=None):
         image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
     elif conf.image_loss == 'ngf':
         image_loss_func = vxm.losses.GradientCorrelation2d(device=device)
-    elif conf.image_loss == 'jointcorrelation':
+    elif conf.image_loss == 'tc':
         image_loss_func = vxm.losses.JointCorrelation()
     else:
         raise ValueError(
@@ -156,12 +156,9 @@ def train(conf, logger=None):
         weights = [conf.image_loss_weight]
 
     # prepare deformation loss
-    if conf.norm == 'l2' or conf.norm == 'l1':
-        losses += [vxm.losses.Grad(conf.norm,
-                                   loss_mult=conf.int_downsize).loss]
-    elif conf.norm == 'd2':
-        losses += [vxm.losses.BendingEnergy2d().grad]
+
     weights += [conf.weight]
+    weights += [conf.cycle_loss_weight]
 
     l1 = vxm.losses.Grad('l1', loss_mult=conf.int_downsize).loss
     l2 = vxm.losses.Grad('l2', loss_mult=conf.int_downsize).loss
@@ -193,8 +190,11 @@ def train(conf, logger=None):
             inputs, name = next(generator)
             hydralog.debug(
                 f"The subject name is {name}, TI is {TI_dict[name]}")
-            low_matrix, sparse_matrix = rpca(np.squeeze(
-                inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
+            if conf.rank == sequences:
+                low_matrix = np.squeeze(inputs).transpose(1, 2, 0)
+            else:
+                low_matrix, sparse_matrix = rpca(np.squeeze(
+                    inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
             inputs = [torch.from_numpy(low_matrix[None, ...]).to(
                 device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)
 
@@ -208,43 +208,46 @@ def train(conf, logger=None):
                 f"The atlas shape {atlas.shape} and new atlas shape {new_atlas.shape}, type {type(new_atlas)}")
             # calculate total loss
             loss_list = []
-            sim_loss = 0
-            reg_loss = 0
-            mse_loss = 0
-            nmi_loss = 0
-            ncc_loss = 0
-            ngf_loss = 0
 
             folding_ratio, mag_det_jac_det = jacobian(flow)
             # compute all metric
-            tc = totalcorr(y_pred)
-            for slice in range(y_pred.shape[0]):
-                ncc_loss += ncc(y_pred[slice, ...][None, ...], new_atlas)
-                mse_loss += mse(y_pred[slice, ...][None, ...], new_atlas)
-                nmi_loss += nmi(y_pred[slice, ...][None, ...], new_atlas)
-                ngf_loss += ngf(y_pred[slice, ...][None, ...], new_atlas)
+            tc = totalcorr(y_pred) / y_pred.shape[0]
+            new_atlas_repeat = new_atlas.repeat(y_pred.shape[0], 1, 1, 1)
+            ncc_loss = ncc(y_pred, new_atlas)
+            mse_loss = mse(y_pred, new_atlas)
+            nmi_loss = nmi(y_pred, new_atlas_repeat)
+            ngf_loss = ngf(y_pred, new_atlas_repeat)
 
-            if conf.image_loss == 'jointcorrelation':
-                sim_loss += (losses[0](y_pred) * weights[0]).to(device)
-                for slice in range(y_pred.shape[0]):
-                    reg_loss += (losses[1](y_pred[slice, ...],
-                                 flow) * weights[1]).to(device)
-                reg_loss += torch.tensor(mag_det_jac_det *
-                                         weights[1]).to(device)
-            else:
-                for slice in range(y_pred.shape[0]):
-                    y = y_pred[slice, ...]
-                    sim_loss += (losses[0](y[None, ...],
-                                 new_atlas) * weights[0]).to(device)
-                    reg_loss += (losses[1](y_pred[slice, ...],
-                                 flow) * weights[1]).to(device)
-            loss_list.append(sim_loss.item()/y_pred.shape[0])
-            loss_list.append(reg_loss.item()/y_pred.shape[0])
-            loss = (sim_loss + reg_loss)/y_pred.shape[0]
+            cyclic_loss = (torch.mean((torch.sum(flow, 0))**2))**0.5
+            smooth_loss = vxm.losses.smooth_loss(flow, new_atlas)
+            l2_loss = l2(y_pred, flow)
+            l1_loss = l1(y_pred, flow)
+            d2_loss = d2(y_pred, flow)
+            if conf.image_loss == 'tc':
+                sim_loss = tc.to(device)
+            elif conf.image_loss == 'ncc':
+                sim_loss = ncc_loss
+            elif conf.image_loss == 'mse':
+                sim_loss = mse_loss
+            elif conf.image_loss == 'nmi':
+                sim_loss = nmi_loss
+            elif conf.image_loss == 'ngf':
+                sim_loss = ngf_loss
+            if conf.norm == 'l2':
+                reg_loss = l2_loss
+            elif conf.norm == 'l1':
+                reg_loss = l1_loss
+            elif conf.norm == 'd2':
+                reg_loss = d2_loss
+            elif conf.norm == 'smooth':
+                reg_loss = smooth_loss
+            loss_list.append(sim_loss.item())
+            loss_list.append(reg_loss.item())
+            loss = sim_loss * weights[0] + reg_loss * weights[1] + cyclic_loss * weights[2]
 
             epoch_loss.append(loss_list)
             epoch_total_loss.append(loss.item())
-
+            
             # backpropagate and optimize
             optimizer.zero_grad()
             loss.backward()
@@ -252,23 +255,20 @@ def train(conf, logger=None):
             # get compute time
             epoch_step_time.append(time.time() - step_start_time)
 
+            logger.log_metric(global_step, "Step/lr", optimizer.param_groups[0]['lr'])
             logger.log_metric(global_step, "Step/Folding Ratio", folding_ratio)
-            logger.log_metric(
-                global_step, "Step/Mag Det Jac Det", mag_det_jac_det)
-            logger.log_metric(global_step, "Step/L1", l1(y_pred, flow))
-            logger.log_metric(global_step, "Step/L2", l2(y_pred, flow))
-            logger.log_metric(global_step, "Step/D2", d2(y_pred, flow))
+            logger.log_metric(global_step, "Step/Mag Det Jac Det", mag_det_jac_det)
+            logger.log_metric(global_step, "Step/L1", l1_loss.item())
+            logger.log_metric(global_step, "Step/L2", l2_loss.item())
+            logger.log_metric(global_step, "Step/D2", d2_loss.item())
+            logger.log_metric(global_step, "Step/Smooth", smooth_loss.item())
+            logger.log_metric(global_step, "Step/Cyclic", cyclic_loss.item())
 
-            logger.log_metric(global_step, "Step/MSE",
-                              mse_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NMI",
-                              nmi_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NCC",
-                              ncc_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/NGF",
-                              ngf_loss.item()/y_pred.shape[0])
-            logger.log_metric(global_step, "Step/TC",
-                              tc.item()/y_pred.shape[0])
+            logger.log_metric(global_step, "Step/MSE", mse_loss.item())
+            logger.log_metric(global_step, "Step/NMI", nmi_loss.item())
+            logger.log_metric(global_step, "Step/NCC", ncc_loss.item())
+            logger.log_metric(global_step, "Step/NGF", ngf_loss.item())
+            logger.log_metric(global_step, "Step/TC", tc.item())
 
         if epoch % 10 == 0:
             model.save(os.path.join(model_dir, '%04d.pt' % epoch))
