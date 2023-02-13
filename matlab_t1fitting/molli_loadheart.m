@@ -3,15 +3,15 @@ addpath("functions");
 warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
-rank="10_5_3"
-round=1
-path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
-MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
-MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s/T1_SDerr', path);
-% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
+% rank="10_5_3"
+% round=1
+% path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
+% MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
 % MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
+% label = sprintf('../%s/T1_SDerr', path);
+MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_post_dataset/test_mat/*.mat', path));
+MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
+label = sprintf('../data/MOLLI_post_dataset/T1_SDerr', path)
 mkdir(label)
 
 
@@ -23,14 +23,14 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     register_x = load(strcat(MOLLI_REGISTER_FILES(j).folder, '/', MOLLI_REGISTER_FILES(j).name ));
     x = load(strcat(MOLLI_NATIVE_FOLDER, '/', subjectid, '_MOLLI.mat'));
     
-    contour = x.contour2_pre{slice};
+    contour = x.contour2_post{slice};
     % estimate the center and extent of LV
     center = mean(contour.epi, 1);
     diameter =  max(contour.epi, [],  1) - min(contour.epi, [],  1);
     
     % build data structure
     data = struct;
-    orig_vols = squeeze(x.volume_pre(:, :, slice, :));
+    orig_vols = squeeze(x.volume_post(:, :, slice, :));
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);

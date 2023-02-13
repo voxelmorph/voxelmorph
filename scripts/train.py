@@ -191,7 +191,7 @@ def train(conf, logger=None):
             hydralog.debug(
                 f"The subject name is {name}, TI is {TI_dict[name]}")
             if conf.rank == sequences:
-                low_matrix = inputs.transpose(1, 2, 0)
+                low_matrix = np.squeeze(inputs).transpose(1, 2, 0)
             else:
                 low_matrix, sparse_matrix = rpca(np.squeeze(
                     inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)

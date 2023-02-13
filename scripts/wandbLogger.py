@@ -26,7 +26,7 @@ class WandbLogger(object):
                 )
                 return
         if not sweep and self._wandb.run is None:
-            try:
+            if cfg.run_id is not None:
                 self._wandb.init(
                     project='Group Registration',
                     name=project_name,
@@ -35,7 +35,7 @@ class WandbLogger(object):
                     resume="must"
                 )
                 print(f"Run ID: {cfg.run_id}")
-            except:
+            else:
                 self._wandb.init(
                     project='Group Registration',
                     name=project_name,

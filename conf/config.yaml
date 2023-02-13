@@ -3,6 +3,7 @@ defaults:
   - override hydra/hydra_logging: colorlog
   
 project_name: Group_${trainset}_rank_${rpca_rank.rlist}_${image_loss}_i${image_loss_weight}_c${cycle_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
+run_id:
 path: ${trainset}/group/rank_${rpca_rank.rlist}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/cycle_loss_weight${cycle_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
 
 trainset: MOLLI_pre
