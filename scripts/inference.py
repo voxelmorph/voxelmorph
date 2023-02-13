@@ -22,18 +22,17 @@ hydralog = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig):
-    rounds = [1, 2, 3]
-    for round in rounds:
+    conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
+    rounds = conf.rpca_rank.n_ranks
+    for round in range(rounds):
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
-        # conf.model_path = os.path.join(conf.model_dir, '%04d.pt' % conf.epochs)
-
         logger = None
 
         if conf.TI_csv:
             TI_dict = csv_to_dict(conf.TI_csv)
 
-        conf.round = round
-        conf.rank = conf.rpca_rank[f"rank{conf.round}"]
+        conf.round = round + 1
+        conf.rank = conf.rpca_rank[f"rank{round+1}"]
         conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
         conf.inference = f"{conf.inference}/test_{conf.dataset}"
         conf.final = True
@@ -60,8 +59,6 @@ def createdir(conf):
 
 
 def validate(conf, TI_dict, logger):
-    if os.path.exists(os.path.join(conf.result, f"{conf.round}_summary.csv")):
-        return
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)

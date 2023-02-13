@@ -190,8 +190,11 @@ def train(conf, logger=None):
             inputs, name = next(generator)
             hydralog.debug(
                 f"The subject name is {name}, TI is {TI_dict[name]}")
-            low_matrix, sparse_matrix = rpca(np.squeeze(
-                inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
+            if conf.rank == sequences:
+                low_matrix = inputs.transpose(1, 2, 0)
+            else:
+                low_matrix, sparse_matrix = rpca(np.squeeze(
+                    inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
             inputs = [torch.from_numpy(low_matrix[None, ...]).to(
                 device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)
 
