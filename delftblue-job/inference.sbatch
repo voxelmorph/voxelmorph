@@ -14,8 +14,7 @@ conda activate regist
 cd $HOME/scripts/voxelmorph-test
 
 
-srun srun python scripts/inference.py hydra.verbose=__main__ hydra.verbose=__main__ \
-                    weight=0.5 rpca_rank.rank1=20 rpca_rank.rank2=10 rpca_rank.rank3=5
+srun python scripts/inference.py weight=0.3 rpca_rank.rank1=10 rpca_rank.rank2=10 rpca_rank.rank3=10 hydra.verbose=__main__ 
 # Measure GPU usage of your job (result)
 
 
