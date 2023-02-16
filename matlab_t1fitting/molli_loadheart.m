@@ -23,14 +23,14 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     register_x = load(strcat(MOLLI_REGISTER_FILES(j).folder, '/', MOLLI_REGISTER_FILES(j).name ));
     x = load(strcat(MOLLI_NATIVE_FOLDER, '/', subjectid, '_MOLLI.mat'));
     
-    contour = x.contour2_pre{slice};
+    contour = x.contour2_post{slice};
     % estimate the center and extent of LV
     center = mean(contour.epi, 1);
     diameter =  max(contour.epi, [],  1) - min(contour.epi, [],  1);
     
     % build data structure
     data = struct;
-    orig_vols = squeeze(x.volume_pre(:, :, slice, :));
+    orig_vols = squeeze(x.volume_post(:, :, slice, :));
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);

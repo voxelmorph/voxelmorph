@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 #SBATCH --job-name="voxelmorph-group"
-#SBATCH --partition=gpu
+#SBATCH --partition=compute
 #SBATCH --time=02:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -16,11 +16,10 @@ cd $HOME/scripts/voxelmorph-test
 
 
 srun python scripts/inference.py hydra.verbose=__main__ \
-            weight=0.001 image_loss=ncc norm=smooth  \
-            dataset=MOLLI_post
+            weight=0.001 image_loss=nmi norm=smooth dataset=MOLLI_post gpu=0
 
 
-path=results/MOLLI_pre/group/rank_5_5_5_5_5_5_5/ncc/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_post
+path=results/MOLLI_pre/group/rank_5_5_5_5_5_5_5/nmi/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_post
 srun python scripts/nii2mat.py --source ${path}/round1/moved --mat ${path}/round1/moved_mat
 srun python scripts/nii2mat.py --source ${path}/round2/moved --mat ${path}/round2/moved_mat
 srun python scripts/nii2mat.py --source ${path}/round3/moved --mat ${path}/round3/moved_mat
