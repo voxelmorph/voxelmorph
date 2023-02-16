@@ -73,7 +73,7 @@ def volgen(
         yield (tuple(vols), Path(vol_names[indices[0]]).stem)
 
 
-def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, **kwargs):
+def scan_to_scan(vol_names, in_order=True, bidir=False, batch_size=1, prob_same=0, no_warp=False, rank=5, **kwargs):
     """
     Generator for scan-to-scan registration.
 

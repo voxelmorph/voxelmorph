@@ -37,7 +37,7 @@ def train(conf, logger=None):
     if conf.TI_csv:
         TI_dict = csv_to_dict(conf.TI_csv)
 
-    if conf.atlas:
+    if conf.register == 'Group':
         # group-to-atlas generator
         hydralog.debug("Use the group to atlas generator")
         # group wise batch size is always 1
@@ -45,7 +45,7 @@ def train(conf, logger=None):
                                                   batch_size=1, bidir=conf.bidir,
                                                   add_feat_axis=add_feat_axis,
                                                   method=conf.atlas_methods)
-    else:
+    elif conf.register == 'Pair':
         # scan-to-scan generator
         hydralog.debug("Mona: use the scan to scan generator")
         generator = vxm.generators.scan_to_scan(
@@ -82,8 +82,15 @@ def train(conf, logger=None):
             model = vxm.networks.VxmDense.load(conf.model_path, device)
             hydralog.debug("Mona: load the Dense model")
         elif conf.transformation == 'bspline':
-            model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
-            hydralog.debug("Mona: load the Bspline model")
+            if conf.register == 'Group':
+                model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+                hydralog.debug("Mona: load the Group bspline model")
+            elif conf.register == 'Pair':
+                model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
+                hydralog.debug("Mona: load the Bspline model")
+            else:
+                hydralog.error("Mona: the register type is not supported")
+                raise NotImplementedError 
     else:
         # otherwise configure new model
         if conf.transformation == 'Dense':
@@ -95,22 +102,40 @@ def train(conf, logger=None):
                 int_downsize=conf.int_downsize
             )
         elif conf.transformation == 'bspline':
-            model = vxm.networks.GroupVxmDenseBspline(
-                inshape=inshape,
-                nb_unet_features=[enc_nf, dec_nf],
-                bidir=bidir,
-                int_steps=conf.int_steps,
-                int_downsize=conf.int_downsize,
-                src_feats=sequences,
-                trg_feats=sequences*2,
-                cps=conf.bspline_config.cps,
-                svf=conf.bspline_config.svf,
-                svf_steps=conf.bspline_config.svf_steps,
-                svf_scale=conf.bspline_config.svf_scale,
-                resize_channels=conf.bspline_config.resize_channels,
-                method=conf.atlas_methods
-            )
-            hydralog.debug("Mona: use the bspline model")
+            if conf.register == 'Group':
+                model = vxm.networks.GroupVxmDenseBspline(
+                    inshape=inshape,
+                    nb_unet_features=[enc_nf, dec_nf],
+                    bidir=bidir,
+                    int_steps=conf.int_steps,
+                    int_downsize=conf.int_downsize,
+                    src_feats=sequences,
+                    trg_feats=sequences*2,
+                    cps=conf.bspline_config.cps,
+                    svf=conf.bspline_config.svf,
+                    svf_steps=conf.bspline_config.svf_steps,
+                    svf_scale=conf.bspline_config.svf_scale,
+                    resize_channels=conf.bspline_config.resize_channels,
+                    method=conf.atlas_methods
+                )
+                hydralog.debug("Mona: use the Group bspline model")
+            elif conf.register == 'Pair':
+                model = vxm.networks.VxmDenseBspline(
+                    inshape=inshape,
+                    nb_unet_features=[enc_nf, dec_nf],
+                    bidir=bidir,
+                    int_steps=conf.int_steps,
+                    int_downsize=conf.int_downsize,
+                    cps=conf.bspline_config.cps,
+                    svf=conf.bspline_config.svf,
+                    svf_steps=conf.bspline_config.svf_steps,
+                    svf_scale=conf.bspline_config.svf_scale,
+                    resize_channels=conf.bspline_config.resize_channels
+                )   
+                hydralog.debug("Mona: use the Pairwise bspline model")
+            else:
+                hydralog.error("Mona: the register type is not supported")
+                raise NotImplementedError   
             # summary(model, input_size=(20, 224, 224), batch_size=1, device='cpu')
 
     if nb_gpus > 1:
@@ -190,10 +215,10 @@ def train(conf, logger=None):
             inputs, name = next(generator)
             hydralog.debug(
                 f"The subject name is {name}, TI is {TI_dict[name]}")
-            if conf.rank == sequences:
+            if conf.register == 'Group' and conf.rank == sequences:
                 low_matrix = np.squeeze(inputs).transpose(1, 2, 0)
             else:
-                low_matrix, sparse_matrix = rpca(np.squeeze(
+                low_matrix, sparse_matrix = vxm.py.utils.rpca(np.squeeze(
                     inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
             inputs = [torch.from_numpy(low_matrix[None, ...]).to(
                 device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)

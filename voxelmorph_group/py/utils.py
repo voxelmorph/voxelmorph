@@ -3,14 +3,12 @@ import os
 import csv
 import functools
 
-# third party imports
 import numpy as np
 import scipy
 from skimage import measure
 
-# local/our imports
 import pystrum.pynd.ndutils as nd
-
+from hyperspy.learn.rpca import rpca_godec
 
 def default_unet_features():
     nb_features = [
@@ -536,3 +534,21 @@ def create_atlas(invols, method='avg', Tvec=None):
         return atlas
     else:
         raise ValueError("Input volume should be 4D")
+    
+def rpca(vols, rank=2):
+    """Robust PCA with missing or corrupted data
+    Ref: https://hyperspy.readthedocs.io/en/stable/api/hyperspy.learn.rpca.html#zhou2011
+
+    Args:
+        vols (_type_): (H, W, N)
+        rank (int, optional): The model dimensionality. Defaults to 2.
+
+    Returns:
+        _type_: _description_
+    """
+    x, y, z = vols.shape
+    M = vols.reshape(x*y, z)
+    low, sparse, U, S, V = rpca_godec(M, rank=rank)
+    low_matrix = low.reshape((x, y, z))
+    sparse_matrix = sparse.reshape((x, y, z))
+    return low_matrix, sparse_matrix
