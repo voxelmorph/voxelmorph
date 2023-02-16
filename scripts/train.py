@@ -41,7 +41,7 @@ def train(conf, logger=None):
         # group-to-atlas generator
         hydralog.debug("Use the group to atlas generator")
         # group wise batch size is always 1
-        generator = vxm.generators.group_to_atlas(train_files, conf.atlas,
+        generator = vxm.generators.group_to_atlas(train_files, True,
                                                   batch_size=1, bidir=conf.bidir,
                                                   add_feat_axis=add_feat_axis,
                                                   method=conf.atlas_methods)
