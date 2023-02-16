@@ -1,13 +1,10 @@
 defaults:
   - override hydra/job_logging: colorlog
   - override hydra/hydra_logging: colorlog
+  
+project_name: Group_${dataset}_rank_${rpca_rank.rlist}_${image_loss}_i${image_loss_weight}_c${cycle_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
+path: ${dataset}/group/rank_${rpca_rank.rlist}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/cycle_loss_weight${cycle_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
 
-register: Group
-project_name: ${register}_${trainset}_rank_${rpca_rank.rlist}_${image_loss}_i${image_loss_weight}_c${cycle_loss_weight}_w${weight}_${norm}_${transformation}_cps${bspline_config.cps}_${bspline_config.svf_steps}_${bspline_config.svf_scale}/e${epochs}
-run_id:
-path: ${trainset}/${register}/rank_${rpca_rank.rlist}/${image_loss}/${norm}/image_loss_weight${image_loss_weight}/cycle_loss_weight${cycle_loss_weight}/weight${weight}/${transformation}/cps${bspline_config.cps}_svfsteps${bspline_config.svf_steps}_svfscale${bspline_config.svf_scale}/e${epochs}
-
-trainset: MOLLI_pre
 dataset: MOLLI_pre
 orig_folder: data/${dataset}
 TI_csv: data/${dataset}_TI.csv
@@ -16,6 +13,7 @@ img_list: data/${dataset}_input.txt
 model_dir: model/${path}
 img_prefix:
 img_suffix:
+atlas: True
 atlas_methods: avg
 multichannel: False
 in_order: True
