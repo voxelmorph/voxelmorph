@@ -3,15 +3,15 @@ addpath("functions");
 warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
-rank="10_5_3"
-round=1
-path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
-MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
-MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s/T1_SDerr', path);
-% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
+% rank="10_5_3"
+% round=1
+% path = sprintf("results/MOLLI_pre/group/rank_%s/jointcorrelation/l2/image_loss_weight1/weight0.3/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round%d", rank, round)
+% MOLLI_REGISTER_FILES = dir(sprintf('../%s/moved_mat/*.mat', path));
 % MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
+% label = sprintf('../%s/T1_SDerr', path);
+MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_post_dataset/test_mat/*.mat', path));
+MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
+label = sprintf('../data/MOLLI_post_dataset/T1_SDerr', path)
 mkdir(label)
 
 
