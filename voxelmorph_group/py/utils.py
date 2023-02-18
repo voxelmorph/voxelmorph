@@ -535,20 +535,20 @@ def create_atlas(invols, method='avg', Tvec=None):
     else:
         raise ValueError("Input volume should be 4D")
     
-def rpca(vols, rank=2):
+def rpca(vols, rank=5, lambda1=1):
     """Robust PCA with missing or corrupted data
     Ref: https://hyperspy.readthedocs.io/en/stable/api/hyperspy.learn.rpca.html#zhou2011
 
     Args:
         vols (_type_): (H, W, N)
-        rank (int, optional): The model dimensionality. Defaults to 2.
+        rank (int, optional): The model dimensionality. Defaults to 5.
 
     Returns:
         _type_: _description_
     """
     x, y, z = vols.shape
     M = vols.reshape(x*y, z)
-    low, sparse, U, S, V = rpca_godec(M, rank=rank)
+    low, sparse, U, S, V = rpca_godec(M, rank=rank, lambda1=lambda1)
     low_matrix = low.reshape((x, y, z))
     sparse_matrix = sparse.reshape((x, y, z))
     return low_matrix, sparse_matrix

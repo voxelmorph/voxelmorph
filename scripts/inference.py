@@ -105,7 +105,6 @@ def validate(conf, TI_dict, logger):
     hydralog.info(
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
-
     return
 
 if __name__ == '__main__':

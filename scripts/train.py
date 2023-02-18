@@ -219,7 +219,7 @@ def train(conf, logger=None):
                 low_matrix = np.squeeze(inputs).transpose(1, 2, 0)
             else:
                 low_matrix, sparse_matrix = vxm.py.utils.rpca(np.squeeze(
-                    inputs).transpose(1, 2, 0), rank=conf.rank)  # (H, W, N)
+                    inputs).transpose(1, 2, 0), rank=conf.rank, lambda1=conf.lambda1)  # (H, W, N)
             inputs = [torch.from_numpy(low_matrix[None, ...]).to(
                 device).float().permute(0, 3, 1, 2)]  # (C, n, H, W)
 

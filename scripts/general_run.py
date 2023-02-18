@@ -78,6 +78,9 @@ def pipeline(conf, logger=None):
         st = time.time()
         hydralog.info(f"{'---'*10} Round {i+1} {'---'*10}")
         conf.rank = conf.rpca_rank[f"rank{i+1}"]
+        if conf.rank == 0:
+            hydralog.info("No rpca, Finish")
+            return
         conf.round = i+1
         if i == 0:
             conf.moving = f"data/{conf.dataset}_dataset/train"
