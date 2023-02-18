@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 import hydra
 import pandas as pd
+import torch
 from omegaconf import DictConfig, OmegaConf
 from register_single import register_single
 from tqdm import tqdm
@@ -87,16 +88,16 @@ def pipeline(conf, logger=None):
         else:
             conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
         createdir(conf)
-        train(conf, logger)
+        model = train(conf, logger)
         train_time = time.time() - st
-        validate(conf, logger)
+        validate(conf, model, logger)
         generate_input(conf)
         round_time = time.time() - st
         hydralog.info(
             f"{'---'*10} Round {i+1} train_t {train_time/60} mins and total_t {round_time/60} mins")
 
 
-def validate(conf, logger=None):
+def validate(conf, model, logger=None):
 
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
@@ -111,16 +112,6 @@ def validate(conf, logger=None):
     conf.num_cores = num_cores if num_cores < 64 else 64
     hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
-    conf.model_path = os.path.join(
-        conf.model_dir_round, '%04d.pt' % conf.epochs)
-    if conf.transformation == 'Dense':
-        model = vxm.networks.VxmDense.load(conf.model_path, device)
-    elif conf.transformation == 'bspline':
-        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
-    else:
-        raise ValueError('transformation must be dense or bspline')
-
-    model.to(device)
     model.eval()
 
     source_files = glob.glob(os.path.join(conf.moving, "*.npy"))

@@ -16,9 +16,7 @@ hydralog = logging.getLogger(__name__)
 
 def train(conf, logger=None):
 
-    conf.model_path = os.path.join(
-        conf.model_dir_round, '%04d.pt' % conf.epochs)
-    if os.path.exists(conf.model_path):
+    if os.path.exists(os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)) and not conf.load_model:
         hydralog.info(f"Model {conf.model_path} already exists !!!")
         return
 
@@ -76,67 +74,53 @@ def train(conf, logger=None):
     enc_nf = conf.enc if conf.enc else [16, 32, 32, 32]
     dec_nf = conf.dec if conf.dec else [32, 32, 32, 32, 32, 16, 16]
 
-    if conf.load_model:
-        # load initial model (if specified)
-        if conf.transformation == 'Dense':
-            model = vxm.networks.VxmDense.load(conf.model_path, device)
-            hydralog.debug("Mona: load the Dense model")
-        elif conf.transformation == 'bspline':
-            if conf.register == 'Group':
-                model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
-                hydralog.debug("Mona: load the Group bspline model")
-            elif conf.register == 'Pair':
-                model = vxm.networks.VxmDenseBspline.load(conf.model_path, device)
-                hydralog.debug("Mona: load the Bspline model")
-            else:
-                hydralog.error("Mona: the register type is not supported")
-                raise NotImplementedError 
-    else:
-        # otherwise configure new model
-        if conf.transformation == 'Dense':
-            model = vxm.networks.VxmDense(
+    if conf.transformation == 'Dense':
+        model = vxm.networks.VxmDense(
+            inshape=inshape,
+            nb_unet_features=[enc_nf, dec_nf],
+            bidir=bidir,
+            int_steps=conf.int_steps,
+            int_downsize=conf.int_downsize
+        )
+    elif conf.transformation == 'bspline':
+        if conf.register == 'Group':
+            model = vxm.networks.GroupVxmDenseBspline(
                 inshape=inshape,
                 nb_unet_features=[enc_nf, dec_nf],
                 bidir=bidir,
                 int_steps=conf.int_steps,
-                int_downsize=conf.int_downsize
+                int_downsize=conf.int_downsize,
+                src_feats=sequences,
+                trg_feats=sequences*2,
+                cps=conf.bspline_config.cps,
+                svf=conf.bspline_config.svf,
+                svf_steps=conf.bspline_config.svf_steps,
+                svf_scale=conf.bspline_config.svf_scale,
+                resize_channels=conf.bspline_config.resize_channels,
+                method=conf.atlas_methods
             )
-        elif conf.transformation == 'bspline':
-            if conf.register == 'Group':
-                model = vxm.networks.GroupVxmDenseBspline(
-                    inshape=inshape,
-                    nb_unet_features=[enc_nf, dec_nf],
-                    bidir=bidir,
-                    int_steps=conf.int_steps,
-                    int_downsize=conf.int_downsize,
-                    src_feats=sequences,
-                    trg_feats=sequences*2,
-                    cps=conf.bspline_config.cps,
-                    svf=conf.bspline_config.svf,
-                    svf_steps=conf.bspline_config.svf_steps,
-                    svf_scale=conf.bspline_config.svf_scale,
-                    resize_channels=conf.bspline_config.resize_channels,
-                    method=conf.atlas_methods
-                )
-                hydralog.debug("Mona: use the Group bspline model")
-            elif conf.register == 'Pair':
-                model = vxm.networks.VxmDenseBspline(
-                    inshape=inshape,
-                    nb_unet_features=[enc_nf, dec_nf],
-                    bidir=bidir,
-                    int_steps=conf.int_steps,
-                    int_downsize=conf.int_downsize,
-                    cps=conf.bspline_config.cps,
-                    svf=conf.bspline_config.svf,
-                    svf_steps=conf.bspline_config.svf_steps,
-                    svf_scale=conf.bspline_config.svf_scale,
-                    resize_channels=conf.bspline_config.resize_channels
-                )   
-                hydralog.debug("Mona: use the Pairwise bspline model")
-            else:
-                hydralog.error("Mona: the register type is not supported")
-                raise NotImplementedError   
-            # summary(model, input_size=(20, 224, 224), batch_size=1, device='cpu')
+            hydralog.debug("Mona: use the Group bspline model")
+    else:
+        hydralog.error("Mona: the register type is not supported")
+        raise NotImplementedError   
+    
+    # set optimizer
+    optimizer = torch.optim.Adam(model.parameters(), lr=conf.lr)
+
+    if conf.load_model and conf.round > 1:
+        saved_model = os.path.join(conf.model_dir, f"round{conf.round-1}", '%04d.pt' % conf.epochs)
+        try:
+            checkpoint = torch.load(saved_model)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            initial_epoch = checkpoint['epoch']
+            loss = checkpoint['loss']
+        except RuntimeError:
+            raise RuntimeError(
+                'Could not load model. Please check that the model was trained with the same configuration.')
+    else:
+        initial_epoch = 0
+        loss = 0
 
     if nb_gpus > 1:
         # use multiple GPUs via DataParallel
@@ -147,25 +131,7 @@ def train(conf, logger=None):
     model.to(device)
     model.train()
 
-    # set optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=conf.lr)
-
     # prepare image loss
-    if conf.image_loss == 'ncc':
-        image_loss_func = vxm.losses.NCC(device=device).loss
-    elif conf.image_loss == 'mse':
-        image_loss_func = vxm.losses.MSE().loss
-    elif conf.image_loss == 'nmi':
-        # image_loss_func = vxm.losses.NMI().metric
-        image_loss_func = vxm.losses.MILossGaussian(conf.mi_config)
-    elif conf.image_loss == 'ngf':
-        image_loss_func = vxm.losses.GradientCorrelation2d(device=device)
-    elif conf.image_loss == 'tc':
-        image_loss_func = vxm.losses.JointCorrelation()
-    else:
-        raise ValueError(
-            'Image loss should be "mse" or "ncc", but found "%s"' % conf.image_loss)
-
     mse = vxm.losses.MSE().loss
     ncc = vxm.losses.NCC(device=device).loss
     nmi = vxm.losses.MILossGaussian(conf.mi_config)
@@ -174,14 +140,11 @@ def train(conf, logger=None):
     totalcorr = vxm.losses.JointCorrelation()
     # need two image loss functions if bidirectional
     if bidir:
-        losses = [image_loss_func, image_loss_func]
         weights = [0.5, 0.5]
     else:
-        losses = [image_loss_func]
         weights = [conf.image_loss_weight]
 
     # prepare deformation loss
-
     weights += [conf.weight]
     weights += [conf.cycle_loss_weight]
 
@@ -191,16 +154,9 @@ def train(conf, logger=None):
 
     global_step = 0
     # training loops
-
-    if logger._wandb.run.resumed:
-        CHECKPOINT_PATH = os.path.join(
-            model_dir, '%04d.pt' % conf.initial_epoch)
-        if os.path.exists(CHECKPOINT_PATH):
-            model.load(CHECKPOINT_PATH, device)
-            hydralog.info("Wandb resumed, load the model from the checkpoint")
-
-    for epoch in range(conf.initial_epoch, conf.epochs):
-
+    if initial_epoch == conf.epochs:
+        initial_epoch = 0
+    for epoch in range(initial_epoch, conf.epochs):
         model.train()
 
         epoch_loss = []
@@ -266,6 +222,7 @@ def train(conf, logger=None):
                 reg_loss = d2_loss
             elif conf.norm == 'smooth':
                 reg_loss = smooth_loss
+
             loss_list.append(sim_loss.item())
             loss_list.append(reg_loss.item())
             loss = sim_loss * weights[0] + reg_loss * weights[1] + cyclic_loss * weights[2]
@@ -296,7 +253,12 @@ def train(conf, logger=None):
             logger.log_metric(global_step, "Step/TC", tc.item())
 
         if epoch % 10 == 0:
-            model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': loss,
+            }, os.path.join(model_dir, '%04d.pt' % conf.epochs))
 
         # print epoch info
         epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)
@@ -318,4 +280,12 @@ def train(conf, logger=None):
         plt.close(fig)
 
     # final model save
-    model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
+    # model.save(os.path.join(model_dir, '%04d.pt' % conf.epochs))
+    torch.save({
+        'epoch': conf.epochs,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss': loss,
+        'config': model.config
+    }, os.path.join(model_dir, '%04d.pt' % conf.epochs))
+    return model
