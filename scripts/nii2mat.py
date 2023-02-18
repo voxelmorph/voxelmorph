@@ -5,12 +5,22 @@ import scipy.io
 import numpy as np
 from pathlib import Path
 import SimpleITK as sitk
+import nibabel as nib
 
 def nii2mat(nii_path, mat_path):
     img = sitk.ReadImage(nii_path)
     img_array = sitk.GetArrayFromImage(img)
     img_array = img_array.transpose(1, 2, 0)
     scipy.io.savemat(mat_path, {'img': img_array})
+
+def mat2nii(mat_path, nii_path):
+    img_array = scipy.io.loadmat(mat_path)['img']
+    # read your own space setting
+    PixelSpacing = np.array([1, 1, 1])
+
+    affine = np.diag(np.concatenate([PixelSpacing, [1]]))
+    nii_img = nib.Nifti1Image(img_array, affine)
+    nib.save(nii_img, nii_path)
 
 
 def npy2mat(npy_path, mat_path):
@@ -52,4 +62,6 @@ if __name__ == '__main__':
                 os.makedirs(args.nii, exist_ok=True)
                 if format == ".npy":
                     npy2nii(file, f"{args.nii}/{name}.nii")
+                if format == ".mat":
+                    mat2nii(file, f"{args.nii}/{name}.nii")
 
