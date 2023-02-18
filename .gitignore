@@ -21,3 +21,4 @@ notebooks/test_rpca/*
 **.log
 **.out
 **.sh
+*.ipynb

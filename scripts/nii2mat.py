@@ -14,13 +14,13 @@ def nii2mat(nii_path, mat_path):
     scipy.io.savemat(mat_path, {'img': img_array})
 
 def mat2nii(mat_path, nii_path):
-    img_array = scipy.io.loadmat(mat_path)['img']
+    img_array = scipy.io.loadmat(mat_path)['regi_vols']
     # read your own space setting
-    PixelSpacing = np.array([1, 1, 1])
-
-    affine = np.diag(np.concatenate([PixelSpacing, [1]]))
-    nii_img = nib.Nifti1Image(img_array, affine)
-    nib.save(nii_img, nii_path)
+    img = sitk.GetImageFromArray(img_array.transpose(2, 0, 1))
+    img.SetSpacing([1, 1, 1])
+    img.SetOrigin([0, 0, 0])
+    img.SetDirection([1, 0, 0, 0, 1, 0, 0, 0, 1])
+    sitk.WriteImage(img, nii_path)
 
 
 def npy2mat(npy_path, mat_path):
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     input = args.source
     
     if os.path.isdir(input):
-        files = glob.glob(os.path.join(input, '*.npy'))
+        files = glob.glob(os.path.join(input, '*.mat'))
         print(files)
         for file in files:
             format = Path(file).suffix

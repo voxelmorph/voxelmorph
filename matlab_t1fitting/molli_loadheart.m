@@ -4,40 +4,47 @@ warning('off')
 pwd_path = pwd;
 %% MOLLI fitting
 
-round=1
-path = "results/MOLLI_pre/Group/rank_11_0_0_0_0_0_0/nmi/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e240/test_MOLLI_post/round";
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
-MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
-% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
+% round=1
+% path = "results/MOLLI_pre/Group/rank_11_0_0_0_0_0_0/nmi/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e240/test_MOLLI_post/round";
+% MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
 % MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
+% label = sprintf('../%s%d/T1_SDerr', path, round)
+MOLLI_REGISTER_FILES = dir('../data/MOLLI_post_dataset/test_mat/*.mat');
+MOLLI_BASELINE_FOLDER = '/Users/mona/Documents/data/registration/voxelmorph/MOLLI_registered';
+MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
+label = sprintf('../data/MOLLI_post_dataset/baseline_T1SDerr')
+labelmat = sprintf('../data/MOLLI_post_dataset/baseline_mat')
 mkdir(label)
+mkdir(labelmat)
 
-nworker = 10
-myCluster = parcluster('local');
-parpool(myCluster, nworker)
+% nworker = 10
+% myCluster = parcluster('local');
+% parpool(myCluster, nworker)
 
-parfor j = 1:length(MOLLI_REGISTER_FILES)
+for j = 1:length(MOLLI_REGISTER_FILES)
     name = MOLLI_REGISTER_FILES(j).name;
     subjectid = extractBefore(name, '_MOLLI'); 
     slice = str2num(name(end-4));
     disp(subjectid)
-    register_x = load(strcat(MOLLI_REGISTER_FILES(j).folder, '/', MOLLI_REGISTER_FILES(j).name ));
+    register_x = load(strcat(MOLLI_BASELINE_FOLDER, '/', subjectid, '_MOLLI_post_groupwise.mat'));
     x = load(strcat(MOLLI_NATIVE_FOLDER, '/', subjectid, '_MOLLI.mat'));
     
-    contour = x.contour2_pre{slice};
+    contour = x.contour2_post{slice};
     % estimate the center and extent of LV
     center = mean(contour.epi, 1);
     diameter =  max(contour.epi, [],  1) - min(contour.epi, [],  1);
     
     % build data structure
     data = struct;
-    orig_vols = squeeze(x.volume_pre(:, :, slice, :));
-    regi_vols = permute(register_x.img, [2, 1, 3]);
+    orig_vols = squeeze(x.volume_post(:, :, slice, :));
+    regi_vols = squeeze(register_x.volume(:, :, slice, :));
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+    orig_vols = imresize(orig_vols, [x_2, y_2]);
+    regi_vols = imresize(regi_vols, [x_2, y_2]);
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
     boundary_epi = boundarymask(epi_BW);
@@ -81,6 +88,8 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
 
     fd = {data, pmap, sd, contour, null_index, S, areamask, epi_BW, endo_BW};
     parsave(sprintf("%s/MOLLI_%s_%d.mat", label, subjectid, slice), fd);
+
+    save(sprintf("%s/%s_MOLLI_%d.mat", labelmat, subjectid, slice), 'regi_vols')
     fprintf("Subject %s Slice %d. \n", subjectid, slice); 
     close all
 end
