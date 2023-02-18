@@ -9,9 +9,6 @@ path = "results/MOLLI_pre/Group/rank_11_0_0_0_0_0_0/nmi/smooth/image_loss_weight
 MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
 label = sprintf('../%s%d/T1_SDerr', path, round)
-% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
-% MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
 mkdir(label)
 
 nworker = 10
@@ -26,14 +23,14 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     register_x = load(strcat(MOLLI_REGISTER_FILES(j).folder, '/', MOLLI_REGISTER_FILES(j).name ));
     x = load(strcat(MOLLI_NATIVE_FOLDER, '/', subjectid, '_MOLLI.mat'));
     
-    contour = x.contour2_pre{slice};
+    contour = x.contour2_post{slice};
     % estimate the center and extent of LV
     center = mean(contour.epi, 1);
     diameter =  max(contour.epi, [],  1) - min(contour.epi, [],  1);
     
     % build data structure
     data = struct;
-    orig_vols = squeeze(x.volume_pre(:, :, slice, :));
+    orig_vols = squeeze(x.volume_post(:, :, slice, :));
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
