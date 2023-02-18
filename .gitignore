@@ -20,3 +20,4 @@ notebooks/test_rpca/*
 **/.ipynb_checkpoints/*
 **.log
 **.out
+**.sh

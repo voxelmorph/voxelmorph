@@ -5,7 +5,7 @@ pwd_path = pwd;
 %% MOLLI fitting
 
 round=1
-path = "results/MOLLI_pre/group/rank_5_5_5_5_5_5_5/ncc/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_post/round";
+path = "results/MOLLI_pre/Group/rank_11_11_11_11_11_11_11/nmi/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_post/round";
 MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
 label = sprintf('../%s%d/T1_SDerr', path, round)

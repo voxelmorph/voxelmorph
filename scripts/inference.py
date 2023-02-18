@@ -28,11 +28,15 @@ def main(cfg: DictConfig):
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
         logger = None
 
+
         if conf.TI_csv:
             TI_dict = csv_to_dict(conf.TI_csv)
 
         conf.round = round + 1
         conf.rank = conf.rpca_rank[f"rank{round+1}"]
+        if conf.rank == 0:
+            hydralog.info("No rpca, Finish")
+            return
         conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
         conf.inference = f"{conf.inference}/test_{conf.dataset}"
         conf.final = True

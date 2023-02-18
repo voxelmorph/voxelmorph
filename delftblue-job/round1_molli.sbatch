@@ -11,5 +11,5 @@ module load matlab
 
 cd $HOME/scripts/voxelmorph-test/matlab_t1fitting
 
-matlab -r molli_round_post
+matlab -r molli_round_post∏
 
