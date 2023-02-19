@@ -16,10 +16,6 @@ hydralog = logging.getLogger(__name__)
 
 def train(conf, logger=None):
 
-    if os.path.exists(os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)) and not conf.load_model:
-        hydralog.info(f"Model {conf.model_path} already exists !!!")
-        return
-
     bidir = conf.bidir
 
     # load and prepare training data
@@ -103,18 +99,27 @@ def train(conf, logger=None):
     else:
         hydralog.error("Mona: the register type is not supported")
         raise NotImplementedError   
-    
-    # set optimizer
-    optimizer = torch.optim.Adam(model.parameters(), lr=conf.lr)
+    model.to(device)
 
+    # Model already exists in this round
+    model_path = os.path.join(conf.model_dir_round, '%04d.pt' % conf.epochs)
+    if os.path.exists(model_path):
+        checkpoint = torch.load(model_path, map_location=torch.device(device))
+        model.load_state_dict(checkpoint['model_state_dict'])
+        hydralog.info(f"Model {model_path} already exists !!!")
+        return model
+    
+    # set optimizer and load the model in the previous round
+    optimizer = torch.optim.Adam(model.parameters(), lr=conf.lr)
     if conf.load_model and conf.round > 1:
         saved_model = os.path.join(conf.model_dir, f"round{conf.round-1}", '%04d.pt' % conf.epochs)
         try:
-            checkpoint = torch.load(saved_model)
+            checkpoint = torch.load(saved_model, map_location=torch.device(device))
             model.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             initial_epoch = checkpoint['epoch']
-            loss = checkpoint['loss']
+            loss = checkpoint['loss'].to(device)
+            hydralog.info(f"Load the model from {saved_model}")
         except RuntimeError:
             raise RuntimeError(
                 'Could not load model. Please check that the model was trained with the same configuration.')
@@ -128,7 +133,6 @@ def train(conf, logger=None):
         model.save = model.module.save
 
     # prepare the model for training and send to device
-    model.to(device)
     model.train()
 
     # prepare image loss
