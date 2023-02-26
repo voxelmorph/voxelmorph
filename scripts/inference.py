@@ -29,10 +29,6 @@ def main(cfg: DictConfig):
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
         logger = None
 
-
-        if conf.TI_csv:
-            TI_dict = csv_to_dict(conf.TI_csv)
-
         conf.round = round + 1
         conf.rank = conf.rpca_rank[f"rank{round+1}"]
         if conf.rank == 0:
@@ -46,7 +42,7 @@ def main(cfg: DictConfig):
         if conf.round > 1:
             conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
         hydralog.debug(f"Round {round} - Conf: {conf}")
-        validate(conf, TI_dict, logger)
+        validate(conf, logger)
         
 def createdir(conf):
     conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
@@ -63,7 +59,7 @@ def createdir(conf):
     os.makedirs(conf.model_dir_round, exist_ok=True)
 
 
-def validate(conf, TI_dict, logger):
+def validate(conf, logger):
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -110,7 +106,12 @@ def validate(conf, TI_dict, logger):
         hydralog.error("Mona: the register type is not supported")
         raise NotImplementedError   
     
-    model.load_state_dict(checkpoint['model_state_dict'])
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+        hydralog.info("Load the model from the new version")
+    except:
+        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+        hydralog.info("Load the model from the old version")
     model.eval()
 
     hydralog.info("Registering Samples:")
@@ -121,9 +122,8 @@ def validate(conf, TI_dict, logger):
         if os.path.exists(os.path.join(conf.moved, f"{name}.nii")):
             hydralog.debug(f"Already registered {name}")
         else:
-            tvec = np.array(list(TI_dict[name].values())[1:], dtype=np.float32)
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-                idx, conf, subject, tvec, device, model, logger)
+                idx, conf, subject, device, model, logger)
             df = pd.concat([df, pd.DataFrame(
                 [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 

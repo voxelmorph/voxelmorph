@@ -258,10 +258,11 @@ def train(conf, logger=None):
 
         if epoch % 10 == 0:
             torch.save({
-                'epoch': epoch,
+                'epoch': conf.epochs,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
+                'config': model.config
             }, os.path.join(model_dir, '%04d.pt' % conf.epochs))
 
         # print epoch info
