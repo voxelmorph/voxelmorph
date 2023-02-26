@@ -7,6 +7,7 @@ from pathlib import Path
 import hydra
 import pandas as pd
 import scipy.io
+import torch
 from omegaconf import DictConfig, OmegaConf
 from register_single import register_single
 from tqdm import tqdm
@@ -28,10 +29,6 @@ def main(cfg: DictConfig):
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
         logger = None
 
-
-        if conf.TI_csv:
-            TI_dict = csv_to_dict(conf.TI_csv)
-
         conf.round = round + 1
         conf.rank = conf.rpca_rank[f"rank{round+1}"]
         if conf.rank == 0:
@@ -45,7 +42,7 @@ def main(cfg: DictConfig):
         if conf.round > 1:
             conf.moving = os.path.join(conf.inference, f"round{conf.round-1}", 'moved')
         hydralog.debug(f"Round {round} - Conf: {conf}")
-        validate(conf, TI_dict, logger)
+        validate(conf, logger)
         
 def createdir(conf):
     conf.moved = os.path.join(conf.inference, f"round{conf.round}", 'moved')
@@ -62,7 +59,7 @@ def createdir(conf):
     os.makedirs(conf.model_dir_round, exist_ok=True)
 
 
-def validate(conf, TI_dict, logger):
+def validate(conf, logger):
     col = ['Cases', 'raw MSE', 'registered MSE', 'raw PCA',
            'registered PCA', 'raw T1err', 'registered T1err']
     df = pd.DataFrame(columns=col)
@@ -75,14 +72,46 @@ def validate(conf, TI_dict, logger):
 
     conf.model_path = os.path.join(
         conf.model_dir_round, '%04d.pt' % conf.epochs)
-    if conf.transformation == 'Dense':
-        model = vxm.networks.VxmDense.load(conf.model_path, device)
-    elif conf.transformation == 'bspline':
-        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
-    else:
-        raise ValueError('transformation must be dense or bspline')
+    checkpoint = torch.load(conf.model_path, map_location=torch.device(device))
+    model_conf = checkpoint['config']
+    hydralog.debug(f"Load the model from {conf.model_path}, model config: {model_conf}")
 
-    model.to(device)
+    if conf.transformation == 'Dense':
+        model = vxm.networks.VxmDense(
+            inshape=model_conf['inshape'],
+            nb_unet_features=model_conf['nb_unet_features'],
+            bidir=model_conf['bidir'],
+            int_steps=model_conf['int_steps'],
+            int_downsize=model_conf['int_downsize']
+        )
+    elif conf.transformation == 'bspline':
+        if conf.register == 'Group':
+            model = vxm.networks.GroupVxmDenseBspline(
+                inshape=model_conf['inshape'],
+                nb_unet_features=model_conf['nb_unet_features'],
+                bidir=model_conf['bidir'],
+                int_steps=model_conf['int_steps'],
+                int_downsize=model_conf['int_downsize'],
+                src_feats=model_conf['src_feats'],
+                trg_feats=model_conf['trg_feats'],
+                cps=model_conf['cps'],
+                svf=model_conf['svf'],
+                svf_steps=model_conf['svf_steps'],
+                svf_scale=model_conf['svf_scale'],
+                resize_channels=model_conf['resize_channels'],
+                method=model_conf['method']
+            )
+            hydralog.debug("Mona: use the Group bspline model")
+    else:
+        hydralog.error("Mona: the register type is not supported")
+        raise NotImplementedError   
+    
+    try:
+        model.load_state_dict(checkpoint['model_state_dict'])
+        hydralog.info("Load the model from the new version")
+    except:
+        model = vxm.networks.GroupVxmDenseBspline.load(conf.model_path, device)
+        hydralog.info("Load the model from the old version")
     model.eval()
 
     hydralog.info("Registering Samples:")
@@ -93,9 +122,8 @@ def validate(conf, TI_dict, logger):
         if os.path.exists(os.path.join(conf.moved, f"{name}.nii")):
             hydralog.debug(f"Already registered {name}")
         else:
-            tvec = np.array(list(TI_dict[name].values())[1:], dtype=np.float32)
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-                idx, conf, subject, tvec, device, model, logger)
+                idx, conf, subject, device, model, logger)
             df = pd.concat([df, pd.DataFrame(
                 [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 

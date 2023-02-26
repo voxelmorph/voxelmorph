@@ -14,7 +14,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', required=True, help='dataset name')
     parser.add_argument('--n_test', default=10,
-                        type=float, help='test_ratio')
+                        type=int, help='test_ratio')
     args = parser.parse_args()
 
     basepath = f"data/{args.dataset}"
@@ -64,6 +64,7 @@ if __name__ == '__main__':
     for idx, file in enumerate(input_file_paths):
         image = sitk.ReadImage(file)
         original_shape = image_shapes[idx]
+        # new_shape = (224, 224, original_shape[-1])
         new_shape = (min_dim_0, min_dim_1, original_shape[-1])
         resize_img = resizeSitkImg(image, new_shape, sitk.sitkLinear)
 
@@ -73,6 +74,7 @@ if __name__ == '__main__':
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"
             np.save(output_name, resize_img_array)
+            print(f"Saving array shape {resize_img_array.shape}, {output_name}...")
             output_test_filenames.append(output_name)
         else:
             output_name = f"{train_output}/{tmp}.npy"

@@ -15,7 +15,7 @@ os.environ['VXM_BACKEND'] = 'pytorch'
 import voxelmorph_group as vxm  # nopep8
 
 hydralog = logging.getLogger(__name__)
-def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=None):
+def register_single(idx, conf, subject, device='cpu', model=None, logger=None):
 
     name = Path(subject).stem
     hydralog.info(f"Regist file {name}")
@@ -40,36 +40,47 @@ def register_single(idx, conf, subject, tvec, device='cpu', model=None, logger=N
     if conf.rank == tmp.shape[-1]:
         low_matrix = tmp
     else:
-        low_matrix, sparse_matrix = vxm.py.utils.rpca(tmp, rank=conf.rank, lambda1=conf.lambda1) # (H, W, N)
+        # low_matrix, sparse_matrix = vxm.py.utils.rpca(tmp, rank=conf.rank, lambda1=conf.lambda1) # (H, W, N)
+        low_matrix, sparse_matrix = vxm.py.utils.rpca(tmp, rank=2, lambda1=conf.lambda1)
+
+    if tmp.shape[-1] != 11:
+        new_shape = (tmp.shape[-1], 224, 224)
+        low_matrix = sitk.GetArrayFromImage(resizeSitkImg(sitk.GetImageFromArray(low_matrix), new_shape, sitk.sitkLinear))
+
+        padding = np.zeros((224, 224, 11 - tmp.shape[-1]))
+        low_matrix = np.concatenate((low_matrix, padding), axis=2)
+        # hydralog.info(f"Resize to {new_shape} and low_matrix shape {low_matrix.shape} and normalized_vols shape {normalized_vols.shape}")
 
     fixed = torch.from_numpy(low_matrix[None, ...]).float().permute(0, 3, 1, 2).to(device)
     predvols, warp = model(fixed, registration=True)
+    # hydralog.info(f"predvols shape {predvols.shape} and warp shape {warp.shape}")
 
- 
-    vol_size = vols.shape[1:-1]
-    vols = torch.from_numpy(vols).float().permute(0, 3, 1, 2).to(device)
-    # print(f"Mona: vols shape {vols.shape}")
-    predvols = vxm.layers.SpatialTransformer(size=vol_size)(vols.to('cpu'), warp.to('cpu'))
-    orig_vols = vols
-    rigs_vols = predvols
-    rigs_warp = warp
+    if conf.resize:
+    # Apply the warp to the original image
+        original_vols = np.squeeze(vols)
+        original_size = original_vols.shape[1:]
+        # hydralog.info(f"Original size {original_vols.shape}")
+        original_vols = torch.from_numpy(original_vols[:, None, ...].astype(np.int16)).float().to(device)
 
-    
-    # Evaluate
-    if False:
-        start = time.time()
-        orig_T1err = vxm.groupwise.utils.update_atlas(orig_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
-        rigs_T1err = vxm.groupwise.utils.update_atlas(rigs_vols, conf.num_cores, 't1map', tvec=tvec, factor=1)
-        et = time.time()
-        hydralog.debug(f"Time elapsed: {(et - start)/60} mins, T1 error orig {np.mean(orig_T1err)} and rigs {np.mean(rigs_T1err)}")
-        saveT1err(orig_T1err, rigs_T1err, conf, name, logger)
-        mean_orig_T1err = np.mean(orig_T1err)
-        mean_rigs_T1err = np.mean(rigs_T1err)
+        resized_warp = vxm.networks.interpolate_(warp, size=original_size, mode='bilinear')
+        vols_pred = vxm.layers.SpatialTransformer(size=original_size)(original_vols.to('cpu'), resized_warp[0:tmp.shape[-1], ...].to('cpu'))
+        # hydralog.info(f"vols_pred shape {vols_pred.shape} and warp shape {resized_warp[0:tmp.shape[-1], ...].shape}")
 
-        # Save the results of original image
+        orig_vols = original_vols
+        rigs_vols = vols_pred
+        rigs_warp = resized_warp
     else:
-        mean_orig_T1err = 0
-        mean_rigs_T1err = 0
+        vol_size = vols.shape[1:-1]
+        vols = torch.from_numpy(vols).float().permute(0, 3, 1, 2).to(device)
+        # print(f"Mona: vols shape {vols.shape}")
+        predvols = vxm.layers.SpatialTransformer(size=vol_size)(vols.to('cpu'), warp.to('cpu'))
+        orig_vols = vols
+        rigs_vols = predvols
+        rigs_warp = warp
+
+    # Evaluate
+    mean_orig_T1err = 0
+    mean_rigs_T1err = 0
     orig_vols = np.squeeze(orig_vols.detach().cpu().numpy())
     rigs_vols = np.squeeze(rigs_vols.detach().cpu().numpy())
     rigs_warp = rigs_warp.detach().cpu().numpy()
@@ -128,7 +139,6 @@ def saveEval(invols, outvols, warp, conf, name, fixed_affine, logger=None):
 
     eig_org, org_K, org_dis = pca(orig, topk=1)
     eig_rig, rig_K, rig_dis = pca(moved, topk=1)
-    
     if conf.final:
         f, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 6), sharex=True)
         sns.barplot(x=np.arange(len(eig_org)),

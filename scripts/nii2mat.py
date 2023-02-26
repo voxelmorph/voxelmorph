@@ -46,7 +46,7 @@ if __name__ == '__main__':
     input = args.source
     
     if os.path.isdir(input):
-        files = glob.glob(os.path.join(input, '*.mat'))
+        files = glob.glob(os.path.join(input, '*.npy'))
         print(files)
         for file in files:
             format = Path(file).suffix

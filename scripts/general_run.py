@@ -121,7 +121,7 @@ def validate(conf, model, logger=None):
             hydralog.debug(f"Already registered {Path(subject).stem}")
         else:
             name, loss_org, org_dis, t1err_org, loss_rig, rig_dis, t1err_rig = register_single(
-                idx, conf, subject, TI_dict[Path(subject).stem], device, model, logger)
+                idx, conf, subject, device, model, logger)
             df = pd.concat([df, pd.DataFrame(
                 [[name, loss_org, loss_rig, org_dis, rig_dis, t1err_org, t1err_rig]], columns=col)], ignore_index=True)
 
