@@ -16,7 +16,7 @@ matlab/tools
 jobscripts/*
 outputs/*
 multirun/*
-notebooks/test_rpca/*
+notebooks/*
 **/.ipynb_checkpoints/*
 **.log
 **.out

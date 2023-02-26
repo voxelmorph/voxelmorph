@@ -37,7 +37,7 @@ gpu: 1
 batch_size: 1
 epochs: 80
 steps_per_epoch: 10
-load_model: False
+load_model: True
 initial_epoch: 0
 lr: 1e-4
 cudnn_nondet:
