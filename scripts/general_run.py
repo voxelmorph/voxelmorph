@@ -136,7 +136,7 @@ def validate(conf, model, logger=None):
         f"The summary is \n {df[['MSE changes percentage', 'PCA changes percentage', 'T1err changes percentage']].describe()}")
 
     logger.log_dataframe(df, f"{conf.round}_summary", path=os.path.join(
-        conf.result, f"{conf.round}_summary"))
+        conf.result, f"{conf.round}_summary.csv"))
     return
 
 

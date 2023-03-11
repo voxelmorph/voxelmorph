@@ -26,11 +26,11 @@ function [pmap, sdmap, null_index, S, areamask] = mestimation_abs(data_struct, c
     end
     
     if strcmpi(  configs.stype , 'MOLLI' ) % MOLLI fitting
-        areamask = false(H, W);
-        upleftcorner = max( configs.center - configs.alpha * configs.diameter, 1);
-        bottomrightcorner = min( configs.center + configs.alpha * configs.diameter, [W, H] );
-        areamask( round(upleftcorner(2) : bottomrightcorner(2)), ...
-            round( upleftcorner(1) : bottomrightcorner(1) ) ) = true;
+        areamask = true(H, W);
+%         upleftcorner = max( configs.center - configs.alpha * configs.diameter, 1);
+%         bottomrightcorner = min( configs.center + configs.alpha * configs.diameter, [W, H] );
+%         areamask( round(upleftcorner(2) : bottomrightcorner(2)), ...
+%             round( upleftcorner(1) : bottomrightcorner(1) ) ) = true;
         
         % sort time vector
         tvec = data_struct.tvec;

@@ -256,14 +256,14 @@ def train(conf, logger=None):
             logger.log_metric(global_step, "Step/NGF", ngf_loss.item())
             logger.log_metric(global_step, "Step/TC", tc.item())
 
-        if epoch % 10 == 0:
+        if epoch % 100 == 0:
             torch.save({
                 'epoch': conf.epochs,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
                 'config': model.config
-            }, os.path.join(model_dir, '%04d.pt' % conf.epochs))
+            }, os.path.join(model_dir, '%04d.pt' % epoch))
 
         # print epoch info
         epoch_info = 'Epoch %d/%d' % (epoch + 1, conf.epochs)

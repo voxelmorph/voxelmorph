@@ -20,7 +20,7 @@ function SD = MOLLIComputeSD(p, tvec, dvec)
        D(:, :, j) = [dT1(j); dc(j); dk(j)] * [dT1(j), dc(j), dk(j)]; 
     end
     D = squeeze( sum(D, 3) ) / s / s;
-    Dinv = inv(D + 1e-5 * eye(3) );
+    Dinv = pinv(D + 1e-5 * eye(3) );
     SD = sqrt(Dinv(1, 1));
     
 end

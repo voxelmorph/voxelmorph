@@ -25,6 +25,7 @@ hydralog = logging.getLogger(__name__)
 def main(cfg: DictConfig):
     conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
     rounds = conf.rpca_rank.n_ranks
+
     for round in range(rounds):
         conf = OmegaConf.structured(OmegaConf.to_container(cfg, resolve=True))
         logger = None
@@ -35,6 +36,7 @@ def main(cfg: DictConfig):
             hydralog.info("No rpca, Finish")
             return
         conf.model_dir_round = os.path.join(conf.model_dir, f"round{conf.round}")
+        # conf.inference = f"{conf.inference}/test_{conf.dataset}_{conf.inference_epochs}"
         conf.inference = f"{conf.inference}/test_{conf.dataset}"
         conf.final = True
 
@@ -71,7 +73,7 @@ def validate(conf, logger):
     hydralog.info(f"Existing {num_cores}, Using {conf.num_cores} cores")
 
     conf.model_path = os.path.join(
-        conf.model_dir_round, '%04d.pt' % conf.epochs)
+        conf.model_dir_round, '%04d.pt' % conf.inference_epochs)
     checkpoint = torch.load(conf.model_path, map_location=torch.device(device))
     model_conf = checkpoint['config']
     hydralog.debug(f"Load the model from {conf.model_path}, model config: {model_conf}")

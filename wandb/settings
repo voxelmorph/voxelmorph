@@ -2,4 +2,5 @@
 entity = mona98
 project = Group Registration
 base_url = https://api.wandb.ai
+mode = disabled
 

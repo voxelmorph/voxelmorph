@@ -22,3 +22,4 @@ notebooks/*
 **.out
 **.sh
 *.ipynb
+*.sbatch

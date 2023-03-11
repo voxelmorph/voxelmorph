@@ -66,19 +66,22 @@ if __name__ == '__main__':
         original_shape = image_shapes[idx]
         # new_shape = (224, 224, original_shape[-1])
         new_shape = (min_dim_0, min_dim_1, original_shape[-1])
-        resize_img = resizeSitkImg(image, new_shape, sitk.sitkLinear)
+        # resize_img = resizeSitkImg(image, new_shape, sitk.sitkLinear)
+        resize_img = image
 
         resize_img_array = sitk.GetArrayFromImage(resize_img)
+        # cropped_img_array = resize_img_array[:, int(112/2):int(224-112/2), int(112/2):int(224-112/2)]
+        cropped_img_array = resize_img_array
         tmp = (output_file_paths[idx]).split("/")[-1]
 
         if idx in test_idx:
             output_name = f"{val_output}/{tmp}.npy"
-            np.save(output_name, resize_img_array)
-            print(f"Saving array shape {resize_img_array.shape}, {output_name}...")
+            np.save(output_name, cropped_img_array)
+            print(f"Saving array shape {cropped_img_array.shape}, {output_name}...")
             output_test_filenames.append(output_name)
         else:
             output_name = f"{train_output}/{tmp}.npy"
-            np.save(output_name, resize_img_array)
+            np.save(output_name, cropped_img_array)
             output_train_filenames.append(output_name)
     print(f"In training set, number of images {len(output_train_filenames)}")
     txt_string = "\n".join(output_train_filenames)

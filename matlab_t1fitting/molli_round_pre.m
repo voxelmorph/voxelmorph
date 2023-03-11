@@ -5,18 +5,15 @@ pwd_path = pwd;
 %% MOLLI fitting
 
 round=1
-path = "results/MOLLI_pre/Group/rank_11_11_11_11_11_11_11/nmi/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e80/test_MOLLI_pre/round";
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+path = "results/MOLLI_pre/Group/rank_11_0_5_5_5_5_5/ncc/smooth/image_loss_weight1/cycle_loss_weight0.01/weight0.001/bspline/cps4_svfsteps7_svfscale1/e700/test_MOLLI_pre_";
+tmp = sprintf('../%s%d00/round1/moved_mat/*.mat', path, round)
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
-% MOLLI_REGISTER_FILES = dir(sprintf('../data/MOLLI_pre_dataset/test_mat/*.mat', path));
-% MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-% label = sprintf('../data/MOLLI_pre_dataset/T1_SDerr', path)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
-nworker = 10
-myCluster = parcluster('local');
-parpool(myCluster, nworker)
+c = parcluster
+parpool(c)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
     name = MOLLI_REGISTER_FILES(j).name;
@@ -37,19 +34,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -65,7 +70,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -86,9 +91,9 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
 end
 
 round=2
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -110,19 +115,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -138,7 +151,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -159,9 +172,9 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
 end
 
 round = 3
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -183,19 +196,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -211,7 +232,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -232,9 +253,9 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
 end
 
 round = 4
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -256,19 +277,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -284,7 +313,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -306,9 +335,9 @@ end
 
 
 round = 5
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -330,19 +359,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -358,7 +395,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -380,9 +417,9 @@ end
 
 
 round = 6
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -404,19 +441,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -432,7 +477,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;
@@ -453,9 +498,9 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
 end
 
 round = 7
-MOLLI_REGISTER_FILES = dir(sprintf('../%s%d/moved_mat/*.mat', path, round))
+MOLLI_REGISTER_FILES = dir(sprintf('../%s%d00/round1/moved_mat/*.mat', path, round))
 MOLLI_NATIVE_FOLDER = '../data/MOLLI_original';
-label = sprintf('../%s%d/T1_SDerr', path, round)
+label = sprintf('../%s%d00/round1/T1_SDerr', path, round)
 mkdir(label)
 
 parfor j = 1:length(MOLLI_REGISTER_FILES)
@@ -477,19 +522,27 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     regi_vols = permute(register_x.img, [2, 1, 3]);
     
     [x_1, y_1, z_1] = size(orig_vols);
-    [x_2, y_2, z_2] = size(regi_vols);
+    
+%     [x_2, y_2, z_2] = size(regi_vols);
+    x_2 = 224;
+    y_2 = 224;
+
     epi_BW = poly2mask(contour.epi(:,1),contour.epi(:,2),x_1, y_1);
     epi_BW = imresize(epi_BW, [x_2, y_2]);
+    epi_BW = epi_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_epi = boundarymask(epi_BW);
 
     endo_BW = poly2mask(contour.endo(:,1),contour.endo(:,2),x_1, y_1);    
     endo_BW = imresize(endo_BW, [x_2, y_2]);
+    endo_BW = endo_BW(112/2:224-112/2-1, 112/2:224-112/2-1);
     boundary_endo = boundarymask(endo_BW);
     boundary = boundary_endo + boundary_epi;
     figure('Position', [1, 1, 1100, 100])
     t = tiledlayout(1,z_1);
     for i=1:z_1
-        ax1 = nexttile; axis off,imshow(labeloverlay(imresize(orig_vols(:,:,i)/255, [x_2, y_2]),boundary,'Transparency',0)) 
+        orig_slice = imresize(orig_vols(:,:,i), [x_2, y_2]);
+        orig_slice = orig_slice(112/2:224-112/2-1, 112/2:224-112/2-1);
+        ax1 = nexttile; axis off,imshow(labeloverlay(orig_slice/255,boundary,'Transparency',0)) 
     end
     t.TileSpacing = 'tight';
     t.Padding = 'tight';
@@ -505,7 +558,7 @@ parfor j = 1:length(MOLLI_REGISTER_FILES)
     saveas(gcf,sprintf("%s/MOLLI_%s_%d_regi_vols.png", label, subjectid, slice));
     
     data.frames = regi_vols;
-    data.tvec = squeeze(x.tvec_post(slice, :));
+    data.tvec = squeeze(x.tvec_pre(slice, :));
     
     % fitting configurations
     configs = struct;

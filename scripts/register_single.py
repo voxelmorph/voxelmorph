@@ -44,10 +44,10 @@ def register_single(idx, conf, subject, device='cpu', model=None, logger=None):
         low_matrix, sparse_matrix = vxm.py.utils.rpca(tmp, rank=2, lambda1=conf.lambda1)
 
     if tmp.shape[-1] != 11:
-        new_shape = (tmp.shape[-1], 224, 224)
+        new_shape = (tmp.shape[-1], 112, 112)
         low_matrix = sitk.GetArrayFromImage(resizeSitkImg(sitk.GetImageFromArray(low_matrix), new_shape, sitk.sitkLinear))
 
-        padding = np.zeros((224, 224, 11 - tmp.shape[-1]))
+        padding = np.zeros((112, 112, 11 - tmp.shape[-1]))
         low_matrix = np.concatenate((low_matrix, padding), axis=2)
         # hydralog.info(f"Resize to {new_shape} and low_matrix shape {low_matrix.shape} and normalized_vols shape {normalized_vols.shape}")
 
