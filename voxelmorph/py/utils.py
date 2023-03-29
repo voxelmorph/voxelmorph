@@ -99,7 +99,7 @@ def load_volfile(
     elif filename.endswith(('.nii', '.nii.gz', '.mgz')):
         import nibabel as nib
         img = nib.load(filename)
-        vol = img.get_data().squeeze()
+        vol = np.squeeze(img.dataobj)
         affine = img.affine
     elif filename.endswith('.npy'):
         vol = np.load(filename)
