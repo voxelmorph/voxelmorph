@@ -60,7 +60,8 @@ class NCC:
 
         # compute filters
         in_ch = Ji.get_shape().as_list()[-1]
-        sum_filt = tf.ones([*self.win, in_ch, 1])
+        # sum_filt = tf.ones([*self.win, in_ch, 1])
+        sum_filt = tf.ones([*self.win, in_ch, 1], dtype=Ii.dtype)
         strides = 1
         if ndims > 1:
             strides = [1] * (ndims + 2)
