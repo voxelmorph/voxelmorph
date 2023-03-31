@@ -1,6 +1,7 @@
 # ---- voxelmorph ----
 # unsupervised learning for image registration
 
+import os
 
 # set version
 __version__ = '0.2'
@@ -33,6 +34,8 @@ if backend == 'pytorch':
     except ImportError:
         raise ImportError('Please install pytorch to use this voxelmorph backend')
 
+    os.environ['NEURITE_BACKEND'] = 'pytorch'
+
     from . import torch
     from .torch import layers
     from .torch import networks
@@ -44,6 +47,8 @@ else:
         import tensorflow
     except ImportError:
         raise ImportError('Please install tensorflow to use this voxelmorph backend')
+
+    os.environ['NEURITE_BACKEND'] = 'tensorflow'
 
     # ensure valid tensorflow version is available
     minv = '2.4'

@@ -44,7 +44,7 @@ import voxelmorph as vxm
 
 # disable eager execution
 tf.compat.v1.disable_eager_execution()
-
+tf.compat.v1.experimental.output_all_intermediates(True) # https://github.com/tensorflow/tensorflow/issues/54458
 
 # parse the commandline
 parser = argparse.ArgumentParser()
@@ -182,17 +182,18 @@ if nb_devices > 1:
     save_callback = vxm.networks.ModelCheckpointParallel(save_filename)
     model = tf.keras.utils.multi_gpu_model(model, gpus=nb_devices)
 else:
-    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, period=20)
+    save_callback = tf.keras.callbacks.ModelCheckpoint(save_filename, 
+                                                       save_freq=20 * args.steps_per_epoch)
 
-model.compile(optimizer=tf.keras.optimizers.Adam(lr=args.lr), loss=losses, loss_weights=weights)
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=args.lr), loss=losses, loss_weights=weights)
 
 # save starting weights
 model.save(save_filename.format(epoch=args.initial_epoch))
 
-model.fit_generator(generator,
-                    initial_epoch=args.initial_epoch,
-                    epochs=args.epochs,
-                    steps_per_epoch=args.steps_per_epoch,
-                    callbacks=[save_callback],
-                    verbose=1
-                    )
+model.fit(generator,
+         initial_epoch=args.initial_epoch,
+         epochs=args.epochs,
+         steps_per_epoch=args.steps_per_epoch,
+         callbacks=[save_callback],
+         verbose=1
+         )
