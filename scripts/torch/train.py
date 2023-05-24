@@ -78,6 +78,8 @@ parser.add_argument('--enc', type=int, nargs='+',
                     help='list of unet encoder filters (default: 16 32 32 32)')
 parser.add_argument('--dec', type=int, nargs='+',
                     help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
+parser.add_argument('--nb-conv-per-level', type=int,
+                    help='number of conv per level, (default: 1)')                    
 parser.add_argument('--int-steps', type=int, default=7,
                     help='number of integration steps (default: 7)')
 parser.add_argument('--int-downsize', type=int, default=2,
@@ -89,8 +91,9 @@ parser.add_argument('--image-loss', default='mse',
                     help='image reconstruction loss - can be mse or ncc (default: mse)')
 parser.add_argument('--lambda', type=float, dest='weight', default=0.01,
                     help='weight of deformation loss (default: 0.01)')
+parser.add_argument('--mean-std', type=float, nargs = '+', default= [0, 1],
+                    help='mean and std used to normalize the raw image')
 args = parser.parse_args()
-
 bidir = args.bidir
 
 # load and prepare training data
@@ -110,8 +113,13 @@ if args.atlas:
                                              add_feat_axis=add_feat_axis)
 else:
     # scan-to-scan generator
-    generator = vxm.generators.scan_to_scan(
-        train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+    print('Norm param', args.mean_std)
+    generator = vxm.generators.scan_to_scan( train_files, 
+                                            batch_size=args.batch_size, 
+                                            bidir=args.bidir, 
+                                            add_feat_axis=add_feat_axis,  
+                                            mean_std = args.mean_std, 
+                                            )
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -143,11 +151,13 @@ else:
     model = vxm.networks.VxmDense(
         inshape=inshape,
         nb_unet_features=[enc_nf, dec_nf],
+        nb_unet_conv_per_level=args.nb_conv_per_level ,
         bidir=bidir,
         int_steps=args.int_steps,
         int_downsize=args.int_downsize
     )
 
+print('MODEL configuration', model)
 if nb_gpus > 1:
     # use multiple GPUs via DataParallel
     model = torch.nn.DataParallel(model)
@@ -180,6 +190,9 @@ else:
 losses += [vxm.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights += [args.weight]
 
+num_checkpoints = 10
+save_every = args.epochs // num_checkpoints
+print('Save every', save_every)
 # training loops
 for epoch in range(args.initial_epoch, args.epochs):
 
@@ -201,15 +214,15 @@ for epoch in range(args.initial_epoch, args.epochs):
         y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
 
         # run inputs through the model to produce a warped image and flow field
-        y_pred = model(*inputs)
-
-        # calculate total loss
-        loss = 0
-        loss_list = []
-        for n, loss_function in enumerate(losses):
-            curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            loss_list.append(curr_loss.item())
-            loss += curr_loss
+        with torch.cuda.amp.autocast(enabled = True):
+            y_pred = model(*inputs)
+            # calculate total loss
+            loss = 0
+            loss_list = []
+            for n, loss_function in enumerate(losses):
+                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+                loss_list.append(curr_loss.item())
+                loss += curr_loss
 
         epoch_loss.append(loss_list)
         epoch_total_loss.append(loss.item())
@@ -228,6 +241,8 @@ for epoch in range(args.initial_epoch, args.epochs):
     losses_info = ', '.join(['%.4e' % f for f in np.mean(epoch_loss, axis=0)])
     loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
     print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
+    if epoch % save_every == 0:
+        model.save(os.path.join(model_dir, '%04d.pt' % epoch))
 
 # final model save
 model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
