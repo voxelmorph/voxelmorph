@@ -448,7 +448,7 @@ class InvertAffine(Layer):
         Parameters
             matrix: Affine matrix of shape [B, N, N+1] to invert.
         """
-        return tf.map_fn(utils.invert_affine, matrix, fn_output_signature='float32')
+        return utils.invert_affine(matrix)
 
 
 class ParamsToAffineMatrix(Layer):

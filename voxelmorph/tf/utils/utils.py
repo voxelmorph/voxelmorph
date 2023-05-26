@@ -538,12 +538,18 @@ def make_square_affine(mat):
         mat: Affine matrix of shape [..., N, N+1].
     """
     validate_affine_shape(mat.shape)
-    bs = mat.shape[:-2]
-    zeros = tf.zeros((*bs, 1, mat.shape[-2]), dtype=mat.dtype)
-    one = tf.ones((*bs, 1, 1), dtype=mat.dtype)
+
+    # Support dynamic shapes by keeping them in tensors.
+    shape_input = tf.shape(mat)
+    shape_batch = shape_input[:-2]
+    shape_zeros = tf.concat((shape_batch, (1,), shape_input[-2:-1]), axis=0)
+    shape_one = tf.concat((shape_batch, (1, 1)), axis=0)
+
+    # Append last row.
+    zeros = tf.zeros(shape_zeros, dtype=mat.dtype)
+    one = tf.ones(shape_one, dtype=mat.dtype)
     row = tf.concat((zeros, one), axis=-1)
-    mat = tf.concat([mat, row], axis=-2)
-    return mat
+    return tf.concat((mat, row), axis=-2)
 
 
 def affine_add_identity(mat):
@@ -575,8 +581,7 @@ def invert_affine(mat):
     Parameters:
         mat: Affine matrix of shape [..., N, N+1].
     """
-    ndims = mat.shape[-1] - 1
-    return tf.linalg.inv(make_square_affine(mat))[:ndims, :]
+    return tf.linalg.inv(make_square_affine(mat))[..., :-1, :]
 
 
 def rescale_affine(mat, factor):
