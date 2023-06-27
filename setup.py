@@ -4,25 +4,14 @@ import re
 import pathlib
 import setuptools
 
-setuptools.dist.Distribution().fetch_build_eggs(['packaging'])
-from packaging.version import InvalidVersion, parse
-
-
-# base source directory
-base_dir = pathlib.Path(__file__).parent.resolve()
-
 # extract the current version
-init_file = base_dir.joinpath('voxelmorph/__init__.py')
+init_file = pathlib.Path(__file__).parent.resolve().joinpath('voxelmorph/__init__.py')
 init_text = open(init_file, 'rt').read()
 pattern = r"^__version__ = ['\"]([^'\"]*)['\"]"
 match = re.search(pattern, init_text, re.M)
 if not match:
-    raise RuntimeError(f'Unable to find __version__ in {init_file}.')
+    raise RuntimeError(f'Unable to find __version__ in {init_file}')
 version = match.group(1)
-try:
-    version_obj = parse(version)
-except InvalidVersion:
-    raise RuntimeError(f'Invalid version string {version}.')
 
 # run setup
 setuptools.setup(
