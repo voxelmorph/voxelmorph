@@ -338,17 +338,23 @@ class ComposeTransform(Layer):
     T = ComposeTransform()([A, B, C])
     """
 
-    def __init__(self, interp_method='linear', shift_center=True, indexing='ij', **kwargs):
+    def __init__(self, interp_method='linear', shift_center=True, **kwargs):
         """
         Parameters:
             shape: Target shape of dense shift.
             interp_method: Interpolation method. Must be 'linear' or 'nearest'.
             shift_center: Shift grid to image center.
-            indexing: Must be 'xy' or 'ij'.
+            indexing: Deprecated. This layer only supports ij indexing.
         """
         self.interp_method = interp_method
         self.shift_center = shift_center
-        self.indexing = indexing
+
+        if 'indexing' in kwargs:
+            if kwargs.pop('indexing') != 'ij':
+                raise ValueError('Compose transform only supports ij indexing')
+            warnings.warn('the `indexing` argument to compose transform is deprecated and will be '
+                          'removed in the future')
+
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -356,7 +362,6 @@ class ComposeTransform(Layer):
         config.update({
             'interp_method': self.interp_method,
             'shift_center': self.shift_center,
-            'indexing': self.indexing,
         })
         return config
 
@@ -365,30 +370,19 @@ class ComposeTransform(Layer):
         # sanity check on the inputs
         if not isinstance(input_shape, (list, tuple)):
             raise Exception('ComposeTransform must be called for a list of transforms.')
-        if len(input_shape) < 2:
-            raise ValueError('ComposeTransform input list size must be greater than 1.')
-
-        # determine output transform type
-        dense_shape = next((t for t in input_shape if not utils.is_affine_shape(t[1:])), None)
-        if dense_shape is not None:
-            # extract shape information from the dense transform
-            self.outshape = (input_shape[0], *dense_shape)
-        else:
-            # extract dimension information from affine
-            ndims = input_shape[0][-1] - 1
-            self.outshape = (input_shape[0], ndims, ndims + 1)
 
     def call(self, transforms):
         """
         Parameters:
             transforms: List of affine or dense transforms to compose.
         """
-        compose = lambda trf: utils.compose(trf, interp_method=self.interp_method,
-                                            shift_center=self.shift_center, indexing=self.indexing)
-        return tf.map_fn(compose, transforms, fn_output_signature=transforms[0].dtype)
+        if len(transforms) == 1:
+            return transforms[0]
 
-    def compute_output_shape(self, input_shape):
-        return self.outshape
+        compose = lambda trf: utils.compose(trf,
+                                            interp_method=self.interp_method,
+                                            shift_center=self.shift_center)
+        return tf.map_fn(compose, transforms, fn_output_signature=transforms[0].dtype)
 
 
 class AddIdentity(Layer):
