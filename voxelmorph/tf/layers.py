@@ -538,3 +538,118 @@ class AffineToDenseShift(Layer):
         single = lambda mat: utils.affine_to_dense_shift(mat, self.shape,
                                                          shift_center=self.shift_center)
         return tf.map_fn(single, matrix)
+
+
+class DrawAffineParams(Layer):
+    """
+    Draw translation, rotation, scaling and shearing parameters defining an affine transform in
+    N-dimensional space, where N is 2 or 3. Choose parameters wisely: there is no check for
+    negative or zero scaling! The batch dimension will be inferred from the input tensor.
+
+    Returns:
+        A tuple of tensors with shapes (..., N), (..., M), (..., N), and (..., M) defining
+        translation, rotation, scaling, and shear, respectively, where M is 3 in 3D and 1 in 2D.
+        With `concat=True`, the layer will concatenate the output along the last dimension.
+
+    See also:
+        ParamsToAffineMatrix
+
+    If you find this layer useful, please cite:
+        Anatomy-specific acquisition-agnostic affine registration learned from fictitious images
+        M Hoffmann, A Hoopes, B Fischl*, AV Dalca* (*equal contribution)
+        SPIE Medical Imaging: Image Processing, 12464, p 1246402, 2023
+        https://doi.org/10.1117/12.2653251
+    """
+
+    def __init__(self,
+                 shift=None,
+                 rot=None,
+                 scale=None,
+                 shear=None,
+                 normal_shift=False,
+                 normal_rot=False,
+                 normal_scale=False,
+                 normal_shear=False,
+                 shift_scale=False,
+                 ndims=3,
+                 concat=True,
+                 dtype=tf.float32,
+                 seeds={},
+                 **kwargs):
+        """
+        Parameters:
+            shift: Translation sampling range x around identity. Values will be sampled uniformly
+                from [-x, x]. When sampling from a normal distribution, x is the standard
+                deviation (SD). The same x will be used for each dimension, unless an iterable of
+                length N is passed, specifying a value separately for each axis. None means 0.
+            rot: Rotation sampling range (see `shift`). Accepts only one value in 2D.
+            scale: Scaling sampling range x. Parameters will be sampled around identity as for
+                `shift`, unless `shift_scale` is set. When sampling normally, scaling parameters
+                will be truncated beyond two standard deviations.
+            shear: Shear sampling range (see `shift`). Accepts only one value in 2D.
+            normal_shift: Sample translations normally rather than uniformly.
+            normal_rot: See `normal_shift`.
+            normal_scale: Draw scaling parameters normally, truncating beyond 2 SDs.
+            normal_shear: See `normal_shift`.
+            shift_scale: Add 1 to any drawn scaling parameter When sampling uniformly, this will
+                result in scaling parameters falling in [1 - x, 1 + x] instead of [-x, x].
+            ndims: Number of dimensions. Must be 2 or 3.
+            normal: Sample parameters normally instead of uniformly.
+            concat: Concatenate the output along the last axis to return a single tensor.
+            dtype: Floating-point output data type.
+            seeds: Dictionary of integers for reproducible randomization. Keywords must be in
+                ('shift', 'rot', 'scale', 'shear').
+        """
+        self.shift = shift
+        self.rot = rot
+        self.scale = scale
+        self.shear = shear
+        self.normal_shift = normal_shift
+        self.normal_rot = normal_rot
+        self.normal_scale = normal_scale
+        self.normal_shear = normal_shear
+        self.shift_scale = shift_scale
+        self.ndims = ndims
+        self.concat = concat
+        self.out_type = tf.dtypes.as_dtype(dtype)
+        self.seeds = seeds
+        super().__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'shift': self.shift,
+            'rot': self.rot,
+            'scale': self.scale,
+            'shear': self.shear,
+            'normal_shift': self.normal_shift,
+            'normal_rot': self.normal_rot,
+            'normal_scale': self.normal_scale,
+            'normal_shear': self.normal_shear,
+            'shift_scale': self.shift_scale,
+            'ndims': self.ndims,
+            'concat': self.concat,
+            'out_type': self.dtype,
+            'seeds': self.seeds,
+        })
+        return config
+
+    def call(self, x):
+        """
+        Parameters:
+            x: Input tensor that we derive the batch dimension from.
+        """
+        return utils.draw_affine_params(shift=self.shift,
+                                        rot=self.rot,
+                                        scale=self.scale,
+                                        shear=self.shear,
+                                        normal_shift=self.normal_shift,
+                                        normal_rot=self.normal_rot,
+                                        normal_scale=self.normal_scale,
+                                        normal_shear=self.normal_shear,
+                                        shift_scale=self.shift_scale,
+                                        ndims=self.ndims,
+                                        batch_shape=tf.shape(x)[:1],
+                                        concat=self.concat,
+                                        dtype=self.out_type,
+                                        seeds=self.seeds)
