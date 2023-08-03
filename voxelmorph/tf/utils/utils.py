@@ -20,6 +20,7 @@ specific language governing permissions and limitations under the License.
 
 # internal python imports
 import os
+import warnings
 
 # third party imports
 import numpy as np
@@ -242,7 +243,7 @@ def batch_transform(vol, loc_shift,
     return K.permute_dimensions(vol_trf_reshape, [ndim + 1] + list(range(ndim + 1)))
 
 
-def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'):
+def compose(transforms, interp_method='linear', shift_center=True, **kwargs):
     """
     Compose a single transform from a series of transforms.
 
@@ -258,20 +259,26 @@ def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'
         transforms: List of affine and/or dense transforms to compose.
         interp_method: Interpolation method. Must be 'linear' or 'nearest'.
         shift_center: Shift grid to image center.
-        indexing: Must be 'xy' or 'ij'.
+        indexing: Deprecated. This function only supports ij indexing.
 
     Returns:
         Composed affine or dense transform.
     """
-    if indexing != 'ij':
-        raise ValueError('Compose transform only supports ij indexing')
+    if 'indexing' in kwargs:
+        if kwargs.pop('indexing') != 'ij':
+            raise ValueError('Compose transform only supports ij indexing')
+        warnings.warn('the `indexing` argument to compose transform is deprecated and will be '
+                      'removed in the future')
+
+    if kwargs:
+        raise ValueError(f'unknown argument to compose transform: {kwargs}')
 
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
     def ensure_dense(trf, shape):
         if is_affine_shape(trf.shape):
-            return affine_to_dense_shift(trf, shape, shift_center=shift_center, indexing=indexing)
+            return affine_to_dense_shift(trf, shape, shift_center=shift_center)
         return trf
 
     def ensure_square_affine(matrix):
@@ -288,7 +295,7 @@ def compose(transforms, interp_method='linear', shift_center=True, indexing='ij'
             shape = found_dense.shape[:-1]
             nxt = ensure_dense(nxt, shape)
             curr = ensure_dense(curr, shape)
-            curr = curr + transform(nxt, curr, interp_method=interp_method, indexing=indexing)
+            curr = curr + transform(nxt, curr, interp_method=interp_method)
         else:
             # compose affines
             nxt = ensure_square_affine(nxt)
