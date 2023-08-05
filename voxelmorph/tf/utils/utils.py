@@ -146,7 +146,7 @@ def transform(vol, loc_shift, interp_method='linear', fill_value=None,
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
             loc_shift = affine_to_dense_shift(loc_shift,
-                                              shape=vol.shape[1:-1] if shape is None else shape,
+                                              shape=vol.shape[:-1] if shape is None else shape,
                                               shift_center=shift_center,
                                               indexing=indexing)
 
