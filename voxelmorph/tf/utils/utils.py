@@ -93,8 +93,8 @@ def value_at_location(x, single_vol=False, single_pts=False, force_post_absolute
 ###############################################################################
 
 
-def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=None,
-              shift_center=True, shape=None):
+def transform(vol, loc_shift, interp_method='linear', fill_value=None,
+              shift_center=True, shape=None, **kwargs):
     """Apply affine or dense transforms to images in N dimensions.
 
     Essentially interpolates the input ND tensor at locations determined by
@@ -111,7 +111,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
             D = len(vol_shape). If the shape is (*new_vol_shape, D), the same
             transform applies to all channels of of the input tensor.
         interp_method: 'linear' or 'nearest'.
-        indexing: 'ij' (matrix) or 'xy' (cartesian). In general, prefer 'ij'.
+        indexing: Deprecated in favor of default ij-indexing. 'ij' (matrix) or 'xy' (cartesian).
         fill_value: Value to use for points sampled outside the domain. If
             None, the nearest neighbors will be used.
         shift_center: Shift grid to image center when converting affine
@@ -127,6 +127,13 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
     Keywords:
         interpolation, sampler, resampler, linear, bilinear
     """
+    if 'indexing' in kwargs:
+        warnings.warn('the `indexing` argument to transform is deprecated and will '
+                      'be removed in the future in favor of ij-indexing throughout')
+    indexing = kwargs.pop('indexing', 'ij')
+    if kwargs:
+        raise TypeError(f'unknown argument to transform: {kwargs}')
+
     # convert data type if needed
     ftype = tf.float32
     if not tf.is_tensor(vol) or not vol.dtype.is_floating:
@@ -136,10 +143,12 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
 
     # convert affine to location shift (will validate affine shape)
     if is_affine_shape(loc_shift.shape):
-        loc_shift = affine_to_dense_shift(loc_shift,
-                                          shape=vol.shape[1:-1] if shape is None else shape,
-                                          shift_center=shift_center,
-                                          indexing=indexing)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            loc_shift = affine_to_dense_shift(loc_shift,
+                                              shape=vol.shape[:-1] if shape is None else shape,
+                                              shift_center=shift_center,
+                                              indexing=indexing)
 
     # parse spatial location shape, including channels if available
     loc_volshape = loc_shift.shape[:-1]
@@ -169,7 +178,7 @@ def transform(vol, loc_shift, interp_method='linear', indexing='ij', fill_value=
 
 
 def batch_transform(vol, loc_shift,
-                    batch_size=None, interp_method='linear', indexing='ij', fill_value=None):
+                    batch_size=None, interp_method='linear', fill_value=None, **kwargs):
     """ apply transform along batch. Compared to _single_transform, reshape inputs to move the 
     batch axis to the feature/channel axis, then essentially apply single transform, and 
     finally reshape back. Need to know/fix batch_size.
@@ -189,8 +198,7 @@ def batch_transform(vol, loc_shift,
             where C is the number of channels, and D is the dimentionality len(vol_shape)
             If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
         interp_method (default:'linear'): 'linear', 'nearest'
-        indexing (default: 'ij'): 'ij' (matrix) or 'xy' (cartesian).
-            In general, prefer to leave this 'ij'
+        indexing: Deprecated in favor of default ij-indexing. 'ij' (matrix) or 'xy' (cartesian).
         fill_value (default: None): value to use for points outside the domain.
             If None, the nearest neighbors will be used.
 
@@ -200,6 +208,12 @@ def batch_transform(vol, loc_shift,
     Keyworks:
         interpolation, sampler, resampler, linear, bilinear
     """
+    if 'indexing' in kwargs:
+        warnings.warn('the `indexing` argument to batch_transform is deprecated and will '
+                      'be removed in the future in favor of ij-indexing throughout')
+    indexing = kwargs.pop('indexing', 'ij')
+    if kwargs:
+        raise TypeError(f'unknown argument to batch_transform: {kwargs}')
 
     # input management
     ndim = len(vol.shape) - 2
@@ -232,8 +246,13 @@ def batch_transform(vol, loc_shift,
     loc_reshape = K.reshape(loc_reshape, loc_reshape_shape)
 
     # transform (output is [*vol_shape, C*B])
-    vol_trf = transform(vol_reshape, loc_reshape,
-                        interp_method=interp_method, indexing=indexing, fill_value=fill_value)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        vol_trf = transform(vol_reshape,
+                            loc_reshape,
+                            interp_method=interp_method,
+                            indexing=indexing,
+                            fill_value=fill_value)
 
     # reshape vol back to [*vol_shape, C, B]
     new_shape = tf.concat([vol_shape_tf[1:], vol_shape_tf[0:1]], 0)
@@ -271,7 +290,7 @@ def compose(transforms, interp_method='linear', shift_center=True, **kwargs):
                       'removed in the future')
 
     if kwargs:
-        raise ValueError(f'unknown argument to compose transform: {kwargs}')
+        raise TypeError(f'unknown argument to compose transform: {kwargs}')
 
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
@@ -604,7 +623,7 @@ def rescale_affine(mat, factor):
     return scaled_matrix
 
 
-def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
+def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
     """
     Transforms an affine matrix to a dense location shift.
 
@@ -617,11 +636,17 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, indexing='ij'):
         matrix: affine matrix of shape (N, N+1).
         shape: ND shape of the target warp.
         shift_center: Shift grid to image center.
-        indexing: Must be 'xy' or 'ij'.
+        indexing: Deprecated in favor of default ij-indexing. Must be 'xy' or 'ij'.
 
     Returns:
         Dense shift (warp) of shape (*shape, N).
     """
+    if 'indexing' in kwargs:
+        warnings.warn('the `indexing` argument to affine_to_dense_shift is deprecated and will '
+                      'be removed in the future in favor of ij-indexing throughout')
+    indexing = kwargs.pop('indexing', 'ij')
+    if kwargs:
+        raise TypeError(f'unknown argument to affine_to_dense_shift: {kwargs}')
 
     if isinstance(shape, (tf.compat.v1.Dimension, tf.TensorShape)):
         shape = shape.as_list()

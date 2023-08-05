@@ -33,7 +33,7 @@ from . import utils
 
 class SpatialTransformer(Layer):
     """
-    ND spatial transformer layer
+    N-dimensional (ND) spatial transformer layer
 
     Applies affine and dense transforms to images. A dense transform gives
     displacements (not absolute locations) at each voxel.
@@ -54,18 +54,17 @@ class SpatialTransformer(Layer):
 
     def __init__(self,
                  interp_method='linear',
-                 indexing='ij',
                  single_transform=False,
                  fill_value=None,
                  shift_center=True,
                  shape=None,
                  **kwargs):
         """
-        Parameters: 
+        Parameters:
             interp_method: Interpolation method. Must be 'linear' or 'nearest'.
-            indexing: Must be 'ij' (matrix) or 'xy' (cartesian). 'xy' indexing will
-                have the first two entries of the flow (along last axis) flipped
-                compared to 'ij' indexing.
+            indexing: Deprecated in favor of default ij-indexing. Must be 'ij' (matrix) or 'xy'
+                (cartesian). 'xy' indexing will have the first two entries of the flow (along last
+                axis) flipped compared to 'ij' indexing.
             single_transform: Use single transform for the entire image batch.
             fill_value: Value to use for points sampled outside the domain.
                 If None, the nearest neighbors will be used.
@@ -75,6 +74,11 @@ class SpatialTransformer(Layer):
                 transforms. Includes only the N spatial dimensions. If None, the
                 shape of the input image will be used.
         """
+        if 'indexing' in kwargs:
+            warnings.warn('the `indexing` argument to SpatialTransformer is deprecated and will '
+                          'be removed in the future in favor of ij-indexing throughout')
+        indexing = kwargs.pop('indexing', 'ij')
+
         self.interp_method = interp_method
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
@@ -143,7 +147,9 @@ class SpatialTransformer(Layer):
             fun = lambda x: utils.affine_to_dense_shift(x, shape,
                                                         shift_center=self.shift_center,
                                                         indexing=self.indexing)
-            trf = tf.map_fn(fun, trf)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore')
+                trf = tf.map_fn(fun, trf)
 
         # prepare location shift
         if self.indexing == 'xy':  # shift the first two dimensions
@@ -177,7 +183,6 @@ class VecInt(Layer):
     """
 
     def __init__(self,
-                 indexing='ij',
                  method='ss',
                  int_steps=7,
                  out_time_pt=1,
@@ -186,11 +191,15 @@ class VecInt(Layer):
                  **kwargs):
         """        
         Parameters:
-            indexing: Must be 'xy' or 'ij'.
+            indexing: Deprecated in favor of default ij-indexing. Must be 'xy' or 'ij'.
             method: Must be any of the methods in neuron.utils.integrate_vec.
             int_steps: Number of integration steps.
             out_time_pt: Time point at which to output if using odeint integration.
         """
+        if 'indexing' in kwargs:
+            warnings.warn('the `indexing` argument to VecInt is deprecated and will '
+                          'be removed in the future in favor of ij-indexing throughout')
+        indexing = kwargs.pop('indexing', 'ij')
 
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
         self.indexing = indexing
