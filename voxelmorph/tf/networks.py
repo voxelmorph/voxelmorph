@@ -213,14 +213,12 @@ class VxmDense(ne.modelio.LoadableModel):
         # warp image with flow field
         y_source = layers.SpatialTransformer(
             interp_method='linear',
-            indexing='ij',
             fill_value=fill_value,
             name='%s_transformer' % name)([source, pos_flow])
 
         if bidir:
             st_inputs = [target, neg_flow]
             y_target = layers.SpatialTransformer(interp_method='linear',
-                                                 indexing='ij',
                                                  fill_value=fill_value,
                                                  name='%s_neg_transformer' % name)(st_inputs)
 
@@ -339,7 +337,6 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
         seg_flow = layers.RescaleTransform(
             1 / seg_resolution, name=f'{name}_seg_resize')(vxm_model.references.pos_flow)
         y_seg_src = layers.SpatialTransformer(interp_method='linear',
-                                              indexing='ij',
                                               name=f'{name}_seg_transformer')([seg_src, seg_flow])
 
         inputs = vxm_model.inputs + [seg_src]
@@ -355,7 +352,6 @@ class VxmDenseSemiSupervisedSeg(ne.modelio.LoadableModel):
             neg_seg_flow = layers.RescaleTransform(
                 1 / seg_resolution, name=f'{name}_seg_neg_resize')(vxm_model.references.neg_flow)
             y_seg_trg = layers.SpatialTransformer(interp_method='linear',
-                                                  indexing='ij',
                                                   name=f'{name}_seg_neg_transformer')(
                                                   [seg_trg, neg_seg_flow])  # nopep8
             outputs.append(y_seg_trg)
@@ -541,7 +537,6 @@ class InstanceDense(ne.modelio.LoadableModel):
 
         # warp image with flow field
         y_source = layers.SpatialTransformer(interp_method='linear',
-                                             indexing='ij',
                                              name='transformer')([source, pos_flow])
 
         # initialize the keras model
