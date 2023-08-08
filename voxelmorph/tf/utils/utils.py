@@ -625,21 +625,21 @@ def rescale_affine(mat, factor):
 
 def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
     """
-    Transforms an affine matrix to a dense location shift.
+    Convert N-dimensional (ND) matrix transforms to dense displacement fields.
 
     Algorithm:
         1. Build and (optionally) shift grid to center of image.
-        2. Apply affine matrix to each index.
+        2. Apply matrices to each index coordinate.
         3. Subtract grid.
 
     Parameters:
-        matrix: affine matrix of shape (N, N+1).
-        shape: ND shape of the target warp.
+        matrix: Affine matrix of shape (..., N, N + 1). Can have any batch dimensions.
+        shape: ND shape of the output space.
         shift_center: Shift grid to image center.
         indexing: Deprecated in favor of default ij-indexing. Must be 'xy' or 'ij'.
 
     Returns:
-        Dense shift (warp) of shape (*shape, N).
+        Dense shift (warp) of shape (..., *shape, N).
     """
     if 'indexing' in kwargs:
         warnings.warn('the `indexing` argument to affine_to_dense_shift is deprecated and will '
@@ -661,26 +661,21 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
         raise ValueError(f'Affine ({matdim}D) does not match target shape ({ndims}D).')
     validate_affine_shape(matrix.shape)
 
-    # list of volume ndgrid
-    # N-long list, each entry of shape
+    # coordinate grid
     mesh = ne.utils.volshape_to_meshgrid(shape, indexing=indexing)
-    mesh = [f if f.dtype == matrix.dtype else tf.cast(f, matrix.dtype) for f in mesh]
-
+    mesh = [tf.cast(m, matrix.dtype) for m in mesh]
+    mesh = [ne.utils.flatten(m) for m in mesh]
     if shift_center:
-        mesh = [mesh[f] - (shape[f] - 1) / 2 for f in range(len(shape))]
+        mesh = [m - 0.5 * (s - 1) for m, s in zip(mesh, shape)]
+    mesh = tf.stack(mesh)  # N x nb_voxels
 
-    # add an all-ones entry and transform into a large matrix
-    flat_mesh = [ne.utils.flatten(f) for f in mesh]
-    flat_mesh.append(tf.ones(flat_mesh[0].shape, dtype=matrix.dtype))
-    mesh_matrix = tf.transpose(tf.stack(flat_mesh, axis=1))  # 4 x nb_voxels
+    # compute locations, subtract grid to obtain shift
+    out = matrix[..., :-1] @ mesh + matrix[..., -1:]  # ... x N x nb_voxels
+    out = tf.linalg.matrix_transpose(out - mesh)  # ... x nb_voxels x N
 
-    # compute locations
-    loc_matrix = tf.matmul(matrix, mesh_matrix)  # N+1 x nb_voxels
-    loc_matrix = tf.transpose(loc_matrix[:ndims, :])  # nb_voxels x N
-    loc = tf.reshape(loc_matrix, list(shape) + [ndims])  # *shape x N
-
-    # get shifts and return
-    return loc - tf.stack(mesh, axis=ndims)
+    # restore shape
+    shape = tf.concat((tf.shape(matrix)[:-2], (*shape, ndims)), axis=0)
+    return tf.reshape(out, shape)  # ... x in_shape x N
 
 
 def angles_to_rotation_matrix(ang, deg=True, ndims=3):
