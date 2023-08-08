@@ -539,14 +539,12 @@ class AffineToDenseShift(Layer):
     def build(self, input_shape):
         utils.validate_affine_shape(input_shape)
 
-    def call(self, matrix):
+    def call(self, mat):
         """
         Parameters:
-            matrix: Affine matrix of shape [B, N, N+1].
+            mat: Affine matrices of shape (B, N, N+1).
         """
-        single = lambda mat: utils.affine_to_dense_shift(mat, self.shape,
-                                                         shift_center=self.shift_center)
-        return tf.map_fn(single, matrix)
+        return utils.affine_to_dense_shift(mat, self.shape, shift_center=self.shift_center)
 
 
 class DrawAffineParams(Layer):
