@@ -102,7 +102,7 @@ def transform(vol, loc_shift, interp_method='linear', fill_value=None,
     shifts in the sense that at location x we now have the data from x + dx, so
     we moved the data.
 
-    Args:
+    Parameters:
         vol: tensor or array-like structure  of size vol_shape or
             (*vol_shape, C), where C is the number of channels.
         loc_shift: Affine transformation matrix of shape (N, N+1) or a shift
@@ -115,10 +115,10 @@ def transform(vol, loc_shift, interp_method='linear', fill_value=None,
         fill_value: Value to use for points sampled outside the domain. If
             None, the nearest neighbors will be used.
         shift_center: Shift grid to image center when converting affine
-            transforms to dense transforms.
+            transforms to dense transforms. Assumes the input and output spaces are identical.
         shape: ND output shape used when converting affine transforms to dense
             transforms. Includes only the N spatial dimensions. If None, the
-            shape of the input image will be used.
+            shape of the input image will be used. Incompatible with `shift_center=True`.
 
     Returns:
         Tensor whose voxel values are the values of the input tensor
@@ -133,6 +133,9 @@ def transform(vol, loc_shift, interp_method='linear', fill_value=None,
     indexing = kwargs.pop('indexing', 'ij')
     if kwargs:
         raise TypeError(f'unknown argument to transform: {kwargs}')
+
+    if shape is not None and shift_center:
+        raise ValueError('`shape` option incompatible with `shift_center=True`')
 
     # convert data type if needed
     ftype = tf.float32
