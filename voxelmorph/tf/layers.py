@@ -69,15 +69,19 @@ class SpatialTransformer(Layer):
             fill_value: Value to use for points sampled outside the domain.
                 If None, the nearest neighbors will be used.
             shift_center: Shift grid to image center when converting affine
-                transforms to dense transforms.
+                transforms to dense transforms. Assumes the input and output spaces are identical.
             shape: ND output shape used when converting affine transforms to dense
                 transforms. Includes only the N spatial dimensions. If None, the
-                shape of the input image will be used.
+                shape of the input image will be used. Incompatible with `shift_center=True`.
         """
         if 'indexing' in kwargs:
             warnings.warn('the `indexing` argument to SpatialTransformer is deprecated and will '
                           'be removed in the future in favor of ij-indexing throughout')
         indexing = kwargs.pop('indexing', 'ij')
+
+        # TODO: remove this check, let utils.transform deal with matrices when removing indexing
+        if shape is not None and shift_center:
+            raise ValueError('`shape` option incompatible with `shift_center=True`')
 
         self.interp_method = interp_method
         assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
@@ -141,6 +145,7 @@ class SpatialTransformer(Layer):
         vol = K.reshape(inputs[0], (-1, *self.imshape))
         trf = K.reshape(inputs[1], (-1, *self.trfshape))
 
+        # TODO: remove this block and let utils.transform deal with matrices when removing indexing
         # convert affine matrix to warp field
         if self.is_affine:
             shape = vol.shape[1:-1] if self.shape is None else self.shape
