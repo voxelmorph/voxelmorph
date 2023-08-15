@@ -298,31 +298,31 @@ def compose(transforms, interp_method='linear', shift_center=True, **kwargs):
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
-    def ensure_dense(trf, shape):
-        if is_affine_shape(trf.shape):
-            return affine_to_dense_shift(trf, shape, shift_center=shift_center)
-        return trf
-
     def ensure_square_affine(matrix):
         if matrix.shape[-1] != matrix.shape[-2]:
             return make_square_affine(matrix)
         return matrix
 
     curr = transforms[-1]
-    for nxt in reversed(transforms[:-1]):
-        # check if either transform is dense
-        found_dense = next((t for t in (nxt, curr) if not is_affine_shape(t.shape)), None)
-        if found_dense is not None:
-            # compose dense warps
-            shape = found_dense.shape[:-1]
-            nxt = ensure_dense(nxt, shape)
-            curr = ensure_dense(curr, shape)
-            curr = curr + transform(nxt, curr, interp_method=interp_method)
+    for next in reversed(transforms[:-1]):
+        # Dense warp on left: interpolate.
+        if not is_affine_shape(next.shape):
+            if is_affine_shape(curr.shape):
+                curr = affine_to_dense_shift(curr, shape=next.shape[:-1], shift_center=shift_center)
+            curr = curr + transform(next, curr, interp_method=interp_method)
+
+        # Matrix on left, dense warp on right: matrix-vector product.
+        elif not is_affine_shape(curr.shape):
+            curr = affine_to_dense_shift(next,
+                                         shape=curr.shape[:-1],
+                                         shift_center=shift_center,
+                                         warp_right=curr)
+
+        # No dense warp: matrix product.
         else:
-            # compose affines
-            nxt = ensure_square_affine(nxt)
+            next = ensure_square_affine(next)
             curr = ensure_square_affine(curr)
-            curr = tf.linalg.matmul(nxt, curr)[:-1]
+            curr = tf.linalg.matmul(next, curr)[:-1]
 
     return curr
 
@@ -626,7 +626,7 @@ def rescale_affine(mat, factor):
     return scaled_matrix
 
 
-def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
+def affine_to_dense_shift(matrix, shape, shift_center=True, warp_right=None, **kwargs):
     """
     Convert N-dimensional (ND) matrix transforms to dense displacement fields.
 
@@ -639,6 +639,8 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
         matrix: Affine matrix of shape (..., N, N + 1). Can have any batch dimensions.
         shape: ND shape of the output space.
         shift_center: Shift grid to image center.
+        warp_right: Right-compose the matrix transform with a displacement field of shape
+            (..., *shape, N), with batch dimensions broadcastable to those of `matrix`.
         indexing: Deprecated in favor of default ij-indexing. Must be 'xy' or 'ij'.
 
     Returns:
@@ -665,15 +667,23 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, **kwargs):
     validate_affine_shape(matrix.shape)
 
     # coordinate grid
-    mesh = ne.utils.volshape_to_meshgrid(shape, indexing=indexing)
-    mesh = [tf.cast(m, matrix.dtype) for m in mesh]
-    mesh = [ne.utils.flatten(m) for m in mesh]
+    mesh = (tf.range(s, dtype=matrix.dtype) for s in shape)
     if shift_center:
-        mesh = [m - 0.5 * (s - 1) for m, s in zip(mesh, shape)]
+        mesh = (m - 0.5 * (s - 1) for m, s in zip(mesh, shape))
+    mesh = [tf.reshape(m, shape=(-1,)) for m in tf.meshgrid(*mesh, indexing=indexing)]
     mesh = tf.stack(mesh)  # N x nb_voxels
+    out = mesh
+
+    # optionally right-compose with warp field
+    if warp_right is not None:
+        if not tf.is_tensor(warp_right) or warp_right.dtype != matrix.dtype:
+            warp_right = tf.cast(warp_right, matrix.dtype)
+        flat_shape = tf.concat((tf.shape(warp_right)[:-1 - ndims], (-1, ndims)), axis=0)
+        warp_right = tf.reshape(warp_right, flat_shape)  # ... x nb_voxels x N
+        out += tf.linalg.matrix_transpose(warp_right)  # ... x N x nb_voxels
 
     # compute locations, subtract grid to obtain shift
-    out = matrix[..., :-1] @ mesh + matrix[..., -1:]  # ... x N x nb_voxels
+    out = matrix[..., :-1] @ out + matrix[..., -1:]  # ... x N x nb_voxels
     out = tf.linalg.matrix_transpose(out - mesh)  # ... x nb_voxels x N
 
     # restore shape
