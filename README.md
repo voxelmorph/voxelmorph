@@ -1,16 +1,16 @@
-# voxelmorph: Learning-Based Image Registration  
+# VoxelMorph: learning-based image registration
 
-**voxelmorph** is a general purpose library for learning-based tools for alignment/registration, and more generally modelling with deformations.
+**VoxelMorph** is a general purpose library for learning-based tools for alignment/registration, and more generally modelling with deformations.
 
 # Tutorial
 
-We have several voxelmorph tutorials
- - the main [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) explains VoxelMorph and Learning-based Registration. 
- - a [tutorial on training vxm](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) on [OASIS data](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md), which we processed and released for free for HyperMorph.
- 
+We have several VoxelMorph tutorials:
+  - the main [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) explains VoxelMorph and learning-based registration
+  - a [deformable SynthMorph tutorial](https://colab.research.google.com/drive/1GjpjkhKGrg5W-cvZVObBo3IoIUwaPZBU?usp=sharing) showing how to train a registration model without data
+  - a [tutorial on training VoxelMorph](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) on [OASIS data](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md), which we processed and released for free for HyperMorph
   - an [additional small tutorial](https://colab.research.google.com/drive/1V0CutSIfmtgDJg1XIkEnGteJuw0u7qT-#scrollTo=h1KXYz-Nauwn) on warping annotations together with images
-  - another tutorial on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph.
-  - visualize [warp](https://colab.research.google.com/drive/1F8f1imh5WfyBv-crllfeJBFY16-KHl9c?usp=sharing) as warped grid.
+  - another tutorial on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph
+  - visualize [warp](https://colab.research.google.com/drive/1F8f1imh5WfyBv-crllfeJBFY16-KHl9c?usp=sharing) as warped grid
 
 
 # Instructions
@@ -75,28 +75,35 @@ For our data, we found `image_sigma=0.01` and `prior_lambda=25` to work best.
 In the original MICCAI code, the parameters were applied after the scaling of the velocity field. With the newest code, this has been "fixed", with different default parameters reflecting the change. We recommend running the updated code. However, if you'd like to run the very original MICCAI2018 mode, please use `xy` indexing and `use_miccai_int` network option, with MICCAI2018 parameters.
 
 
-## Spatial Transforms and Integration
+## Spatial transforms and integration
 
 - The spatial transform code, found at `voxelmorph.layers.SpatialTransformer`, accepts N-dimensional affine and dense transforms, including linear and nearest neighbor interpolation options. Note that original development of VoxelMorph used `xy` indexing, whereas we are now emphasizing `ij` indexing.
 
 - For the MICCAI2018 version, we integrate the velocity field using `voxelmorph.layers.VecInt`. By default we integrate using scaling and squaring, which we found efficient.
 
 
-# VoxelMorph Papers
+# VoxelMorph papers
 
-If you use voxelmorph or some part of the code, please cite (see [bibtex](citations.bib)):
+If you use VoxelMorph or some part of the code, please cite (see [bibtex](citations.bib)):
 
   * HyperMorph, avoiding the need to tune registration hyperparameters:   
 
-    **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
-    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
-    IPMI: Information Processing in Medical Imaging. 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
+    **Learning the Effect of Registration Hyperparameters with HyperMorph**  
+    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    MELBA: Machine Learning for Biomedical Imaging. 2022. [eprint arXiv:2203.16680](https://arxiv.org/abs/2203.16680)
 
+    **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
+    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    IPMI: Information Processing in Medical Imaging. 2021. [eprint arXiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
   * [SynthMorph](https://synthmorph.voxelmorph.net), avoiding the need to have data at training (!):  
 
+    **Anatomy-specific acquisition-agnostic affine registration learned from fictitious images.**  
+    [Malte Hoffmann](https://malte.mgh.harvard.edu), Andrew Hoopes, Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    SPIE Medical Imaging: Image Processing. 2023. [eprint arXiv:2301.11329](https://arxiv.org/abs/2301.11329)
+
     **SynthMorph: learning contrast-invariant registration without acquired images.**  
-    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    [Malte Hoffmann](https://malte.mgh.harvard.edu), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
     IEEE TMI: Transactions on Medical Imaging. 2022. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
@@ -127,19 +134,17 @@ IEEE TMI: Transactions on Medical Imaging. 2019.
 CVPR 2018. [eprint arXiv:1802.02604](https://arxiv.org/abs/1802.02604)
 
 
-# Notes:
+# Notes
 - **keywords**: machine learning, convolutional neural networks, alignment, mapping, registration  
-- The `master` branch is still in testing as we roll out a major refactoring of the library.     
-- If you'd like to run code from VoxelMorph publications, please use the `legacy` branch.  
 - **data in papers**: 
 In our initial papers, we used publicly available data, but unfortunately we cannot redistribute it (due to the constraints of those datasets). We do a certain amount of pre-processing for the brain images we work with, to eliminate sources of variation and be able to compare algorithms on a level playing field. In particular, we perform FreeSurfer `recon-all` steps up to skull stripping and affine normalization to Talairach space, and crop the images via `((48, 48), (31, 33), (3, 29))`. 
 
 We encourage users to download and process their own data. See [a list of medical imaging datasets here](https://github.com/adalca/medical-datasets). Note that you likely do not need to perform all of the preprocessing steps, and indeed VoxelMorph has been used in other work with other data.
 
 
-# Creation of Deformable Templates
+# Creation of deformable templates
 
-To experiment with this method, please use `train_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as voxelmorph (please note that these files are less polished than the rest of the voxelmorph library).
+To experiment with this method, please use `train_template.py` for unconditional templates and `train_cond_template.py` for conditional templates, which use the same conventions as VoxelMorph (please note that these files are less polished than the rest of the VoxelMorph library).
 
 We've also provided an unconditional atlas in `data/generated_uncond_atlas.npz.npy`. 
 
@@ -163,8 +168,9 @@ mri_robust_register --mov in.nii.gz --dst out.nii.gz --lta transform.lta --satit
 
 where we replace `--satit --iscale` with `--cost NMI` for registration across MRI contrasts.
 
-# Data:
-While we cannot release most of the data used in the voxelmorph papers as they prohibit redistribution, we thorough processed and [re-released OASIS1](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md) while developing [hypermorph](http://hypermorph.voxelmorph.net/). We now include a quick [vxm tutorial](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) to train voxelmorph on neurite-oasis data.
 
-# Contact:
-For any problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=voxelmorph) for code problems/questions or [start a discussion](https://github.com/voxelmorph/voxelmorph/discussions) for general registration/voxelmorph question/discussion.  
+# Data
+While we cannot release most of the data used in the VoxelMorph papers as they prohibit redistribution, we thorough processed and [re-released OASIS1](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md) while developing [HyperMorph](http://hypermorph.voxelmorph.net/). We now include a quick [VoxelMorph tutorial](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) to train VoxelMorph on neurite-oasis data.
+
+# Contact
+For any code-related problems or questions please [open an issue](https://github.com/voxelmorph/voxelmorph/issues/new?labels=voxelmorph) or [start a discussion](https://github.com/voxelmorph/voxelmorph/discussions) of general registration/VoxelMorph topics.
