@@ -4,13 +4,13 @@
 
 # Tutorial
 
-We have several voxelmorph tutorials
- - the main [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) explains VoxelMorph and Learning-based Registration. 
- - a [tutorial on training vxm](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) on [OASIS data](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md), which we processed and released for free for HyperMorph.
- 
+We have several VoxelMorph tutorials:
+  - the main [VoxelMorph tutorial](http://tutorial.voxelmorph.net/) explains VoxelMorph and learning-based registration
+  - a [deformable SynthMorph tutorial](https://colab.research.google.com/drive/1GjpjkhKGrg5W-cvZVObBo3IoIUwaPZBU?usp=sharing) showing how to train a registration model without data
+  - a [tutorial on training VoxelMorph](https://colab.research.google.com/drive/1ZefmWXBupRNsnIbBbGquhVDsk-7R7L1S?usp=sharing) on [OASIS data](https://github.com/adalca/medical-datasets/blob/master/neurite-oasis.md), which we processed and released for free for HyperMorph
   - an [additional small tutorial](https://colab.research.google.com/drive/1V0CutSIfmtgDJg1XIkEnGteJuw0u7qT-#scrollTo=h1KXYz-Nauwn) on warping annotations together with images
-  - another tutorial on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph.
-  - visualize [warp](https://colab.research.google.com/drive/1F8f1imh5WfyBv-crllfeJBFY16-KHl9c?usp=sharing) as warped grid.
+  - another tutorial on [template (atlas) construction](https://colab.research.google.com/drive/1SkQbrWTQHpQFrG4J2WoBgGZC9yAzUas2?usp=sharing) with VoxelMorph
+  - visualize [warp](https://colab.research.google.com/drive/1F8f1imh5WfyBv-crllfeJBFY16-KHl9c?usp=sharing) as warped grid
 
 
 # Instructions
@@ -88,15 +88,22 @@ If you use voxelmorph or some part of the code, please cite (see [bibtex](citati
 
   * HyperMorph, avoiding the need to tune registration hyperparameters:   
 
-    **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
-    Andrew Hoopes, [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
-    IPMI: Information Processing in Medical Imaging. 2021. [eprint arxiv:2101.01035](https://arxiv.org/abs/2101.01035)
+    **Learning the Effect of Registration Hyperparameters with HyperMorph**  
+    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    MELBA: Machine Learning for Biomedical Imaging. 2022. [eprint arXiv:2203.16680](https://arxiv.org/abs/2203.16680)
 
+    **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
+    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    IPMI: Information Processing in Medical Imaging. 2021. [eprint arXiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
   * [SynthMorph](https://synthmorph.voxelmorph.net), avoiding the need to have data at training (!):  
 
+    **Anatomy-specific acquisition-agnostic affine registration learned from fictitious images.**  
+    [Malte Hoffmann](https://malte.mgh.harvard.edu), Andrew Hoopes, Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    SPIE Medical Imaging: Image Processing. 2023. [eprint arXiv:2301.11329](https://arxiv.org/abs/2301.11329)
+
     **SynthMorph: learning contrast-invariant registration without acquired images.**  
-    [Malte Hoffmann](https://nmr.mgh.harvard.edu/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    [Malte Hoffmann](https://malte.mgh.harvard.edu), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
     IEEE TMI: Transactions on Medical Imaging. 2022. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
