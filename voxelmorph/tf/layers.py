@@ -533,7 +533,6 @@ class AffineToDenseShift(Layer):
         config = super().get_config().copy()
         config.update({
             'shape': self.shape,
-            'ndims': self.ndims,
             'shift_center': self.shift_center,
         })
         return config
