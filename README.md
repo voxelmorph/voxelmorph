@@ -89,21 +89,21 @@ If you use VoxelMorph or some part of the code, please cite (see [bibtex](citati
   * HyperMorph, avoiding the need to tune registration hyperparameters:   
 
     **Learning the Effect of Registration Hyperparameters with HyperMorph**  
-    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    Andrew Hoopes, [Malte Hoffmann](https://martinos.org/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
     MELBA: Machine Learning for Biomedical Imaging. 2022. [eprint arXiv:2203.16680](https://arxiv.org/abs/2203.16680)
 
     **HyperMorph: Amortized Hyperparameter Learning for Image Registration.**  
-    Andrew Hoopes, [Malte Hoffmann](https://malte.mgh.harvard.edu), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
+    Andrew Hoopes, [Malte Hoffmann](https://martinos.org/malte), Bruce Fischl, [John Guttag](https://people.csail.mit.edu/guttag/), [Adrian V. Dalca](http://adalca.mit.edu)  
     IPMI: Information Processing in Medical Imaging. 2021. [eprint arXiv:2101.01035](https://arxiv.org/abs/2101.01035)
 
   * [SynthMorph](https://synthmorph.voxelmorph.net), avoiding the need to have data at training (!):  
 
     **Anatomy-specific acquisition-agnostic affine registration learned from fictitious images.**  
-    [Malte Hoffmann](https://malte.mgh.harvard.edu), Andrew Hoopes, Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    [Malte Hoffmann](https://martinos.org/malte), Andrew Hoopes, Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
     SPIE Medical Imaging: Image Processing. 2023. [eprint arXiv:2301.11329](https://arxiv.org/abs/2301.11329)
 
     **SynthMorph: learning contrast-invariant registration without acquired images.**  
-    [Malte Hoffmann](https://malte.mgh.harvard.edu), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
+    [Malte Hoffmann](https://martinos.org/malte), Benjamin Billot, [Juan Eugenio Iglesias](https://scholar.harvard.edu/iglesias), Bruce Fischl, [Adrian V. Dalca](http://adalca.mit.edu)  
     IEEE TMI: Transactions on Medical Imaging. 2022. [eprint arXiv:2004.10282](https://arxiv.org/abs/2004.10282)
 
   * For the atlas formation model:  
