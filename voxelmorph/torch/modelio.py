@@ -11,19 +11,19 @@ def store_config_args(func):
     model loading - see LoadableModel.
     """
 
-    attrs, varargs, varkw, defaults = inspect.getargspec(func)
+    argspec = inspect.getfullargspec(func)
 
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         self.config = {}
 
         # first save the default values
-        if defaults:
-            for attr, val in zip(reversed(attrs), reversed(defaults)):
+        if argspec.defaults:
+            for attr, val in zip(reversed(argspec.args), reversed(argspec.defaults)):
                 self.config[attr] = val
 
         # next handle positional args
-        for attr, val in zip(attrs[1:], args):
+        for attr, val in zip(argspec.args[1:], args):
             self.config[attr] = val
 
         # lastly handle keyword args
