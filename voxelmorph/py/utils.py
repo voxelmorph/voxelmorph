@@ -1,6 +1,7 @@
 # internal python imports
 import os
 import csv
+import pathlib
 import functools
 
 # third party imports
@@ -88,6 +89,8 @@ def load_volfile(
         resize: Volume resize factor. Default is 1
         ret_affine: Additionally returns the affine transform (or None if it doesn't exist).
     """
+    if isinstance(filename, pathlib.PurePath):
+        filename = str(filename)
     if isinstance(filename, str) and not os.path.isfile(filename):
         raise ValueError("'%s' is not a file." % filename)
 
@@ -135,6 +138,9 @@ def save_volfile(array, filename, affine=None):
         filename: Filename to save to.
         affine: Affine vox-to-ras matrix. Saves LIA matrix if None (default).
     """
+    if isinstance(filename, pathlib.PurePath):
+        filename = str(filename)
+
     if filename.endswith(('.nii', '.nii.gz')):
         import nibabel as nib
         if affine is None and array.ndim >= 3:
@@ -152,30 +158,32 @@ def save_volfile(array, filename, affine=None):
         raise ValueError('unknown filetype for %s' % filename)
 
 
-def load_labels(arg):
+def load_labels(arg, ext=('.nii.gz', '.nii', '.mgz', '.npy', '.npz')):
     """
-    Load label maps and return a list of unique labels as well as all maps.
+    Load label maps, return a list of unique labels and the label maps. The label maps have to be
+    of an integer type and identical shape.
 
     Parameters:
         arg: Path to folder containing label maps, string for globbing, or a list of these.
+        ext: List or tuple of file extensions.
 
     Returns:
         np.array: List of unique labels.
-        list: List of label maps, each as a np.array.
+        list: List of label maps, each as a NumPy array.
+
     """
     if not isinstance(arg, (tuple, list)):
         arg = [arg]
 
     # List files.
     import glob
-    ext = ('.nii.gz', '.nii', '.mgz', '.npy', '.npz')
-    files = [os.path.join(f, '*') if os.path.isdir(f) else f for f in arg]
+    files = [os.path.join(f, '*') if os.path.isdir(f) else f for f in map(str, arg)]
     files = sum((glob.glob(f) for f in files), [])
     files = [f for f in files if f.endswith(ext)]
-
-    # Load labels.
     if len(files) == 0:
         raise ValueError(f'no labels found for argument "{files}"')
+
+    # Load labels.
     label_maps = []
     shape = None
     for f in files:
