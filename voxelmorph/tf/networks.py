@@ -1236,6 +1236,15 @@ class HyperVxmDense(ne.modelio.LoadableModel):
 ###############################################################################
 
 class VxmAffineFeatureDetector(tf.keras.Model):
+    """
+    SynthMorph network for symmetric affine or rigid registration of two images.
+
+    If you find this work useful, please cite:
+        Anatomy-specific acquisition-agnostic affine registration learned from fictitious images
+        M Hoffmann, A Hoopes, B Fischl*, AV Dalca* (*equal contribution)
+        SPIE Medical Imaging: Image Processing, 12464, p 1246402, 2023
+        https://doi.org/10.1117/12.265325
+    """
 
     def __init__(self,
                  in_shape=None,
@@ -1257,8 +1266,6 @@ class VxmAffineFeatureDetector(tf.keras.Model):
                  return_moved=False,
                  return_feat=False):
         """
-        Symmetric affine-registration network using single-image feature detection.
-
         Internally, the model computes transforms in a centered frame at full resolution. However,
         matrix transforms returned with `make_dense=False` operate on zero-based indices to
         facilitate composition, in particular when changing resolution. Thus, any subsequent
@@ -1298,16 +1305,6 @@ class VxmAffineFeatureDetector(tf.keras.Model):
                 output images at half resolution. You can change this option after training.
             return_moved: Append the transformed images to the model outputs.
             return_feat: Append the output feature maps to the model outputs.
-
-        Returns:
-            Symmetric affine-registration model returning a transform from the first to the second
-            input image. With `bidir=True`, the model will also return the inverse.
-
-        If you find this work useful, please cite:
-            Anatomy-specific acquisition-agnostic affine registration learned from fictitious images
-            M Hoffmann, A Hoopes, B Fischl*, AV Dalca* (*equal contribution)
-            SPIE Medical Imaging: Image Processing, 12464, p 1246402, 2023
-            https://doi.org/10.1117/12.265325
 
         """
         # Original inputs.
