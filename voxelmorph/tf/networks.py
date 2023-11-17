@@ -1244,6 +1244,7 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         M Hoffmann, A Hoopes, B Fischl*, AV Dalca* (*equal contribution)
         SPIE Medical Imaging: Image Processing, 12464, p 1246402, 2023
         https://doi.org/10.1117/12.265325
+
     """
 
     def __init__(self,
@@ -1351,8 +1352,8 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         # Detector inputs.
         if half_res:
             prop = dict(fill_value=0, shape=shape_half, shift_center=False)
-            inp_1 = vxm.layers.SpatialTransformer(**prop)((inp_1, scale(2)))
-            inp_2 = vxm.layers.SpatialTransformer(**prop)((inp_2, scale(2)))
+            inp_1 = layers.SpatialTransformer(**prop)((inp_1, scale(2)))
+            inp_2 = layers.SpatialTransformer(**prop)((inp_2, scale(2)))
 
         # Feature detector: encoder.
         inp = tf.keras.Input(shape=(*inp_1.shape[1:-1], num_chan))
@@ -1406,47 +1407,47 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         weights = pow_1 * pow_2
 
         # Least-squares fit and average, since the fit is not symmetric.
-        aff_1 = vxm.utils.fit_affine(cen_1, cen_2, weights=weights if weighted else None)
-        aff_2 = vxm.utils.fit_affine(cen_2, cen_1, weights=weights if weighted else None)
-        aff_1 = 0.5 * (vxm.utils.invert_affine(aff_2) + aff_1)
+        aff_1 = utils.fit_affine(cen_1, cen_2, weights=weights if weighted else None)
+        aff_2 = utils.fit_affine(cen_2, cen_1, weights=weights if weighted else None)
+        aff_1 = 0.5 * (utils.invert_affine(aff_2) + aff_1)
 
         # Remove scaling and shear.
         if rigid:
-            aff_1 = vxm.utils.affine_matrix_to_params(aff_1)
+            aff_1 = utils.affine_matrix_to_params(aff_1)
             aff_1 = aff_1[:, :num_dim * (num_dim + 1) // 2]
-            aff_1 = vxm.layers.ParamsToAffineMatrix(ndims=num_dim)(aff_1)
+            aff_1 = layers.ParamsToAffineMatrix(ndims=num_dim)(aff_1)
 
         # Mid-space. Before scaling at either side.
-        aff_2 = vxm.utils.invert_affine(aff_1)
+        aff_2 = utils.invert_affine(aff_1)
         if return_trans_to_mid_space:
-            aff_1 = vxm.utils.make_square_affine(aff_1)
+            aff_1 = utils.make_square_affine(aff_1)
             aff_1 = tf.linalg.sqrtm(aff_1)[:, :-1, :]
 
-            aff_2 = vxm.utils.make_square_affine(aff_2)
+            aff_2 = utils.make_square_affine(aff_2)
             aff_2 = tf.linalg.sqrtm(aff_2)[:, :-1, :]
 
         # Affine transform operating in index space, for full-resolution inputs.
         prop = dict(shift_center=False)
-        aff_1 = vxm.layers.ComposeTransform(**prop)((un_cen(shape_full), aff_1, cen(shape_full)))
-        aff_2 = vxm.layers.ComposeTransform(**prop)((un_cen(shape_full), aff_2, cen(shape_full)))
-        out = (aff_1, aff_2)
+        aff_1 = layers.ComposeTransform(**prop)((un_cen(shape_full), aff_1, cen(shape_full)))
+        aff_2 = layers.ComposeTransform(**prop)((un_cen(shape_full), aff_2, cen(shape_full)))
+        out = [aff_1, aff_2]
 
         if return_trans_to_half_res:
             out = [(x, scale(2)) for x in out]
-            out = [vxm.layers.ComposeTransform(shift_center=False)(x) for x in out]
+            out = [layers.ComposeTransform(shift_center=False)(x) for x in out]
 
         if tf.keras.mixed_precision.global_policy().compute_dtype == 'float16':
             out = [tf.cast(x, tf.float16) for x in out]
 
         shape_out = shape_half if return_trans_to_half_res else shape_full
         if make_dense:
-            out = [vxm.layers.AffineToDenseShift(shape_out, shift_center=False)(x) for x in out]
+            out = [layers.AffineToDenseShift(shape_out, shift_center=False)(x) for x in out]
 
         # Additional outputs.
         if return_moved:
             prop = dict(shift_center=False, fill_value=0, shape=shape_out)
-            mov_1 = vxm.layers.SpatialTransformer(**prop)((input_model.inputs[0], aff_1))
-            mov_2 = vxm.layers.SpatialTransformer(**prop)((input_model.inputs[1], aff_2))
+            mov_1 = layers.SpatialTransformer(**prop)((input_model.inputs[0], aff_1))
+            mov_2 = layers.SpatialTransformer(**prop)((input_model.inputs[1], aff_2))
             out.extend([mov_1, mov_2])
 
         if return_feat:
