@@ -1459,6 +1459,219 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         super().__init__(inputs=input_model.inputs, outputs=out if len(out) > 1 else out[0])
 
 
+class HyperVxmJoint(tf.keras.Model):
+    """
+    SynthMorph network for symmetric joint affine-deformable registration of two images.
+
+    To save memory, the registration runs at half resolution. We downsample full-resolution inputs
+    within this model to avoid resampling twice. The returned transforms apply to full-resolution
+    images. For efficient training, pass `return_trans_to_half_res=True` to return transforms from
+    full-resolution inputs to half-resolution outputs. Careful: this requires setting the adequate
+    output `shape` for `SpatialTransformer` when applying transforms. Concatenating matrices is
+    cheap but requires transforms operating on zero-based indices when changing resolution:
+    `shift_center=True` would un-shift by an incorrect offset - set it to `False` or suffer.
+
+    If you find this work useful, please cite:
+        Anatomy-aware and acquisition-agnostic joint registration with SynthMorph
+        M Hoffmann, A Hoopes, DN Greve, B Fischl*, AV Dalca* (*equal contribution)
+        arXiv preprint arXiv:2301.11329
+        https://doi.org/10.48550/arXiv.2301.11329
+
+    """
+
+    def __init__(self,
+                 in_shape=None,
+                 input_model=None,
+                 num_chan=1,
+                 hyp_num=1,
+                 hyp_units=[32] * 4,
+                 enc_nf=[256] * 4,
+                 dec_nf=[256] * 4,
+                 add_nf=[256] * 4,
+                 per_level=1,
+                 int_steps=7,
+                 bidir=False,
+                 skip_affine=False,
+                 return_trans_to_half_res=False,
+                 return_tot=True,
+                 return_def=False,
+                 return_aff=False,
+                 return_svf=False,
+                 return_moved=False,
+                 **kwargs):
+        """
+        Parameters:
+            in_shape: Spatial dimensions of the input images, as an iterable.
+            input_model: Model whose outputs will be used as data inputs, and whose inputs will be
+                used as inputs to the returned model, as an alternative to specifying `in_shape`.
+            num_chan: Number of input-image channels.
+            hyp_num: Number of hyperparameter inputs for predicting the weights of the deformable
+                registration model with a hypernetwork.
+            hyp_units: Fully-connected units for each layer of the hypernetwork, as an iterable.
+            enc_nf: Number of deformable convolutional encoder filters at each level, as an
+                iterable. The model will downsample by a factor of 2 after each convolution.
+            dec_nf: Number of deformable convolutional decoder filters at each level, as an
+                iterable. The model will upsample by a factor of 2 after each convolution.
+                Should have the same length as `enc_nf`.
+            add_nf: Number of additional deformable convolutional filters applied at the end, as an
+                iterable. The model will maintain the resolution after these convolutions.
+            per_level: Number of encoding and decoding convolution repeats.
+            int_steps: Number of integration steps used to compute the displacement field from the
+                SVF. If zero, the model directly predicts the displacement field instead of an SVF.
+            bidir: In addition to the transform from image 1 to image 2, also return the inverse.
+                The transforms apply to full-resolution images but may end at half resolution,
+                depending on `return_trans_to_half_res`.
+            skip_affine: Skip affine registration and build a model comparable to `HyperVxmDense`.
+            return_trans_to_half_res: Return transforms from input images at full resolution to
+                output images at half resolution. You can change this option after training. This
+                option also affects the shape of the moved images, if returned.
+            return_tot: Append the composed affine-deformable transform to the model outputs.
+            return_def: Append the deformable transforms to the model outputs. Careful: these warps
+                will apply to half-resolution images if passing `return_trans_to_half_res=True`.
+            return_aff: Append the affine transforms to the model outputs.
+            return_svf: Append the stationary velocity fields to the model outputs.
+            return_moved: Append the transformed images to the model outputs.
+            kwargs: Keyword arguments to the affine network, prepended with 'aff.'. See
+                `VxmAffineFeatureDetector`.
+
+        """
+        # Inputs.
+        if input_model is None:
+            hyp_inp = tf.keras.Input(shape=[hyp_num])
+            full_1 = tf.keras.Input(shape=(*in_shape, num_chan))
+            full_2 = tf.keras.Input(shape=(*in_shape, num_chan))
+            input_model = tf.keras.Model(*[(hyp_inp, full_1, full_2)] * 2)
+        hyp_inp, full_1, full_2 = input_model.outputs
+
+        # Dimensions.
+        shape_full = np.asarray(full_1.shape[1:-1])
+        shape_half = shape_full // 2
+        num_dim = len(shape_full)
+
+        # Affine network.
+        keys = [k for k in kwargs if k.startswith('aff.')]
+        arg_aff = {k[len('aff.'):]: kwargs.pop(k) for k in keys}
+        arg_aff.update(in_shape=shape_half, make_dense=False, half_res=False, bidir=True)
+        model_aff = VxmAffineFeatureDetector(**arg_aff)
+        assert not kwargs, f'unknown arguments {kwargs}'
+
+        # Static transforms. Function names refer to effect on coordinates.
+        def tensor(x):
+            dtype = tf.keras.mixed_precision.global_policy().compute_dtype
+            x = tf.constant(x[None, :-1, :], dtype)
+            return tf.repeat(x, repeats=tf.shape(full_1)[0], axis=0)
+
+        def scale(fact):
+            mat = np.diag((*[fact] * num_dim, 1))
+            return tensor(mat)
+
+        # Affine registration at half resolution. The transforms will operate in half-resolution
+        # index space and transform all the way from one image to the other.
+        prop = dict(fill_value=0, shape=shape_half, shift_center=False)
+        ima_1 = layers.SpatialTransformer(**prop)((full_1, scale(2)))
+        ima_2 = layers.SpatialTransformer(**prop)((full_2, scale(2)))
+        aff_1, aff_2 = model_aff((ima_1, ima_2))
+
+        # Deformable input. Affine transforms from full to half resolution.
+        aff_1 = layers.ComposeTransform(shift_center=False)((scale(2), aff_1))
+        aff_2 = layers.ComposeTransform(shift_center=False)((scale(2), aff_2))
+        mov_1 = layers.SpatialTransformer(**prop)((full_1, aff_1))
+        if skip_affine:
+            aff_1 = scale(2)
+            aff_2 = scale(2)
+            mov_1 = ima_1
+
+        # Hypernetwork.
+        hyp_out = hyp_inp
+        for n in hyp_units:
+            hyp_out = KL.Dense(n, activation='relu')(hyp_out)
+
+        # Deformable layers.
+        inp_1 = tf.keras.Input(shape=(*shape_half, num_chan))
+        inp_2 = tf.keras.Input(shape=(*shape_half, num_chan))
+        pool = getattr(KL, f'MaxPool{num_dim}D')
+        up = getattr(KL, f'UpSampling{num_dim}D')
+
+        def conv(x, filters):
+            prop = dict(filters=filters, kernel_size=3, padding='same')
+            return ne.layers.HyperConvFromDense(num_dim, **prop)((x, hyp_out))
+
+        # Deformable encoder.
+        assert len(enc_nf) == len(dec_nf), 'number of layers differs for encoder and decoder'
+        x = KL.concatenate((inp_1, inp_2))
+        enc = [x]
+        for n in enc_nf:
+            for _ in range(per_level):
+                x = conv(x, filters=n)
+                x = KL.LeakyReLU(0.2)(x)
+            enc.append(x)
+            x = pool(dtype=tf.float32)(x)
+
+        # Deformable decoder.
+        for n in dec_nf:
+            for _ in range(per_level):
+                x = conv(x, filters=n)
+                x = KL.LeakyReLU(0.2)(x)
+            x = KL.concatenate([up()(x), enc.pop()])
+
+        # Additional deformable convolutions.
+        for n in add_nf:
+            x = conv(x, filters=n)
+            x = KL.LeakyReLU(0.2)(x)
+
+        # Deformable network: output SVF or warp.
+        x = conv(x, filters=num_dim)
+        model_def = tf.keras.Model(inputs=(hyp_inp, inp_1, inp_2), outputs=x)
+
+        # Deformable registration. Average for symmetry, before integration.
+        svf_1 = model_def((hyp_inp, mov_1, ima_2))
+        svf_2 = model_def((hyp_inp, ima_2, mov_1))
+        svf_1 = 0.5 * (svf_1 - svf_2)
+        svf_2 = svf_1 * -1
+        def_1 = layers.VecInt(method='ss', int_steps=int_steps)(svf_1)
+        def_2 = layers.VecInt(method='ss', int_steps=int_steps)(svf_2)
+        if int_steps == 0:
+            def_1 = svf_1
+            def_2 = svf_2
+
+        # Total warps from full to half resolution. Layer converts matrices to dense transforms
+        # using the half-resolution shape derived from the deformation fields.
+        tot_1 = layers.ComposeTransform(shift_center=False)((aff_1, def_1))
+        tot_2 = layers.ComposeTransform(shift_center=False)((aff_2, def_2))
+
+        # Do not interpolate deformation fields with `fill_value=0`.
+        down = layers.AffineToDenseShift(shape_full, shift_center=False)(scale(0.5))
+        if not return_trans_to_half_res:
+            tot_1 = layers.ComposeTransform()((tot_1, down))
+            tot_2 = layers.ComposeTransform()((tot_2, down))
+            def_1 = layers.ComposeTransform(shift_center=False)((scale(2), def_1, down))
+            def_2 = layers.ComposeTransform(shift_center=False)((scale(2), def_2, down))
+            aff_1 = layers.ComposeTransform(shift_center=False)((aff_1, scale(0.5)))
+            aff_2 = layers.ComposeTransform(shift_center=False)((aff_2, scale(0.5)))
+
+        # Outputs.
+        out = []
+        if return_tot:
+            out.extend([tot_1, tot_2])
+        if return_def:
+            out.extend([def_1, def_2])
+        if return_aff:
+            out.extend([aff_1, aff_2])
+        if return_svf:
+            out.extend([svf_1, svf_2])
+
+        if return_moved:
+            prop = dict(shift_center=False, fill_value=0, shape=tot_1.shape[1:-1])
+            mov_1 = layers.SpatialTransformer(**prop)((full_1, tot_1))
+            mov_2 = layers.SpatialTransformer(**prop)((full_2, tot_2))
+            out.extend([mov_1, mov_2])
+
+        if not bidir:
+            out = out[::2]
+
+        super().__init__(inputs=input_model.inputs, outputs=out if len(out) > 1 else out[0])
+
+
 ###############################################################################
 # Private functions
 ###############################################################################
