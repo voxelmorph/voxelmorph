@@ -584,7 +584,7 @@ class DrawAffineParams(Layer):
                  shift_scale=False,
                  ndims=3,
                  concat=True,
-                 dtype=tf.float32,
+                 out_type=tf.float32,
                  seeds={},
                  **kwargs):
         """
@@ -607,7 +607,7 @@ class DrawAffineParams(Layer):
             ndims: Number of dimensions. Must be 2 or 3.
             normal: Sample parameters normally instead of uniformly.
             concat: Concatenate the output along the last axis to return a single tensor.
-            dtype: Floating-point output data type.
+            out_type: Floating-point output data type.
             seeds: Dictionary of integers for reproducible randomization. Keywords must be in
                 ('shift', 'rot', 'scale', 'shear').
         """
@@ -622,7 +622,7 @@ class DrawAffineParams(Layer):
         self.shift_scale = shift_scale
         self.ndims = ndims
         self.concat = concat
-        self.out_type = tf.dtypes.as_dtype(dtype)
+        self.out_type = tf.dtypes.as_dtype(out_type)
         self.seeds = seeds
         super().__init__(**kwargs)
 
@@ -640,7 +640,7 @@ class DrawAffineParams(Layer):
             'shift_scale': self.shift_scale,
             'ndims': self.ndims,
             'concat': self.concat,
-            'out_type': self.dtype,
+            'out_type': self.out_type,
             'seeds': self.seeds,
         })
         return config
