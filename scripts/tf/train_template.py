@@ -66,14 +66,14 @@ parser.add_argument('--dec', type=int, nargs='+',
                     help='list of unet decorder filters (default: 32 32 32 32 32 16 16)')
 
 # loss hyperparameters
-parser.add_argument('--image-loss', default='mse',
-                    help='image reconstruction loss - can be mse or ncc (default: mse)')
-parser.add_argument('--image-loss-weight', type=float, default=0.5,
+parser.add_argument('--image-loss', default='ncc',
+                    help='image reconstruction loss - can be mse or ncc (default: ncc)')
+parser.add_argument('--image-loss-weight', type=float, default=1.0,
                     help='relative weight of transformed atlas loss (default: 1.0)')
 parser.add_argument('--mean-loss-weight', type=float, default=1.0,
                     help='weight of mean stream loss (default: 1.0)')
-parser.add_argument('--grad-loss-weight', type=float, default=0.01,
-                    help='weight of gradient loss (lamba) (default: 0.01)')
+parser.add_argument('--grad-loss-weight', type=float, default=1.0,
+                    help='weight of gradient loss (lamba) (default when using ncc: 1.0)')
 
 args = parser.parse_args()
 
