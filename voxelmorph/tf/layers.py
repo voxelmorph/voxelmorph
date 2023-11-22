@@ -62,9 +62,6 @@ class SpatialTransformer(Layer):
         """
         Parameters:
             interp_method: Interpolation method. Must be 'linear' or 'nearest'.
-            indexing: Deprecated in favor of default ij-indexing. Must be 'ij' (matrix) or 'xy'
-                (cartesian). 'xy' indexing will have the first two entries of the flow (along last
-                axis) flipped compared to 'ij' indexing.
             single_transform: Use single transform for the entire image batch.
             fill_value: Value to use for points sampled outside the domain.
                 If None, the nearest neighbors will be used.
@@ -73,19 +70,21 @@ class SpatialTransformer(Layer):
             shape: ND output shape used when converting affine transforms to dense
                 transforms. Includes only the N spatial dimensions. If None, the
                 shape of the input image will be used. Incompatible with `shift_center=True`.
-        """
-        if 'indexing' in kwargs:
-            warnings.warn('the `indexing` argument to SpatialTransformer is deprecated and will '
-                          'be removed in the future in favor of ij-indexing throughout')
-        indexing = kwargs.pop('indexing', 'ij')
 
-        # TODO: remove this check, let utils.transform deal with matrices when removing indexing
-        if shape is not None and shift_center:
-            raise ValueError('`shape` option incompatible with `shift_center=True`')
+        Notes:
+            There used to be an argument for choosing between matrix ('ij') and Cartesian ('xy')
+            indexing. Due to inconsistencies in how some functions and layers handled xy-indexing,
+            we removed it in favor of default ij-indexing to minimize the potential for confusion.
+
+        """
+        # TODO: remove this block
+        # load models saved with the `indexing` argument
+        if 'indexing' in kwargs:
+            del kwargs['indexing']
+            warnings.warn('The `indexing` argument to SpatialTransformer no longer exists. If you '
+                          'loaded a model, save it again to be able to load it in the future.')
 
         self.interp_method = interp_method
-        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
-        self.indexing = indexing
         self.single_transform = single_transform
         self.fill_value = fill_value
         self.shift_center = shift_center
@@ -96,7 +95,6 @@ class SpatialTransformer(Layer):
         config = super().get_config().copy()
         config.update({
             'interp_method': self.interp_method,
-            'indexing': self.indexing,
             'single_transform': self.single_transform,
             'fill_value': self.fill_value,
             'shift_center': self.shift_center,
@@ -115,15 +113,9 @@ class SpatialTransformer(Layer):
         self.ndims = len(input_shape[0]) - 2
         self.imshape = input_shape[0][1:]
         self.trfshape = input_shape[1][1:]
-        self.is_affine = utils.is_affine_shape(input_shape[1][1:])
 
-        # make sure inputs are reasonable shapes
-        if self.is_affine:
-            expected = (self.ndims, self.ndims + 1)
-            actual = tuple(self.trfshape[-2:])
-            if expected != actual:
-                raise ValueError(f'Expected {expected} affine matrix, got {actual}.')
-        else:
+        # make sure transform has reasonable shape (is_affine_shape throws error if not)
+        if not utils.is_affine_shape(input_shape[1][1:]):
             image_shape = tuple(self.imshape[:-1])
             dense_shape = tuple(self.trfshape[:-1])
             if image_shape != dense_shape:
@@ -145,23 +137,6 @@ class SpatialTransformer(Layer):
         vol = K.reshape(inputs[0], (-1, *self.imshape))
         trf = K.reshape(inputs[1], (-1, *self.trfshape))
 
-        # TODO: remove this block and let utils.transform deal with matrices when removing indexing
-        # convert affine matrix to warp field
-        if self.is_affine:
-            shape = vol.shape[1:-1] if self.shape is None else self.shape
-            fun = lambda x: utils.affine_to_dense_shift(x, shape,
-                                                        shift_center=self.shift_center,
-                                                        indexing=self.indexing)
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore')
-                trf = tf.map_fn(fun, trf)
-
-        # prepare location shift
-        if self.indexing == 'xy':  # shift the first two dimensions
-            trf_split = tf.split(trf, trf.shape[-1], axis=-1)
-            trf_lst = [trf_split[1], trf_split[0], *trf_split[2:]]
-            trf = tf.concat(trf_lst, -1)
-
         # map transform across batch
         if self.single_transform:
             return tf.map_fn(lambda x: self._single_transform([x, trf[0, :]]), vol)
@@ -169,8 +144,12 @@ class SpatialTransformer(Layer):
             return tf.map_fn(self._single_transform, [vol, trf], fn_output_signature=vol.dtype)
 
     def _single_transform(self, inputs):
-        return utils.transform(inputs[0], inputs[1], interp_method=self.interp_method,
-                               fill_value=self.fill_value)
+        return utils.transform(inputs[0],
+                               inputs[1],
+                               interp_method=self.interp_method,
+                               fill_value=self.fill_value,
+                               shift_center=self.shift_center,
+                               shape=self.shape)
 
 
 class VecInt(Layer):
@@ -194,20 +173,25 @@ class VecInt(Layer):
                  ode_args=None,
                  odeint_fn=None,
                  **kwargs):
-        """        
+        """
         Parameters:
-            indexing: Deprecated in favor of default ij-indexing. Must be 'xy' or 'ij'.
             method: Must be any of the methods in neuron.utils.integrate_vec.
             int_steps: Number of integration steps.
             out_time_pt: Time point at which to output if using odeint integration.
-        """
-        if 'indexing' in kwargs:
-            warnings.warn('the `indexing` argument to VecInt is deprecated and will '
-                          'be removed in the future in favor of ij-indexing throughout')
-        indexing = kwargs.pop('indexing', 'ij')
 
-        assert indexing in ['ij', 'xy'], "indexing has to be 'ij' (matrix) or 'xy' (cartesian)"
-        self.indexing = indexing
+        Notes:
+            There used to be an argument for choosing between matrix ('ij') and Cartesian ('xy')
+            indexing. Due to inconsistencies in how some functions and layers handled xy-indexing,
+            we removed it in favor of default ij-indexing to minimize the potential for confusion.
+
+        """
+        # TODO: remove this block
+        # load models saved with the `indexing` argument
+        if 'indexing' in kwargs:
+            del kwargs['indexing']
+            warnings.warn('The `indexing` argument to VecInt no longer exists. If you loaded a '
+                          'model, save it again to be able to load it in the future.')
+
         self.method = method
         self.int_steps = int_steps
         self.inshape = None
@@ -221,7 +205,6 @@ class VecInt(Layer):
     def get_config(self):
         config = super().get_config().copy()
         config.update({
-            'indexing': self.indexing,
             'method': self.method,
             'int_steps': self.int_steps,
             'out_time_pt': self.out_time_pt,
@@ -252,12 +235,6 @@ class VecInt(Layer):
         loc_shift = K.reshape(loc_shift, [-1, *self.inshape[1:]])
         if hasattr(inputs[0], '_keras_shape'):
             loc_shift._keras_shape = inputs[0]._keras_shape
-
-        # prepare location shift
-        if self.indexing == 'xy':  # shift the first two dimensions
-            loc_shift_split = tf.split(loc_shift, loc_shift.shape[-1], axis=-1)
-            loc_shift_lst = [loc_shift_split[1], loc_shift_split[0], *loc_shift_split[2:]]
-            loc_shift = tf.concat(loc_shift_lst, -1)
 
         if len(inputs) > 1:
             assert self.out_time_pt is None, \
@@ -358,17 +335,9 @@ class ComposeTransform(Layer):
             shape: Target shape of dense shift.
             interp_method: Interpolation method. Must be 'linear' or 'nearest'.
             shift_center: Shift grid to image center.
-            indexing: Deprecated. This layer only supports ij indexing.
         """
         self.interp_method = interp_method
         self.shift_center = shift_center
-
-        if 'indexing' in kwargs:
-            if kwargs.pop('indexing') != 'ij':
-                raise ValueError('Compose transform only supports ij indexing')
-            warnings.warn('the `indexing` argument to compose transform is deprecated and will be '
-                          'removed in the future')
-
         super().__init__(**kwargs)
 
     def get_config(self):
