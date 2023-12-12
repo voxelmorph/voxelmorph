@@ -329,15 +329,19 @@ class ComposeTransform(Layer):
     T = ComposeTransform()([A, B, C])
     """
 
-    def __init__(self, interp_method='linear', shift_center=True, **kwargs):
+    def __init__(self, interp_method='linear', shift_center=True, shape=None, **kwargs):
         """
         Parameters:
-            shape: Target shape of dense shift.
             interp_method: Interpolation method. Must be 'linear' or 'nearest'.
-            shift_center: Shift grid to image center.
+            shift_center: Shift grid to image center when converting matrices to dense transforms.
+            shape: ND output shape used for converting matrices to dense transforms. Includes only
+                the N spatial dimensions. Only used once, if the rightmost transform is a matrix.
+                If None or if the rightmost transform is a warp, the shape of the rightmost warp
+                will be used. Incompatible with `shift_center=True`.
         """
         self.interp_method = interp_method
         self.shift_center = shift_center
+        self.shape = shape
         super().__init__(**kwargs)
 
     def get_config(self):
@@ -345,6 +349,7 @@ class ComposeTransform(Layer):
         config.update({
             'interp_method': self.interp_method,
             'shift_center': self.shift_center,
+            'shape': self.shape,
         })
         return config
 
@@ -364,7 +369,8 @@ class ComposeTransform(Layer):
 
         compose = lambda trf: utils.compose(trf,
                                             interp_method=self.interp_method,
-                                            shift_center=self.shift_center)
+                                            shift_center=self.shift_center,
+                                            shape=self.shape)
         return tf.map_fn(compose, transforms, fn_output_signature=transforms[0].dtype)
 
 

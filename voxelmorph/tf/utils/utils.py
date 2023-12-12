@@ -250,7 +250,7 @@ def batch_transform(vol, loc_shift, batch_size=None, interp_method='linear', fil
     return K.permute_dimensions(vol_trf_reshape, [ndim + 1] + list(range(ndim + 1)))
 
 
-def compose(transforms, interp_method='linear', shift_center=True):
+def compose(transforms, interp_method='linear', shift_center=True, shape=None):
     """
     Compose a single transform from a series of transforms.
 
@@ -265,7 +265,11 @@ def compose(transforms, interp_method='linear', shift_center=True):
     Parameters:
         transforms: List of affine and/or dense transforms to compose.
         interp_method: Interpolation method. Must be 'linear' or 'nearest'.
-        shift_center: Shift grid to image center.
+        shift_center: Shift grid to image center when converting matrices to dense transforms.
+        shape: ND output shape used for converting matrices to dense transforms. Includes only the
+            N spatial dimensions. Only used once, if the rightmost transform is a matrix. If None
+            or if the rightmost transform is a warp, the shape of the rightmost warp will be used.
+            Incompatible with `shift_center=True`.
 
     Returns:
         Composed affine or dense transform.
@@ -279,18 +283,19 @@ def compose(transforms, interp_method='linear', shift_center=True):
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
-    def ensure_square_affine(matrix):
-        if matrix.shape[-1] != matrix.shape[-2]:
-            return make_square_affine(matrix)
-        return matrix
+    def ensure_square_affine(mat):
+        return mat if mat.shape[-1] == mat.shape[-2] else make_square_affine(mat)
 
     curr = transforms[-1]
     for next in reversed(transforms[:-1]):
-        # Dense warp on left: interpolate.
+        # Dense warp on left: interpolate. Shape will be ignored unless the current transform is a
+        # matrix. Once the current transform is a warp field, it will stay a warp field.
         if not is_affine_shape(next.shape):
             if is_affine_shape(curr.shape):
-                curr = affine_to_dense_shift(curr, shape=next.shape[:-1], shift_center=shift_center)
-            curr = curr + transform(next, curr, interp_method=interp_method)
+                curr = affine_to_dense_shift(curr,
+                                             shape=next.shape[:-1] if shape is None else shape,
+                                             shift_center=shift_center)
+            curr += transform(next, curr, interp_method=interp_method)
 
         # Matrix on left, dense warp on right: matrix-vector product.
         elif not is_affine_shape(curr.shape):
