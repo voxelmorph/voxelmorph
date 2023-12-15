@@ -130,7 +130,7 @@ class SpatialTransformer(Layer):
         Parameters
             inputs: List of [img, trf], where img is the ND moving image and trf
             is either a dense warp of shape [B, D1, ..., DN, N] or an affine matrix
-            of shape [B, N, N+1].
+            of shape [B, N, N+1] or [B, N+1, N+1].
         """
 
         # necessary for multi-gpu models
@@ -393,25 +393,26 @@ class AddIdentity(Layer):
                 self.ndims = 3
             else:
                 raise ValueError('Flat affine must be of length 6 (2D) or 12 (3D), got {length}.')
+            self.nrows = self.ndims
         elif len(shape) == 2:
             # or it could be a 2D matrix
             utils.validate_affine_shape(input_shape)
             self.ndims = shape[1] - 1
+            self.nrows = shape[0]
         else:
             raise ValueError('Input to AddIdentity must be a flat 1D array or 2D matrix, '
                              f'got shape {input_shape}.')
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.ndims, self.ndims + 1)
+        return (input_shape[0], self.nrows, self.ndims + 1)
 
     def call(self, transform):
         """
         Parameters
-            transform: Affine transform of shape [B, N, N+1] or [B, N*(N+1)].
+            transform: Affine transform of shape [B, N, N+1] or [B, N+1, N+1] or [B, N*(N+1)].
         """
-        transform = tf.reshape(transform, (-1, self.ndims, self.ndims + 1))
-        transform = utils.affine_add_identity(transform)
-        return transform
+        transform = tf.reshape(transform, (-1, self.nrows, self.ndims + 1))
+        return utils.affine_add_identity(transform)
 
 
 class InvertAffine(Layer):
@@ -421,15 +422,16 @@ class InvertAffine(Layer):
 
     def build(self, input_shape):
         utils.validate_affine_shape(input_shape)
+        self.nrows = input_shape[-2]
         self.ndims = input_shape[-1] - 1
 
     def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.ndims, self.ndims + 1)
+        return (input_shape[0], self.nrows, self.ndims + 1)
 
     def call(self, matrix):
         """
         Parameters
-            matrix: Affine matrix of shape [B, N, N+1] to invert.
+            matrix: Affine matrix of shape [B, N, N+1] or [B, N+1, N+1] to invert.
         """
         return utils.invert_affine(matrix)
 

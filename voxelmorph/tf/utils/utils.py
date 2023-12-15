@@ -283,9 +283,6 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
-    def ensure_square_affine(mat):
-        return mat if mat.shape[-1] == mat.shape[-2] else make_square_affine(mat)
-
     curr = transforms[-1]
     for next in reversed(transforms[:-1]):
         # Dense warp on left: interpolate. Shape will be ignored unless the current transform is a
@@ -306,8 +303,8 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
 
         # No dense warp: matrix product.
         else:
-            next = ensure_square_affine(next)
-            curr = ensure_square_affine(curr)
+            next = make_square_affine(next)
+            curr = make_square_affine(curr)
             curr = tf.linalg.matmul(next, curr)[:-1]
 
     return curr
@@ -519,11 +516,11 @@ def keras_transform(img, trf, interp_method='linear', rescale=None):
 
 def is_affine_shape(shape):
     """
-    Determins whether the given shape (single-batch) represents an
-    affine matrix.
+    Determine whether the given shape (single-batch) represents an N-dimensional affine matrix of
+    shape (M, N + 1), with `N in (2, 3)` and `M in (N, N + 1)`.
 
     Parameters:
-        shape:  List of integers of the form [N, N+1], assuming an affine.
+        shape: Tuple of list of integers excluding the batch dimension.
     """
     if len(shape) == 2 and shape[-1] != 1:
         validate_affine_shape(shape)
@@ -533,26 +530,34 @@ def is_affine_shape(shape):
 
 def validate_affine_shape(shape):
     """
-    Validates whether the given input shape represents a valid affine matrix.
-    Throws error if the shape is valid.
+    Validate whether the input shape represents a valid affine matrix of shape (..., M, N + 1),
+    where N is the number of dimensions, and M is N or N + 1. Throws an error if the shape is
+    invalid.
 
     Parameters:
-        shape: List of integers of the form [..., N, N+1].
+        shape: Tuple or list of integers.
     """
     ndim = shape[-1] - 1
-    actual = tuple(shape[-2:])
-    if ndim not in (2, 3) or actual != (ndim, ndim + 1):
-        raise ValueError(f'Affine matrix must be of shape (2, 3) or (3, 4), got {actual}.')
+    rows = shape[-2]
+    if ndim not in (2, 3):
+        raise ValueError(f'Affine matrix must be 2D or 3D, got {ndim}D')
+    if rows not in (ndim, ndim + 1):
+        raise ValueError(f'{ndim}D affine matrix must have {ndim} or {ndim + 1} rows, got {rows}.')
 
 
 def make_square_affine(mat):
     """
-    Converts a [N, N+1] affine matrix to square shape [N+1, N+1].
+    Convert an ND affine matrix of shape (..., N, N + 1) to square shape (..., N + 1, N + 1).
 
     Parameters:
-        mat: Affine matrix of shape [..., N, N+1].
+        mat: Affine matrix of shape (..., M, N + 1), where M is N or N + 1.
+
+    Returns:
+        out: Affine matrix of shape (..., N + 1, N + 1).
     """
     validate_affine_shape(mat.shape)
+    if mat.shape[-2] == mat.shape[-1]:
+        return mat
 
     # Support dynamic shapes by keeping them in tensors.
     shape_input = tf.shape(mat)
@@ -569,34 +574,44 @@ def make_square_affine(mat):
 
 def affine_add_identity(mat):
     """
-    Adds the identity matrix to a 'shift' affine.
+    Add the identity matrix to an N-dimensional 'shift' affine.
 
     Parameters:
-        mat: Affine matrix of shape [..., N, N+1].
+        mat: Affine matrix of shape (..., M, N + 1), where M is N or N + 1.
+
+    Returns:
+        out: Affine matrix of shape (..., M, N + 1).
     """
-    ndims = mat.shape[-2]
-    return mat + tf.eye(ndims + 1)[:ndims]
+    rows, ndp1 = mat.shape[-2:]
+    return mat + tf.eye(ndp1)[:rows]
 
 
 def affine_remove_identity(mat):
     """
-    Subtracts the identity matrix from an affine.
+    Subtract the identity matrix from an N-dimensional affine.
 
     Parameters:
-        mat: Affine matrix of shape [..., N, N+1].
+        mat: Affine matrix of shape (..., M, N + 1), where M is N or N + 1.
+
+    Returns:
+        out: Affine matrix of shape (..., M, N + 1).
     """
-    ndims = mat.shape[-2]
-    return mat - tf.eye(ndims + 1)[:ndims]
+    rows, ndp1 = mat.shape[-2:]
+    return mat - tf.eye(ndp1)[:rows]
 
 
 def invert_affine(mat):
     """
-    Compute the multiplicative inverse of an affine matrix.
+    Compute the multiplicative inverse of an N-dimensional affine matrix.
 
     Parameters:
-        mat: Affine matrix of shape [..., N, N+1].
+        mat: Affine matrix of shape (..., M, N + 1), where M is N or N + 1.
+
+    Returns:
+        out: Affine matrix of shape (..., M, N + 1).
     """
-    return tf.linalg.inv(make_square_affine(mat))[..., :-1, :]
+    rows = mat.shape[-2]
+    return tf.linalg.inv(make_square_affine(mat))[..., :rows, :]
 
 
 def rescale_affine(mat, factor):
@@ -622,7 +637,8 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, warp_right=None):
         3. Subtract grid.
 
     Parameters:
-        matrix: Affine matrix of shape (..., N, N + 1). Can have any batch dimensions.
+        matrix: Affine matrix of shape (..., M, N + 1), where M is N or N + 1. Can have any batch
+            dimensions.
         shape: ND shape of the output space.
         shift_center: Shift grid to image center.
         warp_right: Right-compose the matrix transform with a displacement field of shape
@@ -667,7 +683,7 @@ def affine_to_dense_shift(matrix, shape, shift_center=True, warp_right=None):
         out += tf.linalg.matrix_transpose(warp_right)  # ... x N x nb_voxels
 
     # compute locations, subtract grid to obtain shift
-    out = matrix[..., :-1] @ out + matrix[..., -1:]  # ... x N x nb_voxels
+    out = matrix[..., :ndims, :-1] @ out + matrix[..., :ndims, -1:]  # ... x N x nb_voxels
     out = tf.linalg.matrix_transpose(out - mesh)  # ... x nb_voxels x N
 
     # restore shape
