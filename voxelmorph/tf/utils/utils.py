@@ -107,9 +107,9 @@ def transform(vol, loc_shift, interp_method='linear', fill_value=None,
             (*vol_shape, C), where C is the number of channels.
         loc_shift: Affine transformation matrix of shape (N, N+1) or a shift
             volume of shape (*new_vol_shape, D) or (*new_vol_shape, C, D),
-            where C is the number of channels, and D is the dimentionality
+            where C is the number of channels, and D is the dimensionality
             D = len(vol_shape). If the shape is (*new_vol_shape, D), the same
-            transform applies to all channels of of the input tensor.
+            transform applies to all channels of the input tensor.
         interp_method: 'linear' or 'nearest'.
         fill_value: Value to use for points sampled outside the domain. If
             None, the nearest neighbors will be used.
@@ -194,7 +194,7 @@ def batch_transform(vol, loc_shift, batch_size=None, interp_method='linear', fil
         vol (Tensor): volume with size vol_shape or [B, *vol_shape, C]
             where C is the number of channels
         loc_shift: shift volume [B, *new_vol_shape, C, D]
-            where C is the number of channels, and D is the dimentionality len(vol_shape)
+            where C is the number of channels, and D is the dimensionality len(vol_shape)
             If loc_shift is [*new_vol_shape, D], it applies to all channels of vol
         interp_method (default:'linear'): 'linear', 'nearest'
         fill_value (default: None): value to use for points outside the domain.
@@ -312,7 +312,7 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
 
 def rescale_dense_transform(transform, factor, interp_method='linear'):
     """
-    Rescales a dense transform. this involves resizing and rescaling the vector field.
+    Rescales a dense transform. This involves resizing and rescaling the vector field.
 
     Parameters:
         transform: A dense warp of shape [..., D1, ..., DN, N].
@@ -520,7 +520,7 @@ def is_affine_shape(shape):
     shape (M, N + 1), with `N in (2, 3)` and `M in (N, N + 1)`.
 
     Parameters:
-        shape: Tuple of list of integers excluding the batch dimension.
+        shape: Tuple or list of integers excluding the batch dimension.
     """
     if len(shape) == 2 and shape[-1] != 1:
         validate_affine_shape(shape)

@@ -1492,6 +1492,7 @@ class HyperVxmJoint(tf.keras.Model):
                  int_steps=7,
                  bidir=False,
                  skip_affine=False,
+                 mid_space=False,
                  return_trans_to_half_res=False,
                  return_tot=True,
                  return_def=False,
@@ -1522,6 +1523,7 @@ class HyperVxmJoint(tf.keras.Model):
                 The transforms apply to full-resolution images but may end at half resolution,
                 depending on `return_trans_to_half_res`.
             skip_affine: Skip affine registration and build a model comparable to `HyperVxmDense`.
+            mid_space: Run the deformable step in an affine mid-space.
             return_trans_to_half_res: Return transforms from input images at full resolution to
                 output images at half resolution. You can change this option after training. This
                 option also affects the shape of the moved images, if returned.
@@ -1551,7 +1553,13 @@ class HyperVxmJoint(tf.keras.Model):
         # Affine network.
         keys = [k for k in kwargs if k.startswith('aff.')]
         arg_aff = {k[len('aff.'):]: kwargs.pop(k) for k in keys}
-        arg_aff.update(in_shape=shape_half, make_dense=False, half_res=False, bidir=True)
+        arg_aff.update(
+            in_shape=shape_half,
+            make_dense=False,
+            half_res=False,
+            bidir=True,
+            return_trans_to_mid_space=mid_space,
+        )
         model_aff = VxmAffineFeatureDetector(**arg_aff)
         assert not kwargs, f'unknown arguments {kwargs}'
 
@@ -1566,7 +1574,8 @@ class HyperVxmJoint(tf.keras.Model):
             return tensor(mat)
 
         # Affine registration at half resolution. The transforms will operate in half-resolution
-        # index space and transform all the way from one image to the other.
+        # index space and transform all the way from one image to the other, or half-way into the
+        # affine mid-space for `mid_space=True`.
         prop = dict(fill_value=0, shape=shape_half, shift_center=False)
         ima_1 = layers.SpatialTransformer(**prop)((full_1, scale(2)))
         ima_2 = layers.SpatialTransformer(**prop)((full_2, scale(2)))
@@ -1576,10 +1585,12 @@ class HyperVxmJoint(tf.keras.Model):
         aff_1 = layers.ComposeTransform(shift_center=False)((scale(2), aff_1))
         aff_2 = layers.ComposeTransform(shift_center=False)((scale(2), aff_2))
         mov_1 = layers.SpatialTransformer(**prop)((full_1, aff_1))
+        mov_2 = layers.SpatialTransformer(**prop)((full_2, aff_2)) if mid_space else ima_2
         if skip_affine:
             aff_1 = scale(2)
             aff_2 = scale(2)
             mov_1 = ima_1
+            mov_2 = ima_2
 
         # Hypernetwork.
         hyp_out = hyp_inp
@@ -1624,8 +1635,8 @@ class HyperVxmJoint(tf.keras.Model):
         model_def = tf.keras.Model(inputs=(hyp_inp, inp_1, inp_2), outputs=x)
 
         # Deformable registration. Average for symmetry, before integration.
-        svf_1 = model_def((hyp_inp, mov_1, ima_2))
-        svf_2 = model_def((hyp_inp, ima_2, mov_1))
+        svf_1 = model_def((hyp_inp, mov_1, mov_2))
+        svf_2 = model_def((hyp_inp, mov_2, mov_1))
         svf_1 = 0.5 * (svf_1 - svf_2)
         svf_2 = svf_1 * -1
         def_1 = layers.VecInt(method='ss', int_steps=int_steps)(svf_1)
@@ -1636,8 +1647,13 @@ class HyperVxmJoint(tf.keras.Model):
 
         # Total warps from full to half resolution. Layer converts matrices to dense transforms
         # using the half-resolution shape derived from the deformation fields.
-        tot_1 = layers.ComposeTransform(shift_center=False)((aff_1, def_1))
-        tot_2 = layers.ComposeTransform(shift_center=False)((aff_2, def_2))
+        tot_1 = (aff_1, def_1, scale(0.5), aff_1)
+        tot_2 = (aff_2, def_2, scale(0.5), aff_2)
+        if not mid_space or skip_affine:
+            tot_1 = tot_1[:2]
+            tot_2 = tot_2[:2]
+        tot_1 = layers.ComposeTransform(shift_center=False)(tot_1)
+        tot_2 = layers.ComposeTransform(shift_center=False)(tot_2)
 
         # Do not interpolate deformation fields with `fill_value=0`.
         down = layers.AffineToDenseShift(shape_full, shift_center=False)(scale(0.5))
