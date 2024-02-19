@@ -263,7 +263,7 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
     T = compose([A, B, C])
 
     Parameters:
-        transforms: List of affine and/or dense transforms to compose.
+        transforms: List or tuple of affine and/or dense transforms to compose.
         interp_method: Interpolation method. Must be 'linear' or 'nearest'.
         shift_center: Shift grid to image center when converting matrices to dense transforms.
         shape: ND output shape used for converting matrices to dense transforms. Includes only the
@@ -280,8 +280,8 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
         removed it in favor of default ij-indexing to minimize the potential for confusion.
 
     """
-    if len(transforms) < 2:
-        raise ValueError('Compose transform list size must be greater than 1')
+    if len(transforms) == 0:
+        raise ValueError('Compose transform list cannot be empty')
 
     curr = None
     for next in reversed(transforms):
