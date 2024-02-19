@@ -283,8 +283,16 @@ def compose(transforms, interp_method='linear', shift_center=True, shape=None):
     if len(transforms) < 2:
         raise ValueError('Compose transform list size must be greater than 1')
 
-    curr = transforms[-1]
-    for next in reversed(transforms[:-1]):
+    curr = None
+    for next in reversed(transforms):
+
+        if not tf.is_tensor(next) or not next.dtype.is_floating:
+            next = tf.cast(next, tf.float32)
+
+        if curr is None:
+            curr = next
+            continue
+
         # Dense warp on left: interpolate. Shape will be ignored unless the current transform is a
         # matrix. Once the current transform is a warp field, it will stay a warp field.
         if not is_affine_shape(next.shape):
