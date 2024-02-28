@@ -171,6 +171,7 @@ def draw_affine_params(shift=None,
 
     # Sample parameters.
     par = {}
+    seeds = seeds.copy()
     for k, lim in ranges.items():
         par[k] = sample(lim, shapes[k], normal[k], trunc[k], seed=seeds.pop(k, None))
     if shift_scale:
