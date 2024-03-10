@@ -118,13 +118,15 @@ def load_volfile(
         vol, _ = pad(vol, pad_shape)
 
     if add_feat_axis:
-        vol = vol[..., np.newaxis]
+        # vol = vol[..., np.newaxis]
+        vol = np.expand_dims(vol, axis=-1)
 
     if resize_factor != 1:
         vol = resize(vol, resize_factor)
 
     if add_batch_axis:
-        vol = vol[np.newaxis, ...]
+        # vol = vol[np.newaxis, ...]
+        vol = np.expand_dims(vol, axis=0)
 
     return (vol, affine) if ret_affine else vol
 
@@ -240,12 +242,12 @@ def pad(array, shape):
         return array, ...
 
     padded = np.zeros(shape, dtype=array.dtype)
-    offsets = [int((p - v) / 2) for p, v in zip(shape, array.shape)]
-    slices = tuple([slice(offset, l + offset) for offset, l in zip(offsets, array.shape)])
+    offsets = [(p - v) // 2 for p, v in zip(shape, array.shape)]
+    slices = tuple([slice(offset, offset + l) for offset, l in zip(offsets, array.shape)])
     padded[slices] = array
 
     return padded, slices
-
+    
 
 def resize(array, factor, batch_axis=False):
     """
@@ -276,7 +278,7 @@ def dice(array1, array2, labels=None, include_zero=False):
         labels = np.concatenate([np.unique(a) for a in [array1, array2]])
         labels = np.sort(np.unique(labels))
     if not include_zero:
-        labels = np.delete(labels, np.argwhere(labels == 0)) 
+        labels = labels[labels != 0]
 
     dicem = np.zeros(len(labels))
     for idx, label in enumerate(labels):
@@ -285,6 +287,7 @@ def dice(array1, array2, labels=None, include_zero=False):
         bottom = np.maximum(bottom, np.finfo(float).eps)  # add epsilon
         dicem[idx] = top / bottom
     return dicem
+
 
 
 def affine_shift_to_matrix(trf, resize=None, unshift_shape=None):
