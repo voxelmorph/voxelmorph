@@ -1474,8 +1474,8 @@ class HyperVxmJoint(tf.keras.Model):
     If you find this work useful, please cite:
         Anatomy-aware and acquisition-agnostic joint registration with SynthMorph
         M Hoffmann, A Hoopes, DN Greve, B Fischl*, AV Dalca* (*equal contribution)
-        arXiv preprint arXiv:2301.11329
-        https://doi.org/10.48550/arXiv.2301.11329
+        Imaging Neuroscience, 2, pp 1-33, 2024
+        https://doi.org/10.1162/imag_a_00197
 
     """
 
