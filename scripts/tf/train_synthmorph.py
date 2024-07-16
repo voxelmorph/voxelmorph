@@ -139,8 +139,8 @@ strategy = 'MirroredStrategy' if nb_devices > 1 else 'get_strategy'
 with getattr(tf.distribute, strategy)().scope():
 
     # generation
-    gen_model_1 = ne.models.labels_to_image(**gen_args, id=0)
-    gen_model_2 = ne.models.labels_to_image(**gen_args, id=1)
+    gen_model_1 = ne.models.labels_to_image_old(**gen_args, id=0)
+    gen_model_2 = ne.models.labels_to_image_old(**gen_args, id=1)
     ima_1, map_1 = gen_model_1.outputs
     ima_2, map_2 = gen_model_2.outputs
 
