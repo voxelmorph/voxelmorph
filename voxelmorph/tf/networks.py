@@ -1328,32 +1328,28 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         drop = getattr(KL, f'SpatialDropout{num_dim}D')
         up = getattr(KL, f'UpSampling{num_dim}D')
 
-        # Static transforms. Function names refer to effect on coordinates.
+        # Static transforms. Function names reflect effect on coordinates.
         dtype = tf.keras.mixed_precision.global_policy().compute_dtype
-
-        def tensor(x):
-            x = tf.constant(x[None, :-1, :], dtype)
-            return tf.repeat(x, repeats=tf.shape(inp_1)[0], axis=0)
 
         def cen(shape):
             mat = np.eye(num_dim + 1)
             mat[:-1, -1] = -0.5 * (shape - 1)
-            return tensor(mat)
+            return ne.layers.Constant(mat)([])
 
         def un_cen(shape):
             mat = np.eye(num_dim + 1)
             mat[:-1, -1] = +0.5 * (shape - 1)
-            return tensor(mat)
+            return ne.layers.Constant(mat)([])
 
         def scale(fact):
             mat = np.diag((*[fact] * num_dim, 1))
-            return tensor(mat)
+            return ne.layers.Constant(mat)([])
 
         # Detector inputs.
         if half_res:
-            prop = dict(fill_value=0, shape=shape_half, shift_center=False)
-            inp_1 = layers.SpatialTransformer(**prop)((inp_1, scale(2)))
-            inp_2 = layers.SpatialTransformer(**prop)((inp_2, scale(2)))
+            prop_h = dict(fill_value=0, shape=shape_half, shift_center=False)
+            inp_1 = layers.SpatialTransformer(**prop_h)((inp_1, scale(2)))
+            inp_2 = layers.SpatialTransformer(**prop_h)((inp_2, scale(2)))
 
         # Feature detector: encoder.
         inp = tf.keras.Input(shape=(*inp_1.shape[1:-1], num_chan))
@@ -1390,46 +1386,51 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         feat_1 = det(inp_1)
         feat_2 = det(inp_2)
         if tf.keras.mixed_precision.global_policy().compute_dtype == 'float16':
-            feat_1 = tf.cast(feat_1, tf.float32)
-            feat_2 = tf.cast(feat_2, tf.float32)
+            feat_1 = KL.Lambda(lambda x: tf.cast(x, tf.float32))(feat_1)
+            feat_2 = KL.Lambda(lambda x: tf.cast(x, tf.float32))(feat_2)
 
         # Barycenters.
-        prop = dict(axes=range(1, num_dim + 1), normalize=True, shift_center=True, dtype=dtype)
-        cen_1 = ne.utils.barycenter(feat_1, **prop) * shape_full
-        cen_2 = ne.utils.barycenter(feat_2, **prop) * shape_full
+        prop_b = dict(axes=range(1, num_dim + 1), normalize=True, shift_center=True, dtype=dtype)
+        cen_1 = KL.Lambda(lambda x: ne.utils.barycenter(x, **prop_b) * shape_full)(feat_1)
+        cen_2 = KL.Lambda(lambda x: ne.utils.barycenter(x, **prop_b) * shape_full)(feat_2)
 
         # Channel weights.
         axes = range(1, num_dim + 1)
-        pow_1 = tf.reduce_sum(feat_1, axis=axes)
-        pow_2 = tf.reduce_sum(feat_2, axis=axes)
-        pow_1 /= tf.reduce_sum(pow_1, axis=-1, keepdims=True)
-        pow_2 /= tf.reduce_sum(pow_2, axis=-1, keepdims=True)
+        pow_1 = KL.Lambda(lambda x: tf.reduce_sum(x, axes))(feat_1)
+        pow_2 = KL.Lambda(lambda x: tf.reduce_sum(x, axes))(feat_2)
+        pow_1 /= KL.Lambda(lambda x: tf.reduce_sum(x, axis=-1, keepdims=True))(pow_1)
+        pow_2 /= KL.Lambda(lambda x: tf.reduce_sum(x, axis=-1, keepdims=True))(pow_2)
         weights = pow_1 * pow_2
 
-        # Least-squares fit and average, since the fit is not symmetric.
-        aff_1 = utils.fit_affine(cen_1, cen_2, weights=weights if weighted else None)
-        aff_2 = utils.fit_affine(cen_2, cen_1, weights=weights if weighted else None)
-        aff_1 = 0.5 * (utils.invert_affine(aff_2) + aff_1)
+        # Least squares and average, since the fit is not symmetric.
+        fit_1 = (cen_1, cen_2)
+        fit_2 = (cen_2, cen_1)
+        if weighted:
+            fit_1 = (*fit_1, weights)
+            fit_2 = (*fit_2, weights)
+        aff_1 = KL.Lambda(lambda x: utils.fit_affine(*x))(fit_1)
+        aff_2 = KL.Lambda(lambda x: utils.fit_affine(*x))(fit_2)
+        aff_1 = KL.average((layers.InvertAffine()(aff_2), aff_1))
 
         # Remove scaling and shear.
         if rigid:
-            aff_1 = utils.affine_matrix_to_params(aff_1)
+            aff_1 = KL.Lambda(utils.affine_matrix_to_params)(aff_1)
             aff_1 = aff_1[:, :num_dim * (num_dim + 1) // 2]
             aff_1 = layers.ParamsToAffineMatrix(ndims=num_dim)(aff_1)
 
         # Mid-space. Before scaling at either side.
-        aff_2 = utils.invert_affine(aff_1)
+        aff_2 = layers.InvertAffine()(aff_1)
         if return_trans_to_mid_space:
-            aff_1 = utils.make_square_affine(aff_1)
-            aff_1 = tf.linalg.sqrtm(aff_1)[:, :-1, :]
+            aff_1 = KL.Lambda(utils.make_square_affine)(aff_1)
+            aff_1 = KL.Lambda(tf.linalg.sqrtm)(aff_1)
 
-            aff_2 = utils.make_square_affine(aff_2)
-            aff_2 = tf.linalg.sqrtm(aff_2)[:, :-1, :]
+            aff_2 = KL.Lambda(utils.make_square_affine)(aff_2)
+            aff_2 = KL.Lambda(tf.linalg.sqrtm)(aff_2)
 
         # Affine transform operating in index space, for full-resolution inputs.
-        prop = dict(shift_center=False)
-        aff_1 = layers.ComposeTransform(**prop)((un_cen(shape_full), aff_1, cen(shape_full)))
-        aff_2 = layers.ComposeTransform(**prop)((un_cen(shape_full), aff_2, cen(shape_full)))
+        prop_c = dict(shift_center=False)
+        aff_1 = layers.ComposeTransform(**prop_c)((un_cen(shape_full), aff_1, cen(shape_full)))
+        aff_2 = layers.ComposeTransform(**prop_c)((un_cen(shape_full), aff_2, cen(shape_full)))
         out = [aff_1, aff_2]
 
         if return_trans_to_half_res:
@@ -1437,7 +1438,7 @@ class VxmAffineFeatureDetector(tf.keras.Model):
             out = [layers.ComposeTransform(shift_center=False)(x) for x in out]
 
         if tf.keras.mixed_precision.global_policy().compute_dtype == 'float16':
-            out = [tf.cast(x, tf.float16) for x in out]
+            out = [KL.Lambda(lambda x: tf.cast(x, tf.float16))(x) for x in out]
 
         shape_out = shape_half if return_trans_to_half_res else shape_full
         if make_dense:
@@ -1445,9 +1446,9 @@ class VxmAffineFeatureDetector(tf.keras.Model):
 
         # Additional outputs.
         if return_moved:
-            prop = dict(shift_center=False, fill_value=0, shape=shape_out)
-            mov_1 = layers.SpatialTransformer(**prop)((input_model.inputs[0], aff_1))
-            mov_2 = layers.SpatialTransformer(**prop)((input_model.inputs[1], aff_2))
+            prop_m = dict(shift_center=False, fill_value=0, shape=shape_out)
+            mov_1 = layers.SpatialTransformer(**prop_m)((input_model.inputs[0], aff_1))
+            mov_2 = layers.SpatialTransformer(**prop_m)((input_model.inputs[1], aff_2))
             out.extend([mov_1, mov_2])
 
         if return_feat:
