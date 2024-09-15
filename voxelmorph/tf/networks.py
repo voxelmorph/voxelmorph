@@ -1492,7 +1492,9 @@ class HyperVxmJoint(tf.keras.Model):
                  per_level=1,
                  int_steps=7,
                  bidir=False,
+                 pass_affine=False,
                  skip_affine=False,
+                 skip_deform=False,
                  mid_space=False,
                  return_trans_to_half_res=False,
                  return_tot=True,
@@ -1508,7 +1510,7 @@ class HyperVxmJoint(tf.keras.Model):
                 used as inputs to the returned model, as an alternative to specifying `in_shape`.
             num_chan: Number of input-image channels.
             hyp_num: Number of hyperparameter inputs for predicting the weights of the deformable
-                registration model with a hypernetwork.
+                registration model with a hypernetwork. Zero means no hypernetwork.
             hyp_units: Fully-connected units for each layer of the hypernetwork, as an iterable.
             enc_nf: Number of deformable convolutional encoder filters at each level, as an
                 iterable. The model will downsample by a factor of 2 after each convolution.
@@ -1523,7 +1525,9 @@ class HyperVxmJoint(tf.keras.Model):
             bidir: In addition to the transform from image 1 to image 2, also return the inverse.
                 The transforms apply to full-resolution images but may end at half resolution,
                 depending on `return_trans_to_half_res`.
+            pass_affine: Append a model input and set the affine transform to it.
             skip_affine: Skip affine registration and build a model comparable to `HyperVxmDense`.
+            skip_deform: Skip deformable registration and build a `VxmAffineFeatureDetector` model.
             mid_space: Run the deformable step in an affine mid-space.
             return_trans_to_half_res: Return transforms from input images at full resolution to
                 output images at half resolution. You can change this option after training. This
@@ -1543,8 +1547,14 @@ class HyperVxmJoint(tf.keras.Model):
             hyp_inp = tf.keras.Input(shape=[hyp_num])
             full_1 = tf.keras.Input(shape=(*in_shape, num_chan))
             full_2 = tf.keras.Input(shape=(*in_shape, num_chan))
-            input_model = tf.keras.Model(*[(hyp_inp, full_1, full_2)] * 2)
-        hyp_inp, full_1, full_2 = input_model.outputs
+
+            inputs = (full_1, full_2)
+            if hyp_num > 0:
+                inputs = (hyp_inp, *inputs)
+
+            input_model = tf.keras.Model(inputs, inputs)
+
+        *hyp_inp, full_1, full_2 = input_model.outputs
 
         # Dimensions.
         shape_full = np.asarray(full_1.shape[1:-1])
@@ -1564,15 +1574,10 @@ class HyperVxmJoint(tf.keras.Model):
         model_aff = VxmAffineFeatureDetector(**arg_aff)
         assert not kwargs, f'unknown arguments {kwargs}'
 
-        # Static transforms. Function names refer to effect on coordinates.
-        def tensor(x):
-            dtype = tf.keras.mixed_precision.global_policy().compute_dtype
-            x = tf.constant(x[None, :-1, :], dtype)
-            return tf.repeat(x, repeats=tf.shape(full_1)[0], axis=0)
-
+        # Static transforms. Function names reflect effect on coordinates.
         def scale(fact):
             mat = np.diag((*[fact] * num_dim, 1))
-            return tensor(mat)
+            return ne.layers.Constant(mat)([])
 
         # Affine registration at half resolution. The transforms will operate in half-resolution
         # index space and transform all the way from one image to the other, or half-way into the
@@ -1581,6 +1586,25 @@ class HyperVxmJoint(tf.keras.Model):
         ima_1 = layers.SpatialTransformer(**prop)((full_1, scale(2)))
         ima_2 = layers.SpatialTransformer(**prop)((full_2, scale(2)))
         aff_1, aff_2 = model_aff((ima_1, ima_2))
+
+        if pass_affine:
+            assert not skip_affine, 'cannot both skip and override affine'
+            affine = tf.keras.Input(shape=(num_dim, num_dim + 1))
+            input_model = tf.keras.Model(
+                inputs=(input_model.inputs, affine),
+                outputs=(input_model.outputs, affine),
+            )
+            *hyp_inp, full_1, full_2, affine = input_model.outputs
+
+            aff_1 = affine
+            aff_1 = layers.ComposeTransform()((scale(0.5), aff_1, scale(2)))
+            aff_2 = layers.InvertAffine()(aff_1)
+            if mid_space:
+                aff_1 = KL.Lambda(utils.make_square_affine)(aff_1)
+                aff_1 = KL.Lambda(tf.linalg.sqrtm)(aff_1)
+
+                aff_2 = KL.Lambda(utils.make_square_affine)(aff_2)
+                aff_2 = KL.Lambda(tf.linalg.sqrtm)(aff_2)
 
         # Deformable input. Affine transforms from full to half resolution.
         aff_1 = layers.ComposeTransform(shift_center=False)((scale(2), aff_1))
@@ -1594,9 +1618,10 @@ class HyperVxmJoint(tf.keras.Model):
             mov_2 = ima_2
 
         # Hypernetwork.
-        hyp_out = hyp_inp
-        for n in hyp_units:
-            hyp_out = KL.Dense(n, activation='relu')(hyp_out)
+        if hyp_num > 0:
+            hyp_out = hyp_inp[0]
+            for n in hyp_units:
+                hyp_out = KL.Dense(n, activation='relu')(hyp_out)
 
         # Deformable layers.
         inp_1 = tf.keras.Input(shape=(*shape_half, num_chan))
@@ -1604,9 +1629,13 @@ class HyperVxmJoint(tf.keras.Model):
         pool = getattr(KL, f'MaxPool{num_dim}D')
         up = getattr(KL, f'UpSampling{num_dim}D')
 
+        # Convolution.
         def conv(x, filters):
             prop = dict(filters=filters, kernel_size=3, padding='same')
-            return ne.layers.HyperConvFromDense(num_dim, **prop)((x, hyp_out))
+            if hyp_num > 0:
+                return ne.layers.HyperConvFromDense(num_dim, **prop)((x, hyp_out))
+
+            return getattr(KL, f'Conv{num_dim}D')(**prop)(x)
 
         # Deformable encoder.
         assert len(enc_nf) == len(dec_nf), 'number of layers differs for encoder and decoder'
@@ -1633,18 +1662,26 @@ class HyperVxmJoint(tf.keras.Model):
 
         # Deformable network: output SVF or warp.
         x = conv(x, filters=num_dim)
-        model_def = tf.keras.Model(inputs=(hyp_inp, inp_1, inp_2), outputs=x)
+        model_def = tf.keras.Model(inputs=(*hyp_inp, inp_1, inp_2), outputs=x)
 
         # Deformable registration. Average for symmetry, before integration.
-        svf_1 = model_def((hyp_inp, mov_1, mov_2))
-        svf_2 = model_def((hyp_inp, mov_2, mov_1))
-        svf_1 = 0.5 * (svf_1 - svf_2)
-        svf_2 = svf_1 * -1
+        svf_1 = model_def((*hyp_inp, mov_1, mov_2))
+        svf_2 = model_def((*hyp_inp, mov_2, mov_1))
+        svf_1 = KL.average((ne.layers.Negate()(svf_2), svf_1))
+        svf_2 = ne.layers.Negate()(svf_1)
         def_1 = layers.VecInt(method='ss', int_steps=int_steps)(svf_1)
         def_2 = layers.VecInt(method='ss', int_steps=int_steps)(svf_2)
         if int_steps == 0:
             def_1 = svf_1
             def_2 = svf_2
+
+        if skip_deform:
+            assert not skip_affine, 'cannot skip both affine and deformable'
+            assert not return_svf, 'cannot skip deformable and return SVF'
+            assert not return_def, 'cannot skip deformable and return warp'
+            input_model = tf.keras.Model(*[(full_1, full_2)] * 2)
+            def_1 = scale(1.0)
+            def_2 = scale(1.0)
 
         # Total warps from full to half resolution. Layer converts matrices to dense transforms
         # using the half-resolution shape derived from the deformation fields.
