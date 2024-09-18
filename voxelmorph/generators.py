@@ -418,16 +418,15 @@ def surf_semisupervised(
         yield (inputs, outputs)
 
 
-def synthmorph(label_maps, batch_size=1, same_subj=False, flip=True):
+def synthmorph(label_maps, batch_size=1, same_subj=False, flip=False):
     """
     Generator for SynthMorph registration.
 
     Parameters:
-        labels_maps: List of pre-loaded ND label maps, each as a NumPy array.
-        batch_size: Batch size. Default is 1.
-        same_subj: Whether the same label map is returned as the source and target for further
-            augmentation. Default is False.
-        flip: Whether axes are flipped randomly. Default is True.
+        labels_maps: List of pre-loaded ND label maps without batch or feature dimension.
+        batch_size: Batch size.
+        same_subj: Return the same label map both as source and target.
+        flip: Randomly flip the same axis of the source and target label maps.
     """
     in_shape = label_maps[0].shape
     num_dim = len(in_shape)
