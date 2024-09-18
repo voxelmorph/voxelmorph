@@ -426,24 +426,22 @@ def synthmorph(label_maps, batch_size=1, same_subj=False, flip=False):
         labels_maps: List of preloaded ND label maps without batch or feature dimension.
         batch_size: Batch size.
         same_subj: Return the same label map both as source and target.
-        flip: Randomly flip the same axis of the source and target label maps.
+        flip: Randomly flip the same axes of the source and target label maps.
 
     Yields:
         Source and target label maps as a tuple and "true" dummy value that SynthMorph training
         will ignore, as it is unsupervised.
     """
-    in_shape = label_maps[0].shape
-    num_dim = len(in_shape)
-
+    label_maps = np.expand_dims(label_maps, axis=-1)
     rand = np.random.default_rng()
-    prop = dict(replace=False, shuffle=False)
-    while True:
-        ind = rand.integers(len(label_maps), size=2 * batch_size)
-        x = [label_maps[i] for i in ind]
 
+    num_dim = label_maps.ndim - 2
+    prop = dict(replace=False, shuffle=False)
+
+    while True:
+        x = rand.choice(label_maps, size=2 * batch_size)
         if same_subj:
-            x = x[:batch_size] * 2
-        x = np.stack(x)[..., None]
+            x[batch_size:] = x[:batch_size]
 
         if flip:
             axes = rand.choice(num_dim, size=rand.integers(num_dim + 1), **prop)
