@@ -423,16 +423,17 @@ def synthmorph(label_maps, batch_size=1, same_subj=False, flip=False):
     Generator for SynthMorph registration.
 
     Parameters:
-        labels_maps: List of pre-loaded ND label maps without batch or feature dimension.
+        labels_maps: List of preloaded ND label maps without batch or feature dimension.
         batch_size: Batch size.
         same_subj: Return the same label map both as source and target.
         flip: Randomly flip the same axis of the source and target label maps.
+
+    Yields:
+        Source and target label maps as a tuple and "true" dummy value that SynthMorph training
+        will ignore, as it is unsupervised.
     """
     in_shape = label_maps[0].shape
     num_dim = len(in_shape)
-
-    # "True" moved image and warp, that will be ignored by SynthMorph losses.
-    void = np.zeros((batch_size, *in_shape, num_dim), dtype='float32')
 
     rand = np.random.default_rng()
     prop = dict(replace=False, shuffle=False)
@@ -448,6 +449,4 @@ def synthmorph(label_maps, batch_size=1, same_subj=False, flip=False):
             axes = rand.choice(num_dim, size=rand.integers(num_dim + 1), **prop)
             x = np.flip(x, axis=axes + 1)
 
-        src = x[:batch_size, ...]
-        trg = x[batch_size:, ...]
-        yield [src, trg], [void] * 2
+        yield (x[:batch_size], x[batch_size:]), np.zeros(0)
