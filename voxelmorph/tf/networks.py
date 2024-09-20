@@ -1114,7 +1114,7 @@ class Unet(tf.keras.Model):
         elif nb_levels is not None:
             raise ValueError('cannot use nb_levels if nb_features is not an integer')
 
-        ndims = len(unet_input.get_shape()) - 2
+        ndims = len(unet_input.shape) - 2
         assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
         MaxPooling = getattr(KL, 'MaxPooling%dD' % ndims)
 
@@ -1735,7 +1735,7 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
     """
     Specific convolutional block followed by leakyrelu for unet.
     """
-    ndims = len(x.get_shape()) - 2
+    ndims = len(x.shape) - 2
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
     extra_conv_params = {}
@@ -1751,10 +1751,10 @@ def _conv_block(x, nfeat, strides=1, name=None, do_res=False, hyp_tensor=None,
                      strides=strides, name=name, **extra_conv_params)(conv_inputs)
 
     if do_res:
-        # assert nfeat == x.get_shape()[-1], 'for residual number of features should be constant'
+        # assert nfeat == x.shape[-1], 'for residual, number of features should be constant'
         add_layer = x
         print('note: this is a weird thing to do, since its not really residual training anymore')
-        if nfeat != x.get_shape().as_list()[-1]:
+        if nfeat != x.shape[-1]:
             add_layer = Conv(nfeat, kernel_size=3, padding='same',
                              name='resfix_' + name, **extra_conv_params)(conv_inputs)
         convolved = KL.Lambda(lambda x: x[0] + x[1])([add_layer, convolved])
@@ -1770,7 +1770,7 @@ def _upsample_block(x, connection, factor=2, name=None):
     """
     Specific upsampling and concatenation layer for unet.
     """
-    ndims = len(x.get_shape()) - 2
+    ndims = len(x.shape) - 2
     assert ndims in (1, 2, 3), 'ndims should be one of 1, 2, or 3. found: %d' % ndims
     UpSampling = getattr(KL, 'UpSampling%dD' % ndims)
 
