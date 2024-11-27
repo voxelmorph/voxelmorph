@@ -641,3 +641,92 @@ class DrawAffineParams(Layer):
                                         concat=self.concat,
                                         dtype=self.out_type,
                                         seeds=self.seeds)
+
+
+class Downsample(Layer):
+    """
+    Symmetrically downsample a tensor by a factor f (stride) using
+    nearest-neighbor interpolation and upsample again, to reduce its
+    resolution. Both f and the downsampling axes can be randomized. The
+    layer does not bother with anti-aliasing, as it is intended for
+    augmentation after a random blurring step.
+
+    Notes:
+        The layer differs from ne.utils.Subsample in that it downsamples along
+        several axes, always restores the shape of the input tensor, and moves
+        the image content less.
+
+    If you find this layer useful, please cite:
+        Anatomy-specific acquisition-agnostic affine registration learned from fictitious images
+        M Hoffmann, A Hoopes, B Fischl*, AV Dalca* (*equal contribution)
+        SPIE Medical Imaging: Image Processing, 12464, p 1246402, 2023
+        https://doi.org/10.1117/12.2653251
+    """
+
+    def __init__(self,
+                 stride_min=1,
+                 stride_max=8,
+                 axes=None,
+                 prob=1,
+                 interp_method='linear',
+                 seed=None,
+                 **kwargs):
+        """
+        Parameters:
+            stride_min: Minimum downsampling factor.
+            stride_max: Maximum downsampling factor.
+            axes: Spatial axes to draw the downsampling axis from. None means all.
+            prob: Downsampling probability. A value of 1 means always, 0 never.
+            interp_method: Upsampling method. Choose 'linear' or 'nearest'.
+            seed: Integer for reproducible randomization.
+        """
+        self.stride_min = stride_min
+        self.stride_max = stride_max
+        self.axes = axes
+        self.prob = prob
+        self.interp_method = interp_method
+        self.seed = seed
+        super().__init__(**kwargs)
+
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'stride_min': self.stride_min,
+            'stride_max': self.stride_max,
+            'axes': self.axes,
+            'prob': self.prob,
+            'interp_method': self.interp_method,
+            'seed': self.seed,
+        })
+        return config
+
+    def build(self, in_shape):
+        ndims = len(in_shape) - 2
+        assert ndims in (1, 2, 3), 'only 1D, 2D, or 3D supported'
+
+        allowed = range(1, ndims + 1)
+        self.axes = ne.py.utils.normalize_axes(self.axes, in_shape, allowed, none_means_all=True)
+
+        self.rand = tf.random.Generator.from_non_deterministic_state()
+        if self.seed is not None:
+            self.rand.reset_from_seed(self.seed)
+
+        super().build(in_shape)
+
+    def call(self, x):
+        """
+        Parameters:
+            x: Input tensor to downsample.
+        """
+        if self.prob == 0 or self.stride_max == 1:
+            return x
+
+        downsample = lambda f: utils.downsample(f,
+                                                stride_min=self.stride_min,
+                                                stride_max=self.stride_max,
+                                                axes=tuple(ax - 1 for ax in self.axes),
+                                                prob=self.prob,
+                                                interp_method=self.interp_method,
+                                                rand=self.rand)
+
+        return tf.map_fn(downsample, x)
