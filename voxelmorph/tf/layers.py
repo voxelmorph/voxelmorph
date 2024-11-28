@@ -643,7 +643,7 @@ class DrawAffineParams(Layer):
                                         seeds=self.seeds)
 
 
-class Downsample(Layer):
+class DownUpSample(Layer):
     """
     Symmetrically downsample a tensor by a factor f (stride) using
     nearest-neighbor interpolation and upsample again, to reduce its
@@ -721,12 +721,12 @@ class Downsample(Layer):
         if self.prob == 0 or self.stride_max == 1:
             return x
 
-        downsample = lambda f: utils.downsample(f,
-                                                stride_min=self.stride_min,
-                                                stride_max=self.stride_max,
-                                                axes=tuple(ax - 1 for ax in self.axes),
-                                                prob=self.prob,
-                                                interp_method=self.interp_method,
-                                                rand=self.rand)
+        func = lambda f: utils.down_up_sample(f,
+                                              stride_min=self.stride_min,
+                                              stride_max=self.stride_max,
+                                              axes=tuple(ax - 1 for ax in self.axes),
+                                              prob=self.prob,
+                                              interp_method=self.interp_method,
+                                              rand=self.rand)
 
-        return tf.map_fn(downsample, x)
+        return tf.map_fn(func, x)
