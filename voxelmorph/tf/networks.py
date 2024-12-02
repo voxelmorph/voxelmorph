@@ -1528,7 +1528,8 @@ class HyperVxmJoint(tf.keras.Model):
             pass_affine: Append a model input and set the affine transform to it.
             skip_affine: Skip affine registration and build a model comparable to `HyperVxmDense`.
             skip_deform: Skip deformable registration and build a `VxmAffineFeatureDetector` model.
-            mid_space: Run the deformable step in an affine mid-space.
+            mid_space: Run the deformable step in an affine mid-space. This option has no effect
+                when performing deformable registration only, with `skip_affine=True`.
             return_trans_to_half_res: Return transforms from input images at full resolution to
                 output images at half resolution. You can change this option after training. This
                 option also affects the shape of the moved images, if returned.
