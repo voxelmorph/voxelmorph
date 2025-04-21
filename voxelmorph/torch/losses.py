@@ -171,7 +171,13 @@ class SoftNormalizedMutualInformation:
         h = torch.zeros([batch_size, self.num_bins, self.num_bins]).to(y_true.device)
         for i in range(self.num_bins):
             for j in range(self.num_bins):
-                h[:,i,j] = torch.sum(self.gaussian(y_true - i)*self.gaussian(y_pred - j), dim=list(range(1,len(y_true.shape))))
+                lower = (i*256/self.num_bins, j*256/self.num_bins)
+                upper = ((i+1)*256/self.num_bins, (j+1)*256/self.num_bins)
+                center = ((lower[0] + upper[0])/2, (lower[1] + upper[1])/2)
+                h[:,i,j] = torch.sum(
+                    self.gaussian(y_true - center[0])*self.gaussian(y_pred - center[1]), 
+                    dim=list(range(1,len(y_true.shape)))
+                )
         p = h / torch.sum(h, dim=[1,2])[:,None,None]
         p_f = torch.sum(p, dim = 2)
         p_m = torch.sum(p, dim = 1)
