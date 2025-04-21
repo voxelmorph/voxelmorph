@@ -133,3 +133,51 @@ class Grad:
             grad *= self.loss_mult
 
         return grad.mean()
+    
+
+class SoftNormalizedMutualInformation:
+    """
+    Soft Normalized Mutual Information
+    Citation:
+    Qiu, H., Qin, C., Schuh, A., Hammernik, K. &amp; Rueckert, D.. (2021).
+      Learning Diffeomorphic and Modality-invariant Registration using B-splines. 
+      <i>Proceedings of the Fourth Conference on Medical Imaging with Deep Learning</i>, 
+      in <i>Proceedings of Machine Learning Research</i> 143:645-664 Available from https://proceedings.mlr.press/v143/qiu21a.html.
+    """
+    
+    def __init__(self, num_bins=64, sigma=None):
+        """
+        Parameters:
+            num_bins: number of bins, default 64; 256/bins should be integer.
+            sigma: variance of gaussian distribution, default sigma ensures HMFW is one bin size.
+        """
+        assert 256 % num_bins == 0, "256/bins should be integer."
+        
+        self.num_bins = num_bins
+        if(sigma == None):
+            self.sigma = 256.0/num_bins/np.sqrt(2*np.log(2))
+        else:
+            self.sigma = sigma
+
+    def gaussian(self, y):
+        return 1/torch.sqrt(torch.tensor(2*torch.pi))/self.sigma*torch.exp(-y**2/2/self.sigma**2)
+    
+    def loss(self, y_true, y_pred):
+        """
+        Returns: -(H_f+H_m)/H_fm where H_f, H_m, H_fm are entropy for fixed image, moving image 
+            and joint entropy for two images
+        """
+        batch_size = y_pred.shape[0]
+        h = torch.zeros([batch_size, self.num_bins, self.num_bins]).to(y_true.device)
+        for i in range(self.num_bins):
+            for j in range(self.num_bins):
+                h[:,i,j] = torch.sum(self.gaussian(y_true - i)*self.gaussian(y_pred - j), dim=list(range(1,len(y_true.shape))))
+        p = h / torch.sum(h, dim=[1,2])[:,None,None]
+        p_f = torch.sum(p, dim = 2)
+        p_m = torch.sum(p, dim = 1)
+
+        eps = 1e-8
+        H_fm = torch.sum(-p*torch.log(p+eps), dim = [1,2])
+        H_f = torch.sum(-p_f*torch.log(p_f+eps), dim = 1)
+        H_m = torch.sum(-p_m*torch.log(p_m+eps), dim = 1)
+        return -torch.mean((H_f + H_m) / H_fm)
