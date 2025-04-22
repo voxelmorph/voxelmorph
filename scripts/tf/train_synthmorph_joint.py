@@ -66,8 +66,9 @@ p.add_argument('--gpu', type=str, default='0', help='ID of GPU to use')
 p.add_argument('--epochs', type=int, default=10000, help='training epochs')
 p.add_argument('--batch-size', type=int, default=1, help='batch size')
 p.add_argument('--init-epoch', type=int, default=0, help='initial epoch number')
-p.add_argument('--init-weights', help='weights file to initialize model with')
+p.add_argument('--init-joint', help='weights file to initialize joint model with')
 p.add_argument('--init-affine', help='weights file to initialize affine submodel with')
+p.add_argument('--init-deform', help='weights file to initialize deformable submodel with')
 p.add_argument('--save-freq', type=int, default=100, help='epochs between model saves')
 p.add_argument('--lr', type=float, default=1e-5, help='learning rate')
 p.add_argument('--loss-mult', type=float, default=10, help='similarity-loss weight')
@@ -202,11 +203,14 @@ if arg.log_dir:
 
 
 # initialization
-if arg.init_weights:
-    model.load_weights(arg.init_weights)
+if arg.init_joint:
+    model.load_weights(arg.init_joint)
 
 if arg.init_affine:
     model_aff.load_weights(arg.init_affine)
+
+if arg.init_deform:
+    model_def.load_weights(arg.init_deform)
 
 
 # training
