@@ -93,6 +93,61 @@ args = parser.parse_args()
 
 bidir = args.bidir
 
+def load_tf_weights(model, tf_weights_path):
+    """
+    Load weights from a TensorFlow model into a PyTorch model.
+
+    This function iterates over all named modules in the PyTorch model and tries to load the corresponding weights
+    from the TensorFlow weights file. It handles the loading of weights for convolutional layers, flow layers, and
+    transformers.
+
+    For convolutional layers, it constructs the weight and bias names based on the module name and looks for the
+    corresponding weights in the TensorFlow weights file. If the weights are found, it performs necessary dimension
+    adjustments and converts them to PyTorch tensors.
+
+    For other parts of the model, such as flow layers and transformers, it directly looks for the corresponding weights
+    in the TensorFlow weights file and converts them to PyTorch tensors.
+
+    The purpose of this function is to seamlessly transfer the weights from a TensorFlow model to the corresponding
+    PyTorch model, allowing the use of pre-trained models in the PyTorch environment.
+
+    Args:
+        model (torch.nn.Module): The PyTorch model instance.
+        tf_weights_path (str): The path to the TensorFlow weights file.
+
+    Returns:
+        None
+    """
+    with h5py.File(tf_weights_path, 'r') as f:
+        for name, module in model.named_modules():
+            if isinstance(module, torch.nn.Conv3d):
+                # load CNN layer weights
+                weight_name = name.replace('.', '/') + '/kernel:0'
+                bias_name = name.replace('.', '/') + '/bias:0'
+                if weight_name in f:
+                    weight = f[weight_name][:]
+                    weight = np.squeeze(weight)  # 移除长度为 1 的维度
+                    weight = np.transpose(weight, tuple(range(weight.ndim - 1, -1, -1)))  # 反转维度顺序
+                    module.weight.data = torch.from_numpy(weight)
+                if bias_name in f:
+                    bias = f[bias_name][:]
+                    module.bias.data = torch.from_numpy(bias)
+
+        # load other layers weights
+        if 'model_weights/vxm_dense_flow/vxm_dense_flow/kernel:0' in f:
+            flow_kernel = f['model_weights/vxm_dense_flow/vxm_dense_flow/kernel:0'][:]
+            if flow_kernel.ndim == 2:
+                model.flow.weight.data = torch.from_numpy(flow_kernel.transpose(1, 0))
+            else:
+                model.flow.weight.data = torch.from_numpy(flow_kernel)
+        if 'model_weights/vxm_dense_flow/vxm_dense_flow/bias:0' in f:
+            flow_bias = f['model_weights/vxm_dense_flow/vxm_dense_flow/bias:0'][:]
+            model.flow.bias.data = torch.from_numpy(flow_bias)
+
+        if 'model_weights/vxm_dense_transformer/kernel:0' in f:
+            transformer_kernel = f['model_weights/vxm_dense_transformer/kernel:0'][:]
+            model.integrate.transformer.data = torch.from_numpy(transformer_kernel)
+
 # load and prepare training data
 train_files = vxm.py.utils.read_file_list(args.img_list, prefix=args.img_prefix,
                                           suffix=args.img_suffix)
@@ -137,7 +192,13 @@ dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 
 if args.load_model:
     # load initial model (if specified)
-    model = vxm.networks.VxmDense.load(args.load_model, device)
+    if 'h5' in args.load_model:
+        # load 'h5' pre-trained models
+        load_tf_weights(vxm.networks.VxmDense, args.load_model)
+    else:
+        # load 'pth' or 'pt' pre-trained models
+        model = vxm.networks.VxmDense.load(args.load_model, device)
+
 else:
     # otherwise configure new model
     model = vxm.networks.VxmDense(
