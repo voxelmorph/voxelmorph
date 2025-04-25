@@ -86,7 +86,7 @@ parser.add_argument('--bidir', action='store_true', help='enable bidirectional c
 
 # loss hyperparameters
 parser.add_argument('--image-loss', default='mse',
-                    help='image reconstruction loss - can be mse or ncc (default: mse)')
+                    help='image reconstruction loss - can be mse or ncc or nmi (default: mse)')
 parser.add_argument('--lambda', type=float, dest='weight', default=0.01,
                     help='weight of deformation loss (default: 0.01)')
 args = parser.parse_args()
@@ -165,6 +165,8 @@ if args.image_loss == 'ncc':
     image_loss_func = vxm.losses.NCC().loss
 elif args.image_loss == 'mse':
     image_loss_func = vxm.losses.MSE().loss
+elif args.image_loss == 'nmi':
+    image_loss_func = vxm.losses.SoftNormalizedMutualInformation().loss
 else:
     raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
