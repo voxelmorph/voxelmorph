@@ -1,12 +1,15 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+# import torch.nn.functional as F
 from torch.distributions.normal import Normal
+from collections import OrderedDict
+# import neurite as ne
 
 from .. import default_unet_features
 from . import layers
 from .modelio import LoadableModel, store_config_args
+import neurite.torch.layers as ne_layers
 
 
 class Unet(nn.Module):
@@ -27,7 +30,9 @@ class Unet(nn.Module):
                  max_pool=2,
                  feat_mult=1,
                  nb_conv_per_level=1,
-                 half_res=False):
+                 half_res=False,
+                 hyp_num_outputs=None,
+                 ):
         """
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -92,7 +97,8 @@ class Unet(nn.Module):
             convs = nn.ModuleList()
             for conv in range(nb_conv_per_level):
                 nf = enc_nf[level * nb_conv_per_level + conv]
-                convs.append(ConvBlock(ndims, prev_nf, nf))
+                convs.append(ConvBlock(ndims, prev_nf, nf,
+                                       hyp_num_outputs=hyp_num_outputs))
                 prev_nf = nf
             self.encoder.append(convs)
             encoder_nfs.append(prev_nf)
@@ -104,7 +110,8 @@ class Unet(nn.Module):
             convs = nn.ModuleList()
             for conv in range(nb_conv_per_level):
                 nf = dec_nf[level * nb_conv_per_level + conv]
-                convs.append(ConvBlock(ndims, prev_nf, nf))
+                convs.append(ConvBlock(ndims, prev_nf, nf,
+                                       hyp_num_outputs=hyp_num_outputs))
                 prev_nf = nf
             self.decoder.append(convs)
             if not half_res or level < (self.nb_levels - 2):
@@ -113,33 +120,34 @@ class Unet(nn.Module):
         # now we take care of any remaining convolutions
         self.remaining = nn.ModuleList()
         for num, nf in enumerate(final_convs):
-            self.remaining.append(ConvBlock(ndims, prev_nf, nf))
+            self.remaining.append(ConvBlock(ndims, prev_nf, nf,
+                                            hyp_num_outputs=hyp_num_outputs))
             prev_nf = nf
 
         # cache final number of features
         self.final_nf = prev_nf
 
-    def forward(self, x):
+    def forward(self, x, *args):
 
         # encoder forward pass
         x_history = [x]
         for level, convs in enumerate(self.encoder):
             for conv in convs:
-                x = conv(x)
+                x = conv(x, *args)
             x_history.append(x)
             x = self.pooling[level](x)
 
         # decoder forward pass with upsampling and concatenation
         for level, convs in enumerate(self.decoder):
             for conv in convs:
-                x = conv(x)
+                x = conv(x, *args)
             if not self.half_res or level < (self.nb_levels - 2):
                 x = self.upsampling[level](x)
                 x = torch.cat([x, x_history.pop()], dim=1)
 
         # remaining convs at full resolution
         for conv in self.remaining:
-            x = conv(x)
+            x = conv(x, *args)
 
         return x
 
@@ -162,7 +170,8 @@ class VxmDense(LoadableModel):
                  use_probs=False,
                  src_feats=1,
                  trg_feats=1,
-                 unet_half_res=False):
+                 unet_half_res=False,
+                 hyp_model=None):
         """ 
         Parameters:
             inshape: Input shape. e.g. (192, 192, 192)
@@ -195,6 +204,10 @@ class VxmDense(LoadableModel):
         ndims = len(inshape)
         assert ndims in [1, 2, 3], 'ndims should be one of 1, 2, or 3. found: %d' % ndims
 
+        hyp_num_outputs = None
+        if hyp_model is not None:
+            hyp_num_outputs = list(hyp_model.modules())[-2].out_features
+
         # configure core unet model
         self.unet_model = Unet(
             inshape,
@@ -204,6 +217,7 @@ class VxmDense(LoadableModel):
             feat_mult=unet_feat_mult,
             nb_conv_per_level=nb_unet_conv_per_level,
             half_res=unet_half_res,
+            hyp_num_outputs=hyp_num_outputs,
         )
 
         # configure unet to flow field layer
@@ -241,17 +255,20 @@ class VxmDense(LoadableModel):
         # configure transformer
         self.transformer = layers.SpatialTransformer(inshape)
 
-    def forward(self, source, target, registration=False):
+    def forward(self, source, target, hyp_output=None, registration=False):
         '''
         Parameters:
             source: Source image tensor.
             target: Target image tensor.
+            hyp_output: Output tensor from hypernetwork (Hypermorph models only)
             registration: Return transformed image and flow. Default is False.
         '''
 
+        hyp_outputs_args = [hyp_output] if hyp_output is not None else []
+
         # concatenate inputs and propagate unet
         x = torch.cat([source, target], dim=1)
-        x = self.unet_model(x)
+        x = self.unet_model(x, *hyp_outputs_args)
 
         # transform into flow field
         flow_field = self.flow(x)
@@ -287,19 +304,118 @@ class VxmDense(LoadableModel):
             return y_source, pos_flow
 
 
-class ConvBlock(nn.Module):
+class HyperVxmDense(LoadableModel):
     """
-    Specific convolutional block followed by leakyrelu for unet.
+    Dense HyperMorph network for amortized hyperparameter learning.
     """
 
-    def __init__(self, ndims, in_channels, out_channels, stride=1):
+    @store_config_args
+    def __init__(self,
+                 inshape,
+                 nb_hyp_params=1,
+                 nb_hyp_layers=6,
+                 nb_hyp_units=128,
+                 name='hyper_vxm_dense',
+
+                 nb_unet_features=None,
+                 nb_unet_levels=None,
+                 unet_feat_mult=1,
+                 nb_unet_conv_per_level=1,
+                 int_steps=7,
+                 int_downsize=2,
+                 bidir=False,
+                 use_probs=False,
+                 src_feats=1,
+                 trg_feats=1,
+                 unet_half_res=False,
+                 ):
+        """
+        Parameters:
+            inshape: Input shape. e.g. (192, 192, 192)
+            nb_hyp_params: Number of input hyperparameters.
+            nb_hyp_layers: Number of dense layers in the hypernetwork.
+            nb_hyp_units: Number of units in each dense layer of the hypernetwork.
+            # name: Model name - also used as layer name prefix. Default is 'vxm_dense'.
+            # kwargs: Forwarded to the internal VxmDense model.
+        """
+
         super().__init__()
 
-        Conv = getattr(nn, 'Conv%dd' % ndims)
-        self.main = Conv(in_channels, out_channels, 3, stride, 1)
+        hyp_layers = OrderedDict()
+        n_last = nb_hyp_params
+        for n in range(nb_hyp_layers):
+            hyp_layers[f'{name}_hyp_dense_{n + 1}_lin'] = nn.Linear(n_last,
+                                                                    nb_hyp_units)
+            hyp_layers[f'{name}_hyp_dense_{n + 1}_relu'] = nn.ReLU()
+            n_last = nb_hyp_units
+        self.hyp_model = nn.Sequential(hyp_layers)
+
+        self.int_downsize = int_downsize
+        self.bidir = bidir
+
+        # VxmDense_model = VxmDense_legacy if legacy else VxmDense
+        # if legacy:
+        #     include_masks_in_input = False
+
+
+        vxm_model = VxmDense(inshape=inshape,
+                             nb_unet_features=nb_unet_features,
+                             nb_unet_levels=nb_unet_levels,
+                             unet_feat_mult=unet_feat_mult,
+                             nb_unet_conv_per_level=nb_unet_conv_per_level,
+                             int_steps=int_steps,
+                             int_downsize=int_downsize,
+                             bidir=bidir,
+                             use_probs=use_probs,
+                             src_feats=src_feats,
+                             trg_feats=trg_feats,
+                             unet_half_res=unet_half_res,
+                             hyp_model=self.hyp_model)
+
+        self.vxm_model = vxm_model
+
+
+    def forward(self, source, target, hyp_input: torch.Tensor, registration=False):
+
+        hyp_output = self.hyp_model(hyp_input)
+
+        vxm_outputs = self.vxm_model.forward(source, target,
+                                             hyp_output, registration=registration)
+
+        return vxm_outputs
+
+
+
+
+
+class ConvBlock(nn.Module):
+    """
+    Specific convolutional block followed by LeakyReLU for unet.
+    """
+
+    def __init__(self, ndims, in_channels, out_channels, stride=1,
+                 hyp_num_outputs=None):
+        super().__init__()
+
+        if hyp_num_outputs is not None:
+            # Use HyperLayers
+            Conv = getattr(ne_layers, 'HyperConv%ddFromDense' % ndims)
+            n_hyp_inputs_kwargs = {'hyp_inputs': hyp_num_outputs}
+        else:
+            # Use Standard conv layers
+            Conv = getattr(nn, 'Conv%dd' % ndims)
+            n_hyp_inputs_kwargs = {}
+
+        self.main = Conv(**n_hyp_inputs_kwargs,
+                         in_channels=in_channels,
+                         out_channels=out_channels,
+                         kernel_size=3,
+                         stride=stride,
+                         padding=1)
         self.activation = nn.LeakyReLU(0.2)
 
-    def forward(self, x):
-        out = self.main(x)
+    def forward(self, x, *args):
+        # for hypernetworks, *args contains the output tensor from the HyperNetwork
+        out = self.main(x, *args)
         out = self.activation(out)
         return out
