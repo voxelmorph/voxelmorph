@@ -59,12 +59,7 @@ class LoadableModel(nn.Module):
         """
         Saves the model configuration and weights to a pytorch file.
         """
-        # don't save the transformer_grid buffers - see SpatialTransformer doc for more info
-        sd = self.state_dict().copy()
-        grid_buffers = [key for key in sd.keys() if key.endswith('.grid')]
-        for key in grid_buffers:
-            sd.pop(key)
-        torch.save({'config': self.config, 'model_state': sd}, path)
+        torch.save({'config': self.config, 'model_state': self.state_dict()}, path)
 
     @classmethod
     def load(cls, path, device):
