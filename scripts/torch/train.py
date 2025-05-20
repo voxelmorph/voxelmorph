@@ -197,8 +197,19 @@ for epoch in range(args.initial_epoch, args.epochs):
 
         # generate inputs (and true outputs) and convert them to tensors
         inputs, y_true = next(generator)
-        inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
+        inputs = [
+            torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) # pixelmorph
+            if d.ndim == 4 else
+            torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) # voxelmorph
+            for d in inputs
+        ]
+
+        y_true = [
+            torch.from_numpy(d).to(device).float().permute(0, 3, 1, 2) 
+            if d.ndim == 4 else
+            torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3)
+            for d in y_true
+        ]
 
         # run inputs through the model to produce a warped image and flow field
         y_pred = model(*inputs)
