@@ -37,8 +37,10 @@ if curv is None or version.parse(curv) < version.parse(minv):
     raise ImportError(f'voxelmorph requires tensorflow version {minv} or greater, '
                         f'but found version {curv}')
 
-from . import tf
-from .tf import layers
-from .tf import networks
-from .tf import losses
-from .tf import utils
+
+from . import py
+from . import utils
+from . import generators
+from . import layers
+from . import losses
+from . import networks
