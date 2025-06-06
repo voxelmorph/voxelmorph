@@ -22,7 +22,7 @@ setuptools.setup(
     url='https://github.com/voxelmorph/voxelmorph',
     keywords=['deformation', 'registration', 'imaging', 'cnn', 'mri'],
     packages=setuptools.find_packages(),
-    python_requires='>=3.6',
+    python_requires='>=3.9',
     classifiers=[
         'Intended Audience :: Science/Research',
         'Programming Language :: Python :: 3',
