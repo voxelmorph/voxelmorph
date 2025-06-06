@@ -21,14 +21,6 @@ def default_unet_features():
     return nb_features
 
 
-def get_backend():
-    """
-    Returns the currently used backend. Default is tensorflow unless the
-    VXM_BACKEND environment variable is set to 'pytorch'.
-    """
-    return 'pytorch' if os.environ.get('VXM_BACKEND') == 'pytorch' else 'tensorflow'
-
-
 def read_file_list(filename, prefix=None, suffix=None):
     '''
     Reads a list of files from a line-seperated text file.
