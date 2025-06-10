@@ -18,12 +18,6 @@ if curv is None or version.parse(curv) < version.parse(minv):
     raise ImportError(f'voxelmorph requires neurite version {minv} or greater, '
                       f'but found version {curv}')
 
-# tensorflow is default backend
-try:
-    import tensorflow
-
-except ImportError:
-    raise ImportError('Please install tensorflow to use this voxelmorph backend')
 
 # ensure valid tensorflow version is available
 minv = '2.4'
