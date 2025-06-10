@@ -18,7 +18,7 @@ if curv is None or version.parse(curv) < version.parse(minv):
     raise ImportError(f'voxelmorph requires neurite version {minv} or greater, '
                       f'but found version {curv}')
 
-
+import tensorflow
 # ensure valid tensorflow version is available
 minv = '2.4'
 curv = getattr(tensorflow, '__version__', None)
