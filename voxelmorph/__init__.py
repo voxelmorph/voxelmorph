@@ -18,11 +18,6 @@ if curv is None or version.parse(curv) < version.parse(minv):
     raise ImportError(f'voxelmorph requires neurite version {minv} or greater, '
                       f'but found version {curv}')
 
-# move on the actual voxelmorph imports
-from . import generators
-from . import py
-from .py.utils import default_unet_features
-
 # tensorflow is default backend
 try:
     import tensorflow
