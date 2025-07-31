@@ -31,7 +31,7 @@ import tensorflow.keras.initializers as KI
 
 # local imports
 import neurite as ne
-from .. import default_unet_features
+from .py.utils import default_unet_features
 from . import layers
 from . import utils
 
