@@ -1312,7 +1312,9 @@ class VxmAffineFeatureDetector(tf.keras.Model):
         if input_model is None:
             inp_1 = tf.keras.Input(shape=(*in_shape, num_chan))
             inp_2 = tf.keras.Input(shape=(*in_shape, num_chan))
-            input_model = tf.keras.Model(*[(inp_1, inp_2)] * 2)
+            inp = (inp_1, inp_2)
+            out = tuple(map(tf.keras.layers.Activation('linear'), inp))
+            input_model = tf.keras.Model(inp, out)
         inp_1, inp_2 = input_model.outputs[:2]
 
         # Dimensions.
@@ -1549,11 +1551,12 @@ class HyperVxmJoint(tf.keras.Model):
             full_1 = tf.keras.Input(shape=(*in_shape, num_chan))
             full_2 = tf.keras.Input(shape=(*in_shape, num_chan))
 
-            inputs = (full_1, full_2)
+            inp = (full_1, full_2)
             if hyp_num > 0:
-                inputs = (hyp_inp, *inputs)
+                inp = (hyp_inp, *inp)
 
-            input_model = tf.keras.Model(inputs, inputs)
+            out = tuple(map(tf.keras.layers.Activation('linear'), inp))
+            input_model = tf.keras.Model(inp, out)
 
         *hyp_inp, full_1, full_2 = input_model.outputs
 
@@ -1590,14 +1593,14 @@ class HyperVxmJoint(tf.keras.Model):
 
         if pass_affine:
             assert not skip_affine, 'cannot both skip and override affine'
-            affine = tf.keras.Input(shape=(num_dim, num_dim + 1))
+            aff = tf.keras.Input(shape=(num_dim, num_dim + 1))
             input_model = tf.keras.Model(
-                inputs=(input_model.inputs, affine),
-                outputs=(input_model.outputs, affine),
+                inputs=(input_model.inputs, aff),
+                outputs=(input_model.outputs, tf.keras.layers.Activation('linear')(aff)),
             )
-            *hyp_inp, full_1, full_2, affine = input_model.outputs
+            *hyp_inp, full_1, full_2, aff = input_model.outputs
 
-            aff_1 = affine
+            aff_1 = aff
             aff_1 = layers.ComposeTransform()((scale(0.5), aff_1, scale(2)))
             aff_2 = layers.InvertAffine()(aff_1)
             if mid_space:
@@ -1680,7 +1683,9 @@ class HyperVxmJoint(tf.keras.Model):
             assert not skip_affine, 'cannot skip both affine and deformable'
             assert not return_svf, 'cannot skip deformable and return SVF'
             assert not return_def, 'cannot skip deformable and return warp'
-            input_model = tf.keras.Model(*[(full_1, full_2)] * 2)
+            inp = (full_1, full_2)
+            out = tuple(map(tf.keras.layers.Activation('linear'), inp))
+            input_model = tf.keras.Model(inp, out)
             def_1 = scale(1.0)
             def_2 = scale(1.0)
 
