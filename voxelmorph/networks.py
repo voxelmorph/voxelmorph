@@ -247,6 +247,8 @@ class VxmDense(ne.modelio.LoadableModel):
         else:
             raise ValueError(f'Unknown option "{reg_field}" for reg_field.')
 
+        # avoid "`inputs` not connected to `outputs`" error with newer Keras
+        outputs = tuple(map(tf.keras.layers.Activation('linear'), outputs))
         super().__init__(name=name, inputs=inputs, outputs=outputs)
 
         # cache pointers to layers and tensors for future reference
