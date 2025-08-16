@@ -106,7 +106,9 @@ class VxmDense(ne.modelio.LoadableModel):
             # configure default input layers if an input model is not provided
             source = tf.keras.Input(shape=(*inshape, src_feats), name='%s_source_input' % name)
             target = tf.keras.Input(shape=(*inshape, trg_feats), name='%s_target_input' % name)
-            input_model = tf.keras.Model(inputs=[source, target], outputs=[source, target])
+            inputs = (source, target)
+            output = tuple(map(tf.keras.layers.Activation('linear'), inputs))
+            input_model = tf.keras.Model(inputs, output)
         else:
             source, target = input_model.outputs[:2]
 
