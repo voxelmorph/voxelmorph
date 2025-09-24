@@ -34,14 +34,17 @@ def test_forward_output_shape(dummy_input_pair):
         ndim=3,
         source_channels=1,
         target_channels=1,
-        spatial_shape=(32, 32, 32),
         device="cpu"
     )
 
     output = model(source, target)
 
-    assert isinstance(output, torch.Tensor)
-    assert output.shape[2:] == source.shape[2:]
+    # Output should be a tuple
+    assert isinstance(output, tuple)
+    # Check each output tensor shape
+    for out in output:
+        assert isinstance(out, torch.Tensor)
+        assert out.shape[2:] == source.shape[2:]
 
     # Ensure transformer is initialized after forward
     assert hasattr(model, "flow_layer")
@@ -49,21 +52,27 @@ def test_forward_output_shape(dummy_input_pair):
     assert hasattr(model, "velocity_field_integrator")
 
 
-def test_return_warped_mode(dummy_input_pair):
+def test_return_warp_or_svf(dummy_input_pair):
     """
-    Test that forward pass with registration returns warped source and displacement field.
+    Test that forward pass with reg_field='svf' or 'warp' returns the correct outputs.
     """
 
     model = vxm.nn.models.VxmPairwise(
         ndim=3,
         source_channels=1,
         target_channels=1,
-        spatial_shape=(32, 32, 32),
         device="cpu"
     )
 
     source, target = dummy_input_pair
-    warped_source, pos_flow = model(source, target, return_warped=True)
+    output1 = model(source, target, reg_field='warp')
+    output2 = model(source, target, reg_field='svf')
 
+    assert isinstance(output1, tuple)
+    warped_source, pos_flow = output1[0], output1[-1]
     assert warped_source.shape[2:] == source.shape[2:]
     assert pos_flow.shape[2:] == source.shape[2:]
+
+    assert isinstance(output2, tuple)
+    pos_vel = output2[-1]
+    assert pos_vel.shape[2:] == source.shape[2:]
