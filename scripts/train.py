@@ -130,9 +130,12 @@ assert np.mod(args.batch_size, nb_gpus) == 0, \
 # enabling cudnn determinism appears to speed up training by a lot
 torch.backends.cudnn.deterministic = not args.cudnn_nondet
 
-# unet architecture
-enc_nf = args.enc if args.enc else [16, 32, 32, 32]
-dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
+# unet architecture | WIP, sticking to defaults for now
+# enc_nf = args.enc if args.enc else [16, 32, 32, 32]
+# dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
+# combined_nf = [enc_nf, dec_nf]
+combined_nf = [16, 32, 32, 32, 32]
+print(f"combined_nf: {combined_nf}")
 
 if args.load_model:
     # load initial model (if specified)
@@ -140,10 +143,12 @@ if args.load_model:
 else:
     # otherwise configure new model
     model = vxm.nn.models.VxmPairwise(
+        spatial_shape=inshape,
+        order='cna',
         ndim=len(inshape),
         source_channels=1,  # Assuming single channel
         target_channels=1,  # Assuming single channel
-        nb_features=enc_nf + dec_nf,
+        nb_features=combined_nf,
         integration_steps=args.int_steps,
         bidirectional_cost=bidir,
         device=device
@@ -186,7 +191,10 @@ for epoch in range(args.initial_epoch, args.epochs):
 
     # save model checkpoint
     if epoch % 20 == 0:
-        model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+        # model.save(os.path.join(model_dir, '%04d.pt' % epoch))
+        # Save the torch module since VxmPairwise object has no attribute save
+        torch.save(model, os.path.join(model_dir, '%04d.pt' % epoch))
+
 
     epoch_loss = []
     epoch_total_loss = []
@@ -202,13 +210,17 @@ for epoch in range(args.initial_epoch, args.epochs):
         y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
 
         # run inputs through the model to produce a warped image and displacement field
-        y_pred = model(*inputs)
+        displacement, y_pred = model(*inputs, return_warped=True)
 
         # calculate total loss
         loss = 0
         loss_list = []
         for n, loss_function in enumerate(losses):
-            curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+            # If the loss function is an image loss:
+            if n < len(losses) - 1:                
+                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
+            else: # Grad loss
+                curr_loss = loss_function(displacement) * weights[n]
             loss_list.append(curr_loss.item())
             loss += curr_loss
 
@@ -231,4 +243,6 @@ for epoch in range(args.initial_epoch, args.epochs):
     print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
 
 # final model save
-model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
+# model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
+# Save the torch module since VxmPairwise object has no attribute save
+torch.save(model, os.path.join(model_dir, '%04d.pt' % args.epochs))
