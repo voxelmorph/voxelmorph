@@ -39,6 +39,8 @@ import argparse
 import time
 import numpy as np
 import torch
+from monai.losses.dice import DiceLoss
+from pathlib import Path
 
 # import voxelmorph with pytorch backend
 os.environ['NEURITE_BACKEND'] = 'pytorch'
@@ -107,6 +109,14 @@ if args.atlas:
     generator = vxm.py.generators.scan_to_atlas(train_files, atlas,
                                                 batch_size=args.batch_size, bidir=args.bidir,
                                                 add_feat_axis=add_feat_axis)
+elif args.image_loss == "dice":
+    # Load the mov,fixe, mov_label -> fixed, blank, fixed_label datagenerator
+    seg_files = [str(Path(entry).parent / "labels/synthseg_flair.nii") for entry in train_files]
+    fs_labels = [0, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 24, 28, 26, 30, 31, 41, 42, 43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60, 62, 63, 72, 77, 80, 85, 251, 252, 253, 254, 255]
+    print(f"train_files: {train_files}")
+    print(f"seg_files: {seg_files}")
+    generator = vxm.py.generators.semisupervised(vol_names = train_files, seg_names = seg_files, labels = fs_labels, atlas_file=None, downsize=1)
+    invols, outvols = next(generator)
 else:
     # scan-to-scan generator
     print(f"Generator inputs:")
@@ -116,6 +126,7 @@ else:
     print(f"add_feat_axis: {add_feat_axis}")
     generator = vxm.py.generators.scan_to_scan(
         train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -186,6 +197,11 @@ if args.image_loss == 'ncc':
     image_loss_func = vxm.nn.losses.NCC().loss
 elif args.image_loss == 'mse':
     image_loss_func = vxm.nn.losses.MSE().loss
+elif args.image_loss == "dice":
+    image_loss_func = DiceLoss(
+        sigmoid=False,
+        squared_pred=True,
+    )
 else:
     raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
@@ -197,9 +213,29 @@ else:
     losses = [image_loss_func]
     weights = [1]
 
+
 # prepare deformation loss
 losses += [vxm.nn.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights += [args.weight]
+
+if args.image_loss == "dice":
+    weights = [0, args.weight, 1]
+
+# Create a spatial transformer for segmentations (nearest-neighbor interpolation)
+seg_transformer = vxm.nn.modules.SpatialTransformer(
+    size=model.spatial_shape,
+    # interpolation_mode='nearest'  # Critical for segmentations to preserve label values
+).to(model.device)
+
+def apply_displacement_field_to_seg(vxm_model, displacement, seg_volume):
+    if vxm_model.integration_steps > 0:
+        # Provide negative velocity only when bidirectional cost is desired
+        neg_velocity = -displacement if vxm_model.bidirectional_cost else None
+        displacement, _ = vxm_model._integrate_velocity_fields(displacement, neg_velocity)
+
+    # Warp the segmentation using the displacement field from registration
+    warped_seg = seg_transformer(seg_volume, displacement)
+    return warped_seg
 
 # training loops
 for epoch in range(args.initial_epoch, args.epochs):
@@ -219,10 +255,14 @@ for epoch in range(args.initial_epoch, args.epochs):
 
         step_start_time = time.time()
 
-        # generate inputs (and true outputs) and convert them to tensors
-        inputs, y_true = next(generator)
+        if args.image_loss == "dice":
+            invols, outvols = next(generator)
+            inputs = [invols[0], invols[1]]
+        else:
+            # generate inputs (and true outputs) and convert them to tensors
+            inputs, y_true = next(generator)
         inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
+        # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
 
         # run inputs through the model to produce a warped image and displacement field
         displacement, y_pred = model(*inputs, return_warped=True)
@@ -230,14 +270,14 @@ for epoch in range(args.initial_epoch, args.epochs):
         # calculate total loss
         loss = 0
         loss_list = []
-        for n, loss_function in enumerate(losses):
-            # If the loss function is an image loss:
-            if n < len(losses) - 1:                
-                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            else: # Grad loss
-                curr_loss = loss_function(displacement) * weights[n]
-            loss_list.append(curr_loss.item())
-            loss += curr_loss
+        # Append the dice loss and gradient loss:
+        # Warp the moving labels
+        warped_seg = apply_displacement_field_to_seg(model, displacement, torch.from_numpy(invols[2]).to(device).float().permute(0, 4, 1, 2, 3))
+        outvols[2] = torch.from_numpy(outvols[2]).to(device).float().permute(0, 4, 1, 2, 3)
+        dice_loss = image_loss_func(outvols[2], warped_seg)
+        grad_loss = vxm.nn.losses.Grad('l2', loss_mult=args.int_downsize).loss(displacement) * args.weight
+        loss_list = [dice_loss.item(), grad_loss.item()]
+        loss = dice_loss + grad_loss
 
         epoch_loss.append(loss_list)
         epoch_total_loss.append(loss.item())

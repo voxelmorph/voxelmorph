@@ -20,10 +20,12 @@ from . import functional
 from . import losses
 from . import models
 from . import modules
+from . import fastNCC
 
 __all__ = [
     "functional",
     "losses",
     "models",
     "modules",
+    "fastNCC"
 ]

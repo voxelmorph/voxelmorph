@@ -39,6 +39,14 @@ import argparse
 import time
 import numpy as np
 import torch
+from monai.losses.dice import DiceLoss
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+
+import torch.profiler
 
 # import voxelmorph with pytorch backend
 os.environ['NEURITE_BACKEND'] = 'pytorch'
@@ -107,6 +115,14 @@ if args.atlas:
     generator = vxm.py.generators.scan_to_atlas(train_files, atlas,
                                                 batch_size=args.batch_size, bidir=args.bidir,
                                                 add_feat_axis=add_feat_axis)
+elif args.image_loss == "dice" or args.image_loss == "ncc_dice":
+    # Load the mov,fixe, mov_label -> fixed, blank, fixed_label datagenerator
+    seg_files = [str(Path(entry).parent / "labels/synthseg_flair.nii") for entry in train_files]
+    fs_labels = [0, 2, 3, 4, 5, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 24, 28, 26, 30, 31, 41, 42, 43, 44, 46, 47, 49, 50, 51, 52, 53, 54, 58, 60, 62, 63, 72, 77, 80, 85, 251, 252, 253, 254, 255]
+    print(f"train_files: {train_files}")
+    print(f"seg_files: {seg_files}")
+    generator = vxm.py.generators.semisupervised_fast(vol_names = train_files, seg_names = seg_files, labels = fs_labels, atlas_file=None, downsize=1)
+    invols, outvols = next(generator)
 else:
     # scan-to-scan generator
     print(f"Generator inputs:")
@@ -116,6 +132,7 @@ else:
     print(f"add_feat_axis: {add_feat_axis}")
     generator = vxm.py.generators.scan_to_scan(
         train_files, batch_size=args.batch_size, bidir=args.bidir, add_feat_axis=add_feat_axis)
+
 
 # extract shape from sampled input
 inshape = next(generator)[0][0].shape[1:-1]
@@ -141,7 +158,8 @@ torch.backends.cudnn.deterministic = not args.cudnn_nondet
 # enc_nf = args.enc if args.enc else [16, 32, 32, 32]
 # dec_nf = args.dec if args.dec else [32, 32, 32, 32, 32, 16, 16]
 # combined_nf = [enc_nf, dec_nf]
-combined_nf = [16, 32, 32, 32, 32]
+# combined_nf = [16, 32, 32, 32, 32]
+combined_nf = [128, 128, 128, 128, 128]
 print(f"combined_nf: {combined_nf}")
 
 if args.load_model:
@@ -186,6 +204,17 @@ if args.image_loss == 'ncc':
     image_loss_func = vxm.nn.losses.NCC().loss
 elif args.image_loss == 'mse':
     image_loss_func = vxm.nn.losses.MSE().loss
+elif args.image_loss == "dice":
+    image_loss_func = DiceLoss(
+        sigmoid=False,
+        squared_pred=True,
+    )
+elif args.image_loss == "ncc_dice":
+    ncc_loss_func = vxm.nn.losses.MazNCC().loss
+    image_loss_func = DiceLoss(
+        sigmoid=False,
+        squared_pred=True,
+    )
 else:
     raise ValueError('Image loss should be "mse" or "ncc", but found "%s"' % args.image_loss)
 
@@ -197,18 +226,80 @@ else:
     losses = [image_loss_func]
     weights = [1]
 
+
 # prepare deformation loss
 losses += [vxm.nn.losses.Grad('l2', loss_mult=args.int_downsize).loss]
 weights += [args.weight]
 
+if args.image_loss == "dice":
+    weights = [0, args.weight, 1]
+elif args.image_loss == "ncc_dice":
+    weights = [1, args.weight, 1]
+
+# Create a spatial transformer for segmentations (nearest-neighbor interpolation)
+seg_transformer = vxm.nn.modules.SpatialTransformer(
+    size=model.spatial_shape,
+    # interpolation_mode='nearest'  # Critical for segmentations to preserve label values
+).to(model.device)
+
+def apply_displacement_field_to_seg(vxm_model, displacement, seg_volume):
+    if vxm_model.integration_steps > 0:
+        # Provide negative velocity only when bidirectional cost is desired
+        neg_velocity = -displacement if vxm_model.bidirectional_cost else None
+        displacement, _ = vxm_model._integrate_velocity_fields(displacement, neg_velocity)
+
+    # Warp the segmentation using the displacement field from registration
+    warped_seg = seg_transformer(seg_volume, displacement)
+    return warped_seg
+
+
+# --- 1. Setup Tracking and Scheduler ---
+train_history = []
+lr_history = []
+best_loss = float('inf')
+patience = 50  # Stop if no improvement for 50 epochs
+trigger_times = 0
+# --- Configuration ---
+sched_patience = 15
+early_stop_patience = 50 # Roughly 3x the scheduler patience
+
+# Initialize scheduler
+# 'min' mode because we want to minimize loss
+scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=15, verbose=True)
+
+
 # training loops
 for epoch in range(args.initial_epoch, args.epochs):
-
     # save model checkpoint
     if epoch % 20 == 0:
         # model.save(os.path.join(model_dir, '%04d.pt' % epoch))
         # Save the torch module since VxmPairwise object has no attribute save
         torch.save(model, os.path.join(model_dir, '%04d.pt' % epoch))
+        # Create a figure with two subplots
+        plt.figure(figsize=(15, 5))
+        
+        # 1. Plot Training Loss
+        plt.subplot(1, 2, 1)
+        plt.plot(train_history, label='Total Training Loss')
+        plt.xlabel('Epochs')
+        plt.ylabel('Loss')
+        plt.title('VoxelMorph Training Convergence')
+        plt.legend()
+        plt.grid(True)
+        
+        # 2. Plot Learning Rate
+        plt.subplot(1, 2, 2)
+        plt.plot(lr_history, label='Learning Rate', color='orange')
+        plt.yscale('log') # Useful if the LR varies by orders of magnitude
+        plt.xlabel('Epochs')
+        plt.ylabel('LR')
+        plt.title('Learning Rate Schedule')
+        plt.legend()
+        plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(model_dir, 'training_metrics.png'))
+        plt.show()
 
 
     epoch_loss = []
@@ -219,10 +310,17 @@ for epoch in range(args.initial_epoch, args.epochs):
 
         step_start_time = time.time()
 
-        # generate inputs (and true outputs) and convert them to tensors
-        inputs, y_true = next(generator)
+        if args.image_loss == "dice":
+            invols, outvols = next(generator)
+            inputs = [invols[0], invols[1]]
+        elif args.image_loss == "ncc_dice":
+            invols, outvols = next(generator)
+            inputs = [invols[0], invols[1]]
+        else:
+            # generate inputs (and true outputs) and convert them to tensors
+            inputs, y_true = next(generator)
         inputs = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in inputs]
-        y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
+        # y_true = [torch.from_numpy(d).to(device).float().permute(0, 4, 1, 2, 3) for d in y_true]
 
         # run inputs through the model to produce a warped image and displacement field
         displacement, y_pred = model(*inputs, return_warped=True)
@@ -230,14 +328,20 @@ for epoch in range(args.initial_epoch, args.epochs):
         # calculate total loss
         loss = 0
         loss_list = []
-        for n, loss_function in enumerate(losses):
-            # If the loss function is an image loss:
-            if n < len(losses) - 1:                
-                curr_loss = loss_function(y_true[n], y_pred[n]) * weights[n]
-            else: # Grad loss
-                curr_loss = loss_function(displacement) * weights[n]
-            loss_list.append(curr_loss.item())
-            loss += curr_loss
+        # Append the dice loss and gradient loss:
+        # Warp the moving labels
+        warped_seg = apply_displacement_field_to_seg(model, displacement, torch.from_numpy(invols[2]).to(device).float().permute(0, 4, 1, 2, 3))
+        outvols[0] = torch.from_numpy(outvols[0]).to(device).float().permute(0, 4, 1, 2, 3) # This is the warped image
+        outvols[2] = torch.from_numpy(outvols[2]).to(device).float().permute(0, 4, 1, 2, 3) # This is probably the mask
+        # y_pred is a torch tensor that is dimension 4, but should be 5
+        fixed_image = y_pred[0].view(1, 1, *inshape)
+
+        ncc_loss = ncc_loss_func(outvols[0], fixed_image) * weights[0]
+        dice_loss = image_loss_func(outvols[2], warped_seg)
+        grad_loss = vxm.nn.losses.Grad('l2', loss_mult=args.int_downsize).loss(displacement) * args.weight
+
+        loss_list = [ncc_loss.item(), dice_loss.item(), grad_loss.item()]
+        loss = ncc_loss + dice_loss + grad_loss
 
         epoch_loss.append(loss_list)
         epoch_total_loss.append(loss.item())
@@ -249,15 +353,48 @@ for epoch in range(args.initial_epoch, args.epochs):
 
         # get compute time
         epoch_step_time.append(time.time() - step_start_time)
+    # --- 2. Epoch End Calculations ---
+    avg_epoch_loss = np.mean(epoch_total_loss)
+    train_history.append(avg_epoch_loss)
+    # Track the current learning rate
+    current_lr = optimizer.param_groups[0]['lr']
+    lr_history.append(current_lr)
 
     # print epoch info
     epoch_info = 'Epoch %d/%d' % (epoch + 1, args.epochs)
     time_info = '%.4f sec/step' % np.mean(epoch_step_time)
     losses_info = ', '.join(['%.4e' % f for f in np.mean(epoch_loss, axis=0)])
-    loss_info = 'loss: %.4e  (%s)' % (np.mean(epoch_total_loss), losses_info)
+    loss_info = 'loss: %.4e  (%s)' % (avg_epoch_loss, losses_info)
     print(' - '.join((epoch_info, time_info, loss_info)), flush=True)
+    # --- 3. Early Stopping (Convergence) ---
+    if avg_epoch_loss < best_loss:
+        best_loss = avg_epoch_loss
+        trigger_times = 0
+        # Save "best" model specifically
+        torch.save(model, os.path.join(model_dir, 'best_model.pt'))
+    else:
+        trigger_times += 1
+        if trigger_times >= early_stop_patience:
+            print(f"Early stopping at epoch {epoch}. Model converged.")
+            break
+
+    scheduler.step(avg_epoch_loss)
+
+    # Print epoch info (your existing print code)
+    print(f"Epoch {epoch+1}: Loss {avg_epoch_loss:.4e}")
 
 # final model save
 # model.save(os.path.join(model_dir, '%04d.pt' % args.epochs))
 # Save the torch module since VxmPairwise object has no attribute save
 torch.save(model, os.path.join(model_dir, '%04d.pt' % args.epochs))
+
+# --- 4. Generate the Loss Graph ---
+plt.figure(figsize=(10, 5))
+plt.plot(train_history, label='Total Training Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.title('VoxelMorph Training Convergence')
+plt.legend()
+plt.grid(True)
+plt.savefig(os.path.join(model_dir, 'loss_curve.png'))
+plt.show()

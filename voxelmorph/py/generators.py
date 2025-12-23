@@ -12,6 +12,13 @@ import numpy as np
 # Custom imports
 import voxelmorph as vxm
 
+# --- At the top of generators.py ---
+import builtins
+
+# This line checks if 'profile' is already defined; if not, it creates a "do nothing" version
+if 'profile' not in builtins.__dict__:
+    builtins.__dict__['profile'] = lambda f: f
+
 __all__ = [
     'volgen',
     'scan_to_scan',
@@ -161,6 +168,7 @@ def scan_to_atlas(vol_names, atlas, bidir=False, batch_size=1, no_warp=False, se
         yield (invols, outvols)
 
 
+@profile
 def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     """
     Generator for semi-supervised registration training using ground truth segmentations.
@@ -178,11 +186,75 @@ def semisupervised(vol_names, seg_names, labels, atlas_file=None, downsize=2):
     zeros = None
 
     # internal utility to generate downsampled prob seg from discrete seg
+    @profile
     def split_seg(seg):
         prob_seg = np.zeros((*seg.shape[:4], len(labels)))
         for i, label in enumerate(labels):
             prob_seg[0, ..., i] = seg[0, ..., 0] == label
         return prob_seg[:, ::downsize, ::downsize, ::downsize, :]
+
+    # cache target vols and segs if atlas is supplied
+    if atlas_file:
+        trg_vol = vxm.py.utils.load_volfile(atlas_file, np_var='vol',
+                                        add_batch_axis=True, add_feat_axis=True)
+        trg_seg = vxm.py.utils.load_volfile(atlas_file, np_var='seg',
+                                        add_batch_axis=True, add_feat_axis=True)
+        trg_seg = split_seg(trg_seg)
+
+    while True:
+        # load source vol and seg
+        src_vol, src_seg = next(gen)
+        src_seg = split_seg(src_seg)
+
+        # load target vol and seg (if not provided by atlas)
+        if not atlas_file:
+            trg_vol, trg_seg = next(gen)
+            trg_seg = split_seg(trg_seg)
+
+        # cache zeros
+        if zeros is None:
+            shape = src_vol.shape[1:-1]
+            zeros = np.zeros((1, *shape, len(shape)))
+
+        invols = [src_vol, trg_vol, src_seg]
+        outvols = [trg_vol, zeros, trg_seg]
+        yield (invols, outvols)
+
+
+def semisupervised_fast(vol_names, seg_names, labels, atlas_file=None, downsize=2):
+    # --- 1. Pre-compute LUT and Identity matrix (once) ---
+    max_label = int(max(labels))
+    n_labels = len(labels)
+    
+    # Create the remapping LUT: index is raw label, value is 0 to (N-1)
+    lut = np.zeros(max_label + 1, dtype='int32')
+    for i, lbl in enumerate(labels):
+        lut[int(lbl)] = i
+        
+    # Pre-allocate identity matrix for fast one-hot conversion
+    # Using float32 since VoxelMorph usually expects float tensors
+    identity = np.eye(n_labels, dtype='float32')
+
+    # configure base generator
+    gen = volgen(vol_names, segs=seg_names, np_var='vol')
+    zeros = None
+
+    # --- 2. Optimized split_seg ---
+    @profile
+    def split_seg(seg):
+        # seg shape: (1, H, W, D, 1)
+        # Step A: Downsample the integer labels FIRST
+        # This reduces voxels to process by a factor of 8 (if downsize=2)
+        ds_seg = seg[0, ::downsize, ::downsize, ::downsize, 0].astype('int32')
+        
+        # Step B: Remap labels via LUT (address-based lookup)
+        indexed_seg = lut[ds_seg]
+        
+        # Step C: One-hot encode via identity indexing (no comparison operators)
+        prob_seg = identity[indexed_seg]
+        
+        # Add batch dimension back: (1, H_ds, W_ds, D_ds, N_labels)
+        return prob_seg[np.newaxis, ...]
 
     # cache target vols and segs if atlas is supplied
     if atlas_file:
