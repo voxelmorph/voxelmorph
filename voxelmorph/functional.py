@@ -1205,8 +1205,7 @@ def random_disp(
     """Generate a random displacement field using fractal noise.
 
     Creates a displacement field by generating independent fractal noise for each spatial
-    dimension and stacking them in channels-first format. This backward-compatible function
-    delegates to `random_field`; use `random_field` when the values have another interpretation.
+    dimension.
 
     Parameters
     ----------

@@ -615,13 +615,10 @@ def random_field(
     device: Union[torch.device, None] = None,
     fractal_mode: Literal['blur', 'upsample'] = 'upsample'
 ) -> torch.Tensor:
-    """Generate a random multi-component field for `(B, C, *spatial)` tensors.
+    """
+    Generate a random vector field for `(B, C, *spatial)` tensors.
 
-    Creates one independent fractal-noise component per spatial dimension and stacks the
-    components in channels-first format. The batch dimension is preserved, while the channel
-    dimension in `shape` is ignored. When `integrations` is greater than zero, the field is
-    interpreted as a stationary velocity field and integrated for compatibility with
-    `random_disp`.
+    Creates one independent sample of fractal-noise per spatial dimension.
 
     Parameters
     ----------
@@ -629,7 +626,7 @@ def random_field(
         Shape from which to generate the field. By default, use `(B, C, *spatial)`, such as
         `(1, 1, 64, 64)` for 2D or `(2, 3, 64, 64, 64)` for 3D.
     scales : float, int, or List[float], default=10
-        Smoothing scale or scales for fractal noise, divided by `voxsize`. Interpretation depends
+        Smoothing scale(s) for fractal noise, divided by `voxsize`. Interpretation depends
         on `fractal_mode`:
         - `fractal_mode='blur'`: sigma values for Gaussian smoothing
         - `fractal_mode='upsample'`: downsampling factors for upsampled noise
@@ -654,8 +651,7 @@ def random_field(
     Returns
     -------
     torch.Tensor
-        Random field with shape `(B, ndim, *spatial)` when batched or `(ndim, *spatial)` when
-        unbatched.
+        Random field of shape `(B, ndim, *spatial)` (batched) or `(ndim, *spatial)` (unbatched)
 
     Examples
     --------
@@ -724,12 +720,8 @@ def random_disp(
     device: Union[torch.device, None] = None,
     fractal_mode: Literal['blur', 'upsample'] = 'upsample'
 ) -> torch.Tensor:
-    """Generate a random displacement field for `(B, C, *spatial)` tensors.
-
-    Takes shape in `(B, C, *spatial)` format and outputs a displacement field in
-    `(B, ndim, *spatial)` channels-first format. The channel dimension is ignored because
-    displacement is defined per voxel rather than per channel. This backward-compatible function
-    delegates to `random_field`.
+    """
+    Generate a random displacement field for `(B, C, *spatial)` tensors.
 
     Parameters
     ----------
@@ -808,9 +800,6 @@ def random_transform(
 ) -> torch.Tensor:
     """
     Generate random spatial transformation for images in (B, C, *spatial) format.
-
-    Takes shape in (B, C, *spatial) format (matching image tensors) and outputs
-    displacement field in (B, ndim, *spatial) format - channels-first format.
 
     Parameters
     ----------
