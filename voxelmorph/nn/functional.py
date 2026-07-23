@@ -604,7 +604,7 @@ def compose(
     return curr
 
 
-def random_disp(
+def random_field(
     shape: Sequence[int],
     scales: Union[float, int, List[float]] = 10,
     magnitude: float = 10,
@@ -615,54 +615,58 @@ def random_disp(
     device: Union[torch.device, None] = None,
     fractal_mode: Literal['blur', 'upsample'] = 'upsample'
 ) -> torch.Tensor:
-    """
-    Generate random displacement field for images in (B, C, *spatial) format.
+    """Generate a random multi-component field for `(B, C, *spatial)` tensors.
 
-    Takes shape in (B, C, *spatial) format (matching image tensors) and outputs
-    displacement field in (B, ndim, *spatial) format - channels-first format.
-    The channel dimension is ignored since displacement is per-voxel, not per-channel.
+    Creates one independent fractal-noise component per spatial dimension and stacks the
+    components in channels-first format. The batch dimension is preserved, while the channel
+    dimension in `shape` is ignored. When `integrations` is greater than zero, the field is
+    interpreted as a stationary velocity field and integrated for compatibility with
+    `random_disp`.
 
     Parameters
     ----------
     shape : Sequence[int]
-        Shape in (B, C, *spatial) format matching the image to be transformed.
-        Examples: (1, 1, 64, 64) for 2D, (2, 3, 64, 64, 64) for 3D.
+        Shape from which to generate the field. By default, use `(B, C, *spatial)`, such as
+        `(1, 1, 64, 64)` for 2D or `(2, 3, 64, 64, 64)` for 3D.
     scales : float, int, or List[float], default=10
-        Smoothing scale(s) for fractal noise, divided by voxsize. Interpretation depends
-        on fractal_mode:
-        - fractal_mode='blur': sigma values for Gaussian smoothing
-        - fractal_mode='upsample': downsampling factors for upsampled noise
+        Smoothing scale or scales for fractal noise, divided by `voxsize`. Interpretation depends
+        on `fractal_mode`:
+        - `fractal_mode='blur'`: sigma values for Gaussian smoothing
+        - `fractal_mode='upsample'`: downsampling factors for upsampled noise
     magnitude : float, default=10
-        Standard deviation of displacement in voxel coordinates, divided by voxsize.
+        Standard deviation of field values, divided by `voxsize`.
     integrations : int, default=0
-        Number of integration steps for diffeomorphic transform. If 0, no integration.
+        Number of integration steps for a diffeomorphic field. If zero, no integration is applied.
     voxsize : float, default=1
-        Voxel size for scaling smoothing and magnitude parameters.
+        Voxel size used to scale `scales` and `magnitude`.
     meshgrid : torch.Tensor or None, default=None
-        Coordinate grid of shape (ndim, *spatial) for integration. If None and
-        integrations > 0, computed internally.
+        Coordinate grid of shape `(ndim, *spatial)` used for integration. If None and
+        `integrations > 0`, the grid is computed internally.
+    non_spatial_dims : Sequence[int] or None, default=(0, 1)
+        Indices of non-spatial dimensions. At most batch and channel dimensions are supported.
     device : torch.device or None, default=None
         Device for tensor allocation.
     fractal_mode : {'blur', 'upsample'}, default='upsample'
-        Fractal noise generation method:
-        - 'blur': Generate noise and apply Gaussian smoothing (higher quality)
-        - 'upsample': Generate coarse noise and upsample (faster, lower memory)
+        Fractal-noise generation method:
+        - `'blur'`: generate noise and apply Gaussian smoothing (higher quality)
+        - `'upsample'`: generate coarse noise and upsample (faster, lower memory)
 
     Returns
     -------
     torch.Tensor
-        Displacement field with shape (B, ndim, *spatial) - channels-first format.
+        Random field with shape `(B, ndim, *spatial)` when batched or `(ndim, *spatial)` when
+        unbatched.
 
     Examples
     --------
-    >>> # Generate displacement for 2D image with shape (B, C, H, W)
-    >>> disp = random_disp(shape=(1, 1, 64, 64), scales=5.0, magnitude=3.0)
-    >>> disp.shape
+    >>> # Generate a 2D field from an image shape `(B, C, H, W)`
+    >>> field = random_field(shape=(1, 1, 64, 64), scales=5.0, magnitude=3.0)
+    >>> field.shape
     torch.Size([1, 2, 64, 64])
 
-    >>> # Generate displacement for 3D image with shape (B, C, D, H, W)
-    >>> disp = random_disp(shape=(2, 3, 32, 32, 32), integrations=5)
-    >>> disp.shape
+    >>> # Generate a 3D integrated field from `(B, C, D, H, W)`
+    >>> field = random_field(shape=(2, 3, 32, 32, 32), integrations=5)
+    >>> field.shape
     torch.Size([2, 3, 32, 32, 32])
     """
     num_non_spatial, num_spatial = ne.parse_non_spatial_dims(
@@ -670,7 +674,7 @@ def random_disp(
         tensor_ndim=len(shape),
     )
     assert num_non_spatial <= 2, (
-        "random_disp supports at most batch and channel non-spatial dims, "
+        "random_field supports at most batch and channel non-spatial dims, "
         f"got non_spatial_dims={non_spatial_dims}"
     )
     has_batch = num_non_spatial >= 1
@@ -683,7 +687,7 @@ def random_disp(
         scales = [s / voxsize for s in scales]
     magnitude = magnitude / voxsize
 
-    disp_components = []
+    field_components = []
     noise_shape = (batch_size, *spatial_shape) if has_batch else spatial_shape
     noise_non_spatial = (0,) if has_batch else None
     for _ in range(num_spatial):
@@ -695,18 +699,95 @@ def random_disp(
             device=device,
             method=fractal_mode,
         )
-        disp_components.append(noise)
+        field_components.append(noise)
 
     stack_dim = 1 if has_batch else 0
-    disp = torch.stack(disp_components, dim=stack_dim)
+    field = torch.stack(field_components, dim=stack_dim)
     if integrations > 0:
-        disp = integrate_disp(
-            disp,
+        field = integrate_disp(
+            field,
             integrations,
             meshgrid,
             non_spatial_dims=(0,) if has_batch else None,
         )
-    return disp
+    return field
+
+
+def random_disp(
+    shape: Sequence[int],
+    scales: Union[float, int, List[float]] = 10,
+    magnitude: float = 10,
+    integrations: int = 0,
+    voxsize: float = 1,
+    meshgrid: Union[torch.Tensor, None] = None,
+    non_spatial_dims: Union[Sequence[int], None] = (0, 1),
+    device: Union[torch.device, None] = None,
+    fractal_mode: Literal['blur', 'upsample'] = 'upsample'
+) -> torch.Tensor:
+    """Generate a random displacement field for `(B, C, *spatial)` tensors.
+
+    Takes shape in `(B, C, *spatial)` format and outputs a displacement field in
+    `(B, ndim, *spatial)` channels-first format. The channel dimension is ignored because
+    displacement is defined per voxel rather than per channel. This backward-compatible function
+    delegates to `random_field`.
+
+    Parameters
+    ----------
+    shape : Sequence[int]
+        Shape in `(B, C, *spatial)` format matching the image to be transformed. Examples include
+        `(1, 1, 64, 64)` for 2D and `(2, 3, 64, 64, 64)` for 3D.
+    scales : float, int, or List[float], default=10
+        Smoothing scale or scales for fractal noise, divided by `voxsize`. Interpretation depends
+        on `fractal_mode`:
+        - `fractal_mode='blur'`: sigma values for Gaussian smoothing
+        - `fractal_mode='upsample'`: downsampling factors for upsampled noise
+    magnitude : float, default=10
+        Standard deviation of displacement in voxel coordinates, divided by `voxsize`.
+    integrations : int, default=0
+        Number of integration steps for a diffeomorphic transform. If zero, no integration is
+        applied.
+    voxsize : float, default=1
+        Voxel size used to scale `scales` and `magnitude`.
+    meshgrid : torch.Tensor or None, default=None
+        Coordinate grid of shape `(ndim, *spatial)` used for integration. If None and
+        `integrations > 0`, the grid is computed internally.
+    non_spatial_dims : Sequence[int] or None, default=(0, 1)
+        Indices of non-spatial dimensions. At most batch and channel dimensions are supported.
+    device : torch.device or None, default=None
+        Device for tensor allocation.
+    fractal_mode : {'blur', 'upsample'}, default='upsample'
+        Fractal-noise generation method:
+        - `'blur'`: generate noise and apply Gaussian smoothing (higher quality)
+        - `'upsample'`: generate coarse noise and upsample (faster, lower memory)
+
+    Returns
+    -------
+    torch.Tensor
+        Displacement field with shape `(B, ndim, *spatial)` in channels-first format.
+
+    Examples
+    --------
+    >>> # Generate displacement for a 2D image with shape `(B, C, H, W)`
+    >>> disp = random_disp(shape=(1, 1, 64, 64), scales=5.0, magnitude=3.0)
+    >>> disp.shape
+    torch.Size([1, 2, 64, 64])
+
+    >>> # Generate displacement for a 3D image with shape `(B, C, D, H, W)`
+    >>> disp = random_disp(shape=(2, 3, 32, 32, 32), integrations=5)
+    >>> disp.shape
+    torch.Size([2, 3, 32, 32, 32])
+    """
+    return random_field(
+        shape=shape,
+        scales=scales,
+        magnitude=magnitude,
+        integrations=integrations,
+        voxsize=voxsize,
+        meshgrid=meshgrid,
+        non_spatial_dims=non_spatial_dims,
+        device=device,
+        fractal_mode=fractal_mode,
+    )
 
 
 def random_transform(

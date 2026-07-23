@@ -550,6 +550,27 @@ def test_integrate_disp_single_step():
     assert not torch.allclose(integrated, disp, atol=1e-6)
 
 
+@pytest.mark.parametrize('module', (vxm, vxf))
+def test_random_disp_matches_random_field(module):
+    """random_disp should preserve the exact behavior of random_field on each public surface."""
+    kwargs = {
+        'shape': (1, 1, 8, 8),
+        'scales': 2,
+        'magnitude': 1,
+        'integrations': 1,
+        'non_spatial_dims': (0, 1),
+    }
+
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(42)
+        field = module.random_field(**kwargs)
+        torch.manual_seed(42)
+        disp = module.random_disp(**kwargs)
+
+    assert torch.equal(disp, field)
+    assert field.shape == (1, 2, 8, 8)
+
+
 def test_random_transform():
     """
     random_transform should generate valid transforms.
