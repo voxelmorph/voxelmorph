@@ -61,20 +61,23 @@ class Dice:
 
 class Grad:
     """
-    N-D gradient loss.
+    Deprecated. Use `neurite.nn.modules.SpatialGradient` instead.
     """
 
     def __init__(self, penalty='l1', loss_mult=None):
         raise NotImplementedError(
-            "voxelmorph.nn.losses.Grad is deprecated. Use neurite.nn.modules.Grad instead."
+            "voxelmorph.nn.losses.Grad is deprecated. "
+            "Use neurite.nn.modules.SpatialGradient instead."
         )
 
     def _diffs(self, y):
         raise NotImplementedError(
-            "voxelmorph.nn.losses.Grad is deprecated. Use neurite.nn.modules.Grad instead."
+            "voxelmorph.nn.losses.Grad is deprecated. "
+            "Use neurite.nn.modules.SpatialGradient instead."
         )
 
     def loss(self, y_pred):
         raise NotImplementedError(
-            "voxelmorph.nn.losses.Grad is deprecated. Use neurite.nn.modules.Grad instead."
+            "voxelmorph.nn.losses.Grad is deprecated. "
+            "Use neurite.nn.modules.SpatialGradient instead."
         )
