@@ -2,7 +2,7 @@
 Single tensor operations (no B, C, dimensions assumption)
 """
 # Core library imports
-from typing import Union, Sequence, Tuple, Literal, Optional
+from typing import Callable, Union, Sequence, Tuple, Literal, Optional
 
 # Third-party imports
 import numpy as np
@@ -20,7 +20,7 @@ __all__ = [
     'disp_to_coords',
     'coords_to_disp',
     'spatial_transform',
-    'integrate_disp',
+    'integrate_vec',
     'resize_disp',
     'constant_shift_field',
     'compose',
@@ -671,11 +671,13 @@ def spatial_transform(
     )
 
 
-def integrate_disp(
-    disp: torch.Tensor,
+def integrate_vec(
+    vec: torch.Tensor,
     steps: int,
     meshgrid: Union[torch.Tensor, None] = None,
     non_spatial_dims: Union[Tuple[int, ...], None] = None,
+    scale: Union[float, None] = None,
+    transformer: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
 ) -> torch.Tensor:
     """
     Integrate a stationary velocity field to produce a displacement field.
@@ -685,18 +687,23 @@ def integrate_disp(
 
     Parameters
     ----------
-    disp : torch.Tensor
+    vec : torch.Tensor
         Velocity field with shape (ndim, *spatial) or (B, ndim, *spatial) if batched.
     steps : int
         Number of integration steps. The velocity is divided by 2^steps and then
         composed with itself 2^steps times. More steps = more accurate but slower.
     meshgrid : torch.Tensor or None, default=None
         Pre-computed coordinate grid of shape (ndim, *spatial). If None, computed
-        from displacement field shape.
+        from velocity field shape.
     non_spatial_dims : Tuple[int, ...] or None, default=None
         Indices of non-spatial dimensions:
         - None: tensor is (ndim, *spatial), unbatched
         - (0,): tensor is (B, ndim, *spatial), batched
+    scale : float or None, default=None
+        Optional initial multiplier, replacing division by 2^steps. Applies even when steps is zero.
+    transformer : callable or None, default=None
+        Callable accepting (image, displacement) and returning the warped image.
+        Called once per squaring step. If supplied, meshgrid and non_spatial_dims are ignored.
 
     Returns
     -------
@@ -708,21 +715,23 @@ def integrate_disp(
     >>> import voxelmorph as vxm
     >>> # Unbatched velocity field
     >>> vel = torch.randn(2, 64, 64) * 0.1
-    >>> disp = vxm.integrate_disp(vel, steps=7)
+    >>> disp = vxm.integrate_vec(vel, steps=7)
     >>> disp.shape
     torch.Size([2, 64, 64])
 
     >>> # Batched velocity field
     >>> vel = torch.randn(4, 2, 64, 64) * 0.1
-    >>> disp = vxm.integrate_disp(vel, steps=7, non_spatial_dims=(0,))
+    >>> disp = vxm.integrate_vec(vel, steps=7, non_spatial_dims=(0,))
     >>> disp.shape
     torch.Size([4, 2, 64, 64])
     """
-    return vxf.integrate_disp(
-        disp=disp,
+    return vxf.integrate_vec(
+        vec=vec,
         steps=steps,
         meshgrid=meshgrid,
         non_spatial_dims=non_spatial_dims,
+        scale=scale,
+        transformer=transformer,
     )
 
 

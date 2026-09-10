@@ -525,29 +525,29 @@ def test_disp_to_coords_zero_disp():
     )
 
 
-def test_integrate_disp_zero_steps():
+def test_integrate_vec_zero_steps() -> None:
     """
-    integrate_disp with zero steps should return the original displacement.
+    integrate_vec with zero steps should return the original velocity.
     """
-    # Displacement is now (ndim, *spatial) = (2, 2, 3)
-    disp = torch.randn(2, 2, 3, dtype=torch.float32)
-    integrated = vxm.integrate_disp(disp, steps=0)
+    # Velocity is now (ndim, *spatial) = (2, 2, 3)
+    vec = torch.randn(2, 2, 3, dtype=torch.float32)
+    integrated = vxm.integrate_vec(vec=vec, steps=0)
 
-    assert torch.allclose(integrated, disp)
+    assert torch.allclose(integrated, vec)
 
 
-def test_integrate_disp_single_step():
+def test_integrate_vec_single_step() -> None:
     """
-    integrate_disp with one step should apply spatial transform once.
+    integrate_vec with one step should apply spatial transform once.
     """
-    # Displacement is now (ndim, *spatial) = (2, 2, 3)
-    disp = torch.randn(2, 2, 3, dtype=torch.float32)
-    integrated = vxm.integrate_disp(disp, steps=1)
+    # Velocity is now (ndim, *spatial) = (2, 2, 3)
+    vec = torch.randn(2, 2, 3, dtype=torch.float32)
+    integrated = vxm.integrate_vec(vec, steps=1)
 
     # Should have same shape
-    assert integrated.shape == disp.shape
-    # Should be different from original (unless disp is very small)
-    assert not torch.allclose(integrated, disp, atol=1e-6)
+    assert integrated.shape == vec.shape
+    # Should be different from original (unless vec is very small)
+    assert not torch.allclose(integrated, vec, atol=1e-6)
 
 
 def test_random_transform():
@@ -1071,39 +1071,39 @@ def test_is_affine_shape(shape, expected):
     assert vxm.is_affine_shape(shape) == expected
 
 
-def test_vxf_integrate_disp_zero_steps_2d():
+def test_vxf_integrate_vec_zero_steps_2d() -> None:
     """
-    vxf.integrate_disp with zero steps should return the original displacement.
+    vxf.integrate_vec with zero steps should return the original velocity.
     """
-    disp = torch.randn(2, 2, 8, 8)  # (B, ndim, H, W)
-    integrated = vxf.integrate_disp(disp, steps=0)
+    vec = torch.randn(2, 2, 8, 8)  # (B, ndim, H, W)
+    integrated = vxf.integrate_vec(vec=vec, steps=0)
 
-    assert integrated.shape == disp.shape
-    assert torch.allclose(integrated, disp)
+    assert integrated.shape == vec.shape
+    assert torch.allclose(integrated, vec)
 
 
-def test_vxf_integrate_disp_preserves_batch_2d():
+def test_vxf_integrate_vec_preserves_batch_2d() -> None:
     """
-    vxf.integrate_disp should preserve batch dimension and process each sample independently.
+    vxf.integrate_vec should preserve batch dimension and process each sample independently.
     """
     batch_size = 3
-    disp = torch.randn(batch_size, 2, 16, 16)  # (B, ndim, H, W)
-    integrated = vxf.integrate_disp(disp, steps=5)
+    vec = torch.randn(batch_size, 2, 16, 16)  # (B, ndim, H, W)
+    integrated = vxf.integrate_vec(vec, steps=5)
 
     assert integrated.shape == (batch_size, 2, 16, 16)
 
     # Verify each batch element matches independent integration
     for i in range(batch_size):
-        single_integrated = vxm.integrate_disp(disp[i], steps=5)
+        single_integrated = vxm.integrate_vec(vec[i], steps=5)
         assert torch.allclose(integrated[i], single_integrated, atol=1e-6)
 
 
-def test_vxf_integrate_disp_3d():
+def test_vxf_integrate_vec_3d() -> None:
     """
-    vxf.integrate_disp should work with 3d spatial data.
+    vxf.integrate_vec should work with 3d spatial data.
     """
-    disp = torch.randn(2, 3, 8, 8, 8)  # (B, ndim, D, H, W)
-    integrated = vxf.integrate_disp(disp, steps=3)
+    vec = torch.randn(2, 3, 8, 8, 8)  # (B, ndim, D, H, W)
+    integrated = vxf.integrate_vec(vec, steps=3)
 
     assert integrated.shape == (2, 3, 8, 8, 8)
 

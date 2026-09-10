@@ -201,16 +201,12 @@ class IntegrateVelocityField(nn.Module):
             The integrated displacement field with the same shape as the input.
         """
 
-        # Apply initial scaling to the velocity field
-        velocity_field = velocity_field * self.scale
-
-        # Integration loop
-        for _ in range(self.steps):
-
-            # Recursive integration step
-            velocity_field = velocity_field + self.transformer(velocity_field, velocity_field)
-
-        return velocity_field
+        return vxf.integrate_vec(
+            velocity_field,
+            steps=self.steps,
+            scale=self.scale,
+            transformer=self.transformer,
+        )
 
 
 class ResizeDisplacementField(nn.Module):

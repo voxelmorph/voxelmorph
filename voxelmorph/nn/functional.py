@@ -4,7 +4,8 @@ written in PyTorch.
 """
 
 # Core library imports
-from typing import List, Union, Sequence, Tuple, Literal
+from functools import partial
+from typing import Callable, List, Union, Sequence, Tuple, Literal, Optional
 
 # Third-party imports
 import numpy as np
@@ -436,27 +437,35 @@ def coords_to_disp(
     )
 
 
-def integrate_disp(
-    disp: torch.Tensor,
+def integrate_vec(
+    vec: torch.Tensor,
     steps: int,
     meshgrid: Union[torch.Tensor, None] = None,
-    non_spatial_dims: Union[Tuple[int, ...], None] = (0,)
+    non_spatial_dims: Union[Tuple[int, ...], None] = (0,),
+    scale: Union[float, None] = None,
+    transformer: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
 ) -> torch.Tensor:
     """
-    Integrate displacement field via scaling and squaring for (B, ndim, *spatial) format.
+    Integrate velocity field via scaling and squaring for (B, ndim, *spatial) format.
 
     Converts a stationary velocity field into a displacement field through iterative
-    composition. The input is scaled by 1/2^steps, then composed with itself `steps` times.
+    composition. By default, the input is scaled by 1/2^steps, then composed with itself
+    `steps` times. An explicit `scale` overrides the initial scaling.
 
     Parameters
     ----------
-    disp : torch.Tensor
-        Displacement/velocity field with shape (B, ndim, *spatial).
+    vec : torch.Tensor
+        Velocity field with shape (B, ndim, *spatial).
     steps : int
-        Number of integration steps. If 0, returns disp unchanged.
+        Number of integration steps. If 0 and scale is None, returns vec unchanged.
     meshgrid : torch.Tensor or None, default=None
         Pre-computed coordinate grid of shape (ndim, *spatial). If None, computed
-        internally from disp spatial shape.
+        internally from vec spatial shape.
+    scale : float or None, default=None
+        Optional initial multiplier, replacing division by 2^steps. Applies even when steps is zero.
+    transformer : callable or None, default=None
+        Callable accepting (image, displacement) and returning the warped image.
+        Called once per squaring step. If supplied, meshgrid and non_spatial_dims are ignored.
 
     Returns
     -------
@@ -467,41 +476,48 @@ def integrate_disp(
     --------
     >>> # 2D velocity field with batch
     >>> vel = torch.randn(2, 2, 64, 64)  # (B, ndim, H, W)
-    >>> disp = integrate_disp(vel, steps=7)
+    >>> disp = integrate_vec(vel, steps=7)
     >>> disp.shape
     torch.Size([2, 2, 64, 64])
 
     >>> # 3D velocity field
     >>> vel = torch.randn(1, 3, 32, 32, 32)  # (B, ndim, D, H, W)
-    >>> disp = integrate_disp(vel, steps=5)
+    >>> disp = integrate_vec(vel, steps=5)
     >>> disp.shape
     torch.Size([1, 3, 32, 32, 32])
     """
     if steps == 0:
-        return disp
+        return vec if scale is None else vec * scale
 
-    num_non_spatial, num_spatial = ne.parse_non_spatial_dims(
-        non_spatial_dims=non_spatial_dims,
-        tensor_ndim=disp.ndim - 1,
-    )
-    has_batch = num_non_spatial == 1
-    if has_batch:
-        spatial_shape = disp.shape[2:]
-        st_non_spatial_dims = (0, 1)
-    else:
-        spatial_shape = disp.shape[1:]
-        st_non_spatial_dims = (0,)
+    if transformer is None:
+        num_non_spatial, num_spatial = ne.parse_non_spatial_dims(
+            non_spatial_dims=non_spatial_dims,
+            tensor_ndim=vec.ndim - 1,
+        )
+        has_batch = num_non_spatial == 1
+        if has_batch:
+            spatial_shape = vec.shape[2:]
+            st_non_spatial_dims = (0, 1)
+        else:
+            spatial_shape = vec.shape[1:]
+            st_non_spatial_dims = (0,)
 
-    if meshgrid is None:
-        meshgrid = ne.volshape_to_ndgrid(
-            size=spatial_shape, device=disp.device, dtype=disp.dtype, stack=True
+        if meshgrid is None:
+            meshgrid = ne.volshape_to_ndgrid(
+                size=spatial_shape,
+                device=vec.device,
+                dtype=vec.dtype,
+                stack=True,
+            )
+        transformer = partial(
+            spatial_transform,
+            meshgrid=meshgrid,
+            non_spatial_dims=st_non_spatial_dims,
         )
 
-    disp = disp / (2 ** steps)
+    disp = vec / (2 ** steps) if scale is None else vec * scale
     for _ in range(steps):
-        disp = disp + spatial_transform(
-            disp, disp, meshgrid=meshgrid, non_spatial_dims=st_non_spatial_dims
-        )
+        disp = disp + transformer(disp, disp)
     return disp
 
 
@@ -700,7 +716,7 @@ def random_disp(
     stack_dim = 1 if has_batch else 0
     disp = torch.stack(disp_components, dim=stack_dim)
     if integrations > 0:
-        disp = integrate_disp(
+        disp = integrate_vec(
             disp,
             integrations,
             meshgrid,
