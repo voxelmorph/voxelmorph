@@ -2,6 +2,7 @@
 Single tensor operations (no B, C, dimensions assumption)
 """
 # Core library imports
+import warnings
 from typing import Callable, Union, Sequence, Tuple, Literal, Optional
 
 # Third-party imports
@@ -21,6 +22,7 @@ __all__ = [
     'coords_to_disp',
     'spatial_transform',
     'integrate_vec',
+    'integrate_disp',
     'resize_disp',
     'constant_shift_field',
     'compose',
@@ -669,6 +671,43 @@ def spatial_transform(
         align_corners=align_corners,
         padding_mode=padding_mode,
     )
+
+
+def integrate_disp(
+    disp: torch.Tensor,
+    steps: int,
+    meshgrid: Optional[torch.Tensor] = None,
+    non_spatial_dims: Optional[Tuple[int, ...]] = None,
+) -> torch.Tensor:
+    """
+    Integrate a stationary velocity field using the deprecated name for `integrate_vec`.
+
+    Parameters
+    ----------
+    disp : torch.Tensor
+        Velocity field with shape (ndim, *spatial), or (B, ndim, *spatial) when batched.
+    steps : int
+        Number of scaling-and-squaring steps. Zero returns the input unchanged.
+    meshgrid : torch.Tensor or None, default=None
+        Precomputed coordinate grid with shape (ndim, *spatial).
+    non_spatial_dims : Tuple[int, ...] or None, default=None
+        Use None for unbatched input or (0,) for batched input.
+
+    Returns
+    -------
+    torch.Tensor
+        Integrated displacement field with the same shape as the input.
+
+    Notes
+    -----
+    Emits a DeprecationWarning. Use `integrate_vec(vec=...)` instead of `integrate_disp(disp=...)`.
+    """
+    warnings.warn(
+        "integrate_disp() is deprecated. Use integrate_vec() instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return integrate_vec(disp, steps, meshgrid=meshgrid, non_spatial_dims=non_spatial_dims)
 
 
 def integrate_vec(
