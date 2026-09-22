@@ -1,0 +1,40 @@
+# ref: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Publish Package
+
+on:
+  # publish from the Releases page:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    name: Publish Package
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - uses: actions/setup-python@v3
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+
+    - name: Build
+      run: python -m build
+
+    - name: Publish to Github
+      uses: softprops/action-gh-release@v1
+      with:
+        files: 'dist/*'
+        fail_on_unmatched_files: true
+        prerelease: ${{ contains(github.ref, 'rc') || contains(github.ref, 'dev') }}
+
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_TOKEN }}
