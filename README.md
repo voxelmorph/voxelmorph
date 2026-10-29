@@ -14,7 +14,11 @@ Install the published package from PyPI:
 pip install voxelmorph
 ```
 
-To work from a source checkout, clone this repository and install the requirements listed in `setup.py`.
+To work from a source checkout, clone this repository and install it in editable mode:
+
+```bash
+python -m pip install --editable .
+```
 
 ### Pre-commit hooks
 
@@ -50,7 +54,7 @@ We have several VoxelMorph tutorials:
 
 # Instructions
 
-To use the VoxelMorph library from source, clone this repository and install the requirements listed in `setup.py`.
+To use the VoxelMorph library from source, clone this repository and install it with pip.
 
 > **Note**: For source development, install from GitHub instead:
 
